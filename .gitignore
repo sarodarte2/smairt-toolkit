@@ -1,6 +1,7 @@
 # Mac-specific
 .DS_Store
 
+.git*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

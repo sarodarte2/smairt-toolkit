@@ -1,6 +1,3 @@
-# {{ cookiecutter.project_slug }}/prompts/intellectual_contribution.md
-
-```markdown
 # Intellectual Contribution Log
 
 Track where YOU made the critical steps vs. where AI generated ideas.
@@ -8,9 +5,10 @@ Track where YOU made the critical steps vs. where AI generated ideas.
 ---
 
 ## Why This Matters
-
-"It also records what your intellectual contribution to the effort is, because if AI is just generating these ideas and testing them all by itself and moving things forward, your intellectual contribution might be that you pressed the button. But you really need to know where you made those critical steps."
-
+What you bring to the process is an important thing to track. This is where
+the AI moves from being a prompt-driven engine for generating stuff to
+a scientific tool that enables exploration of gaps and what will and won't work
+for a specific scientific question.
 ---
 
 ## How to Use This File
@@ -151,7 +149,7 @@ Ask yourself at the end of each iteration:
 
 ## Remember
 
-AI excels at regression toward the mean—it gets you quickly to the frontier of what's known. But identifying genuine gaps and making innovative connections requires human insight. That's what you're tracking here.
-
-"Those are the really tricky places to find. I feel like what AI allows you to do is move very quickly to that space."
-```
+AI excels at regression toward the mean. It may not be giving you anything really
+novel in the way of new gaps or innovation. However, it can move you quickly
+to the frontier of what's known. Identifying genuine gaps and making
+really innovative connections requires human insight. That's what you're tracking here.

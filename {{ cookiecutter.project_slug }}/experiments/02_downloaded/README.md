@@ -1,7 +1,5 @@
 # Downloaded Benchmark Data Experiments
 
-"Have Claude and the scripts download test data. It's got a really great library because lots and lots of people are doing this kind of thing from all these different disciplines."
-
 ## Purpose
 
 This phase provides:

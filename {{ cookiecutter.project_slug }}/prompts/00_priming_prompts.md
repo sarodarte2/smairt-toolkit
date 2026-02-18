@@ -42,7 +42,7 @@ Where does this approach work "within certain boundaries"?
 Where does it break down?
 What are logical next experiments?
 
-## Compile Context Promptca
+## Compile Context Prompts
 
 When context gets long:
 Please run scripts/compile_for_ai.py and I'll paste the output so you have full project context.

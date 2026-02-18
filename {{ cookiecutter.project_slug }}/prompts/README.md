@@ -10,8 +10,9 @@ AI prompts, session logs, and intellectual contribution tracking.
 
 ## Purpose
 
-"Record your prompts in a separate file—this provides a track record of all the things you've asked AI. It also records what your intellectual contribution to the effort is, because if AI is just generating these ideas and testing them all by itself and moving things forward, your intellectual contribution might be that you pressed the button. But you really need to know where you made those critical steps."
+Record your prompts in a separate file—this provides a track record of all the things you've asked AI. It also records what your intellectual contribution to the effort is.
 
 ## Priming Prompts
 
-"You could make this even better by developing an input set of prompts that will be in the background. It will prime your AI thread to just do these things."
+AI_CONTEXT.md and CODE_CONVENTIONS.md provide prompts for the AI behavior
+during the session.

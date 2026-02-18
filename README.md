@@ -162,8 +162,6 @@ what worked, what failed, and lead to the next steps.
 
 SMAIRT includes a dedicated file for tracking where YOU made critical insights vs. where AI generated ideas.
 
-"If AI is just generating these ideas and testing them all by itself and moving things forward, your intellectual contribution might be that you pressed the button. But you really need to know where you made those critical steps."
-
 ### AI Context Files
 
 The template includes files specifically designed to prime your AI to understand the SMAIRT workflow:

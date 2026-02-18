@@ -4,7 +4,9 @@ Track all hypotheses tested throughout the project.
 
 ## The 4-Part Structure
 
-"And then it provides a hypothesis—that could be in a separate file, could be at the end of the background."
+The hypothesis is the logical question that is being tested at
+this iteration of the process. They can be tracked here or can
+be combined at the end of the Background sections.
 
 ## Files
 

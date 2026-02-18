@@ -4,7 +4,8 @@ This folder contains the research question, literature context, and prior result
 
 ## The 4-Part Structure
 
-"It records the background—that includes the question that went into prompting it, the background of what has been done on that area, what's known about that question from its dive into the literature. And then it sets up a hypothesis—though the background would also necessarily include a summary of the previous results, the thread of results that have come up to this point."
+Background should include the question that went into this iteration, the background of what has been done on the area, what's known about the question. This should also include the hypothesis,
+what question is being asked by this round of the
 
 ## Files
 
@@ -13,6 +14,10 @@ This folder contains the research question, literature context, and prior result
 
 ## Note on Literature
 
-"Claude and a lot of the LLMs that we have access to can't do a deep dive on the literature. We may actually want to be suspicious about what they can bring us from the literature because they're kind of limited in that way."
+AI often won't have good access to literature, and may be able to provide
+very general statements about where and how something has been tried before.
+This can include both false negatives - the AI says something hasn't been done
+before when it actually has been - and false positives - the AI says that
+something has been done when it hasn't. It might be very confident about that BTW.
 
 Verify important literature claims independently.

@@ -2,8 +2,6 @@
 
 Record all prompts and key responses here.
 
-"Record your prompts in a separate file—this provides a track record of all the things you've asked AI, and maybe you also keep the answers there as well."
-
 ---
 
 ## How to Use This File
@@ -116,8 +114,6 @@ From each session, capture:
 4. **Results** - What happened when you ran them
 5. **Your observations** - What you noticed, thought about, connected
 6. **Your critical steps** - Where YOU made the key intellectual contributions
-
-"With AI liner, I had a few different places where I made critical steps where it seemed like we were maybe at a dead end or we didn't have good ideas, and I suggested, for instance, we do the motif searching, the cross-studying attention, and comparing attention was kind of my idea as well."
 
 ---
 

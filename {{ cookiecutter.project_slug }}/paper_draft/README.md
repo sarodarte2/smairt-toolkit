@@ -4,7 +4,9 @@ Parallel narrative and figure generation alongside experiments.
 
 ## Purpose
 
-"As a parallel thing to the structure—this 4-part structure that I've outlined—is maybe a set of text, a paragraph for each, a figure for the results section, maybe a schematic diagram or a diagram for the methods kind of showing what the workflow was."
+The workflow laid out by SMAIRT directly parallels the general structure of
+a scientific paper (because scientific method, that's why) so this folder is
+to hold the pieces that can be assembled into an eventual paper draft.
 
 ## Files
 
@@ -13,12 +15,14 @@ Parallel narrative and figure generation alongside experiments.
 
 ## Note
 
-"The problem is that there are lots of things tested and a final product is not going to have all of those together—it is going to be based on that. And maybe we want to make that available as part of the final paper."
+Not all portions, iterations, questions, results will end up in a final paper.
+However, anything that does end up there should come from these results. The
+question and results should be carefully curated into the final story.
 
 The final paper will select from and refine what's captured here.
 
 ## The Hierarchical Structure
 
-"The paper itself should be organized overall like this: we set up the background, we set up the gap, we set up the critical questions which are the gap, and then we set up the hypothesis."
-
-This same structure applies at the level of the whole paper AND at the level of each result section.
+The structure - Background, Hypothesis, Methods/Experiment, Results, Discussion -
+is the overall structure of the eventual paper, and also should be the  
+structure of each individual step in the process.

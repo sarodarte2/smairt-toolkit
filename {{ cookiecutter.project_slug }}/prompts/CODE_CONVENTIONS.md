@@ -1,6 +1,3 @@
-# {{ cookiecutter.project_slug }}/prompts/CODE_CONVENTIONS.md
-
-```markdown
 # Code Conventions for This Project
 
 When generating code for this project, follow these conventions.
@@ -32,8 +29,6 @@ Every script should:
 1. **Print to console** for immediate feedback
 2. **Write to log file** at `../../results/logs/script_XX_description_output.log`
 3. **Include a results comment block** at the end for pasting output
-
-"It should provide output on the command line but really it should provide an output log file that is named the same thing as the script. That way you have all the log files in one place and you have the scripts which are closely associated with that."
 
 ---
 
@@ -133,13 +128,19 @@ if __name__ == "__main__":
 
 ---
 
-## The Breadcrumb Trail
+### The Breadcrumb Trail
 
-"I took the output of that script and I pasted it in at the bottom of the end of the code and made it into comments. That's to provide a record for me so I can go back and say 'oh that's what the output was.' But almost more importantly it's to provide a record for AI."
+Output is pasted at the bottom of scripts as comments. This creates a breadcrumb trail so when you feed the repo back to AI, it can immediately see:
+- All the things you've tried
+- The different datasets you ran on
+- The algorithms you tried
+- The prompts that went into it
+- What the output was
 
-"You can then take your repo and feed it back in and Claude or whatever tool will immediately be able to say 'oh here are all the things we tried, here's the different datasets that we ran it on, here's the algorithms we tried, here's the prompts that went into it, and here's what the output was.' Now I can recreate the thought process through this whole thing and come out on the other end basically starting right up where you were."
-
-"It's a breadcrumb trail that allows you to get right back to where you started from—even if you start in a completely new thread, even if you give it to a new API."
+You can then use the helper script scripts/compile_for_ai.py to combine all the
+parts of this breadcrumb trail in to a single text file that can be used to
+prompt your AI helper of choice to bring it up to speed on what has been tried,
+what worked, what failed, and lead to the next steps.
 
 ---
 
@@ -233,6 +234,3 @@ Remember that each script is part of the 4-part structure:
 2. **Hypothesis** → stated in script docstring
 3. **Methods** → the script itself (code + data)
 4. **Results** → the output log + pasted output + interpretation
-
-"The methods are the actual code—the code and the data that's required to run to test this experiment. So the hypothesis, the methods are the experimental design and the methods to get there. And then the results—the results is the log file."
-```

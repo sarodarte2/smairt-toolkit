@@ -2,9 +2,16 @@
 
 Interpretation of results and future directions.
 
-## The 4-Part Structure
+### The 4-Part Structure
 
-"You have the hypothesis, the experiment, and the results, and then the interpretation."
+The template records **4 pieces of information in separate files**:
+
+1. **Background** - The question that went into prompting it, what has been done on that area, what's known about that question from the literature, and a summary of the previous results that have come up to this point
+2. **Hypothesis** - Could be in a separate file or at the end of the background
+3. **Methods** - The actual code and data required to test the hypothesis
+4. **Results + Interpretation** - The output logs plus analysis through the lens of the hypothesis
+
+The **future directions** from your analysis feed right back into the background for the next iteration.
 
 ## Files
 
@@ -18,4 +25,4 @@ Interpretation of results and future directions.
 3. What secondary observations were made?
 4. What are the logical next steps?
 
-"The future directions lead right back into that background section."
+Next steps (#4) will often be used to seed the next round of experimentation.

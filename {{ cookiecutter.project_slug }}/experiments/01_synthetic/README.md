@@ -1,6 +1,9 @@
 # Synthetic Data Experiments
 
-"Synthetic data is going to be very easy to do in this cycle just because you are not dependent on large datasets. You can kind of get an idea of what might work and what might not just from the code itself. You're not dependent on outside sources and you can iterate in this tight loop."
+Some questions (not all) might be amenable to experimentation with synthetic
+data. This is convenient, especially at the start of the process, because it
+makes the scripts self-contained and the data can be synthesized with different
+noise levels, and with different types of structures.
 
 ## Purpose
 

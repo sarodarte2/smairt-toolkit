@@ -1,6 +1,3 @@
-# {{ cookiecutter.project_slug }}/README.md
-
-```markdown
 # {{ cookiecutter.project_name }}
 
 {{ cookiecutter.description }}
@@ -136,4 +133,3 @@ The final scientific product won't have all experiments together—it will be ba
 ## License
 
 {{ cookiecutter.license }}
-```
