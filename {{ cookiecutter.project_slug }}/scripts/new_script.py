@@ -5,10 +5,6 @@ new_script.py
 Creates a new numbered script with the standard SMAIRT template.
 Auto-detects the next script number based on existing scripts.
 
-"I kept individual scripts they were numbered for each round that I did."
-
-"It should provide output on the command line but really it should provide
-an output log file that is named the same thing as the script."
 """
 
 import os

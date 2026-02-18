@@ -5,16 +5,11 @@ compile_for_ai.py
 Compiles the current project state into a single document that can be
 pasted into a new AI session.
 
-"You can then take your repo and feed it back in and Claude or whatever
-tool will immediately be able to say 'oh here are all the things we tried,
-here's the different datasets that we ran it on, here's the algorithms we
-tried, here's the prompts that went into it, and here's what the output was.'
-Now I can recreate the thought process through this whole thing and come out
-on the other end basically starting right up where you were."
-
-"It's a breadcrumb trail that allows you to get right back to where you
-started from—even if you start in a completely new thread, even if you
-give it to a new API."
+This is an essential part of the SMAIRT workflow - leaving a 'breadcrumb' trail
+that allows you to A) track what you have done and keep a record of those
+steps, results, and interpretation as you go along, B) provide a record that
+can be used to feed back in to an AI to bring it up to speed on what was done,
+for what reason, and what the results were.
 """
 
 import os

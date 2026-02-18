@@ -10,9 +10,11 @@ Utility scripts to support the SMAIRT workflow.
 
 Compiles the current project state into a single document that can be pasted into a new AI session.
 
-"You can then take your repo and feed it back in and Claude or whatever tool will immediately be able to say 'oh here are all the things we tried, here's the different datasets that we ran it on, here's the algorithms we tried, here's the prompts that went into it, and here's what the output was.' Now I can recreate the thought process through this whole thing and come out on the other end basically starting right up where you were."
-
-"It's a breadcrumb trail that allows you to get right back to where you started from—even if you start in a completely new thread, even if you give it to a new API."
+This is an essential part of the SMAIRT workflow - leaving a 'breadcrumb' trail
+that allows you to A) track what you have done and keep a record of those
+steps, results, and interpretation as you go along, B) provide a record that
+can be used to feed back in to an AI to bring it up to speed on what was done,
+for what reason, and what the results were.
 
 **Usage:**
 ```bash
@@ -28,10 +30,6 @@ python scripts/compile_for_ai.py
 ### new_script.py
 
 Creates a new numbered script with the standard SMAIRT template. Auto-detects the next script number based on existing scripts.
-
-"I kept individual scripts—they were numbered for each round that I did."
-
-"It should provide output on the command line but really it should provide an output log file that is named the same thing as the script. That way you have all the log files in one place and you have the scripts which are closely associated with that."
 
 **Usage:**
 ```bash
@@ -309,8 +307,11 @@ Follow the SMAIRT code conventions in prompts/CODE_CONVENTIONS.md
 
 ## The Template System
 
-"I'm thinking of this as like a GitHub template that has a bunch of AI prompts, it has a structure, and it has some examples. The template is the structure—we provide code for logging, for the structure of the naming conventions, and for the prompts. We're going to structure things exactly like the scientific method and it's going to be an iterative process where we're going to record all of these things."
-
+The SMAIRT template system is set up on the idea of iterating through
+an overall driving question with a series of iterations that are all based
+on the scientific method. It is set up for rapidly exploring the feasibility
+of an idea, to test the straightforward ideas and capture results to understand
+where the real frontiers are and identify gaps that require innovation.
 ---
 
 ## The 4 Pieces of Information
@@ -325,8 +326,6 @@ The SMAIRT system records 4 different pieces of information in separate files:
 
 4. **Results + Interpretation** - The log file output plus interpretation through the lens of the hypothesis
 
-"You have the hypothesis, the experiment, and the results, and then the interpretation—that is an excellent idea."
-
 ---
 
 ## Why Generate Scripts On Demand?
@@ -337,5 +336,3 @@ Rather than including all possible helper scripts, SMAIRT provides prompts to ge
 2. **Allows customization** - Scripts are tailored to your specific project
 3. **Follows SMAIRT philosophy** - Use AI as a tool to generate code in context
 4. **Avoids maintenance burden** - No need to update scripts you don't use
-
-"If there's any way that you can test some of these ideas on smaller datasets, on subsets of the whole dataset that you can just take and break off, or on synthetic data or existing datasets—I think that's the way to go for this quick turnaround thing."
