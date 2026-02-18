@@ -1,6 +1,3 @@
-# README.md (for the SMAIRT cookiecutter template repository)
-
-```markdown
 # SMAIRT: Scientific Method with AI Research Template
 
 A cookiecutter template for AI-assisted computational research that follows the scientific method.
@@ -16,8 +13,6 @@ SMAIRT provides a structured framework for doing tightly integrated AI-assisted 
 - Tracks your **intellectual contributions** vs. AI-generated ideas
 - Progresses through **synthetic → downloaded → real data** phases
 - Records the **4-part structure**: Background, Hypothesis, Methods, Results
-
-"It's a breadcrumb trail that allows you to get right back to where you started from—even if you start in a completely new thread, even if you give it to a new API."
 
 ---
 
@@ -45,7 +40,9 @@ You'll be prompted for:
 
 ### AI's Role
 
-AI excels at regression toward the mean—it can get you quickly to the frontier of what's already known. It helps you:
+AI excels at regression toward the mean so it can't really innovate in a
+meaningful way. But it *can* help you get quickly to the frontier of what's
+already known. It helps you:
 - Understand very quickly what is working and what isn't
 - Suggest approaches that have been tried before
 - Iterate through hypothesis-experiment-results-interpretation loops
@@ -58,8 +55,6 @@ The human contribution remains essential for:
 - Identifying truly novel questions
 - Recognizing where AI suggestions fall short
 - Seeing the gaps that represent real opportunities
-
-"It will suggest things that I don't know about, but my feeling is that it doesn't make connections and suggest things that might be very innovative—but I can do that. So much faster because this is basically probing the frontiers."
 
 ---
 
@@ -78,11 +73,11 @@ Background → Hypothesis → Methods/Code → Results → Analysis → Future D
 The template records **4 pieces of information in separate files**:
 
 1. **Background** - The question, what's known from literature, summary of previous results
-2. **Hypothesis** - What you're testing (could be at end of background)
+2. **Hypothesis** - What is the question you're testing
 3. **Methods** - The actual code and data required to test the hypothesis
 4. **Results + Interpretation** - The output logs plus analysis through the lens of the hypothesis
 
-Future directions from your analysis feed right back into the background for the next iteration.
+Future directions from your analysis feed right back into the **Background** for the next iteration.
 
 ### Data Progression
 
@@ -90,7 +85,9 @@ Future directions from your analysis feed right back into the background for the
 2. **Downloaded benchmark data** - Diversity, validation, robustness
 3. **Real data** - Full test of approach
 
-"Synthetic data is really useful—it's very easy to do because you're not dependent on large datasets. You can get an idea of what might work and what might not just from the code itself."
+Some questions will be amenable to starting out with tests on synthetic data
+to address the most basic questions, they can then move to downloaded publicly
+available datasets, and finally to your real data.
 
 ---
 
@@ -156,13 +153,16 @@ Output is pasted at the bottom of scripts as comments. This creates a breadcrumb
 - The prompts that went into it
 - What the output was
 
-"You can then take your repo and feed it back in and Claude or whatever tool will immediately be able to recreate the thought process through this whole thing and come out on the other end basically starting right up where you were."
+You can then use the helper script scripts/compile_for_ai.py to combine all the
+parts of this breadcrumb trail in to a single text file that can be used to
+prompt your AI helper of choice to bring it up to speed on what has been tried,
+what worked, what failed, and lead to the next steps.
 
 ### Intellectual Contribution Tracking
 
-"If AI is just generating these ideas and testing them all by itself and moving things forward, your intellectual contribution might be that you pressed the button. But you really need to know where you made those critical steps."
-
 SMAIRT includes a dedicated file for tracking where YOU made critical insights vs. where AI generated ideas.
+
+"If AI is just generating these ideas and testing them all by itself and moving things forward, your intellectual contribution might be that you pressed the button. But you really need to know where you made those critical steps."
 
 ### AI Context Files
 
@@ -258,12 +258,18 @@ When generating a project, you'll be prompted for:
 
 ## The Hard Problem of Science
 
-"That is the hardest thing to do with science—how do you identify the questions that are really relevant and useful? How do you identify those gaps that are real gaps that haven't been addressed by someone before?"
+One of the drivers for SMAIRT is that a very hard problem in science is
+identifying the questions that are really cutting edge, that would provide
+useful answers, and that are addressable using the data and tools available.
 
-"It is a little bit easier to find the questions that have been asked than to find the places where you're asking a question that sounds novel but it's actually either doesn't need to be asked, or it is a very hidden variant of a question that has already been answered and may have very good answers in other domains or even in the same domain just with different language."
+SMAIRT is a great method for exploring a question to answer those points
+and rapidly identify the most interesting research directions. AI can enable
+you to very quickly explore that space and find potential frontiers and gaps
+that are worthy of further research and innovation.
 
-"I feel like what AI allows you to do is move very quickly to that space."
-
+The SMAIRT framework is set up to provide a reasonable tracking method using
+the scientific method, that will provide a reproducible (-ish, depending on AI
+output) process for scientific discovery.
 ---
 
 ## Contributing
@@ -281,6 +287,3 @@ This template is released under the MIT License. Projects generated from this te
 ## Acknowledgments
 
 SMAIRT was developed based on practical experience doing AI-assisted computational research, with the goal of creating a structured approach that captures the benefits of AI collaboration while maintaining clear documentation of human intellectual contributions.
-
-"I don't know that I have the best practices. But I have a way that works pretty well."
-```
