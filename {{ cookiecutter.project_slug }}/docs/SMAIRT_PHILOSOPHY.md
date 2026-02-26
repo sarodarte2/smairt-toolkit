@@ -2,9 +2,12 @@
 
 ## Core Insight
 
-**AI excels at regression toward the mean**— but it can get you a long way
-toward the things we already know or the approaches we've already tried.
-It moves you quickly to the frontier of what's known.
+**AI excels at regression toward the mean**— it can't really innovate
+by itself. However, it can get you a long way
+toward the things we already know and explore approaches that have been
+tried in similar situations previously.
+Therefore it's a great vehicle to move you quickly to the frontier of
+what's known where you can then really innovate.
 
 **The human contribution remains essential** for:
 - Making innovative connections

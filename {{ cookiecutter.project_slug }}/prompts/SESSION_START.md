@@ -34,7 +34,9 @@ For all code you generate:
 2. Output to both console AND a log file in results/logs/
 3. Include a comment block at the end for pasting results
 
-We're starting with synthetic data for fast iteration.
+If I'm starting with real data you should prompt me about that data.
+If I have code that I've written that would be useful you
+should ask me about that.
 
 Please help me:
 1. Refine the research question

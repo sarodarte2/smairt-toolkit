@@ -1,6 +1,3 @@
-# {{ cookiecutter.project_slug }}/docs/12_STEPS.md
-
-```markdown
 # The 12 Steps of SMAIRT
 
 ## Overview
@@ -211,4 +208,3 @@ AI allows you to move very quickly to the frontier. It's easier to find the ques
 - Is a hidden variant of a question already answered (perhaps in another domain or with different language)
 
 Those are the really tricky places to find. AI lets you get there faster so you can see where the real gaps are.
-```
