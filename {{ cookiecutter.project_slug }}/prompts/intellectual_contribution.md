@@ -19,8 +19,6 @@ For each iteration, document:
 3. Where YOU made critical insights—especially at dead ends or turning points
 4. Key decisions you made that shaped the direction of the project
 
-"With AI liner, I had a few different places where I made critical steps where it seemed like we were maybe at a dead end or we didn't have good ideas, and I suggested, for instance, we do the motif searching, the cross-studying attention, and comparing attention was kind of my idea as well."
-
 ---
 
 ## Iteration 1 - [DATE]
