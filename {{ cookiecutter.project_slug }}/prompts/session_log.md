@@ -120,6 +120,6 @@ From each session, capture:
 ## Tips
 
 - **Don't edit your prompts after the fact** - Keep them as you actually wrote them
-- **Note what worked "within certain boundaries"** - Document where approaches work and where they break down
-- **Record when things stop working** - They work within certain boundaries and then they stop working where they don't work for real data, or they are not robust to noise, or they are limited
+- **Note what worked within certain boundaries** - Document where approaches work and where they break down
+- **Record when things stop working** - Approaches often work within certain boundaries but fail with real data, are not robust to noise, or have other limitations
 - **Feed this file back to AI** - When starting a new session, include this log so AI can recreate context

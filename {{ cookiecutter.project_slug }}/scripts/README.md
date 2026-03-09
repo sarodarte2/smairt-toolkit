@@ -163,7 +163,7 @@ Please create a Python script called download_benchmark.py that:
 3. Creates a README in data/downloaded/ describing each dataset
 4. Prints basic statistics about the downloaded data
 
-"Have Claude and the scripts download test data—it's got a really great library because lots of people are doing this kind of thing from different disciplines. It gives you diversity—easy data, hard data, messy experimental data, cleaner data like Iris. For fundamental algorithm development, it makes sense to have datasets from different disciplines to show it's robust."
+Using AI to help download benchmark datasets provides access to a wide variety of well-documented data from different disciplines. This gives you diversity—easy data, hard data, messy experimental data, and cleaner data like Iris. For fundamental algorithm development, testing across datasets from different disciplines demonstrates robustness.
 
 Follow the SMAIRT code conventions in prompts/CODE_CONVENTIONS.md
 ```
@@ -188,7 +188,7 @@ Please create a Python script called generate_synthetic.py that:
 4. Creates a README describing the synthetic data parameters
 5. Prints summary statistics
 
-"Synthetic data is really useful—it's very easy to do in this cycle because you're not dependent on large datasets. You can get an idea of what might work and what might not just from the code itself. You're not dependent on outside sources and you can iterate in this tight loop."
+Synthetic data enables fast iteration without external dependencies. You can quickly test whether an approach might work based on the code itself, iterating in a tight loop before committing to larger datasets.
 
 Follow the SMAIRT code conventions in prompts/CODE_CONVENTIONS.md
 ```
@@ -240,7 +240,7 @@ Please create a Python script called log_intellectual_contribution.py that:
 
 2. Appends a properly formatted entry to prompts/intellectual_contribution.md
 
-"It records what your intellectual contribution to the effort is, because if AI is just generating these ideas and testing them all by itself and moving things forward, your intellectual contribution might be that you pressed the button. But you really need to know where you made those critical steps."
+This script helps you track your intellectual contributions to the research. If AI generates ideas and tests them autonomously, your contribution might be minimal. Recording where you made critical decisions, provided novel insights, or pushed past dead ends ensures you understand your genuine contributions to the work.
 
 Follow the SMAIRT code conventions in prompts/CODE_CONVENTIONS.md
 ```

@@ -38,7 +38,7 @@ Results from script_XX:
 Interpret through the lens of the hypothesis: [State hypothesis]
 
 Does this support or refute the hypothesis?
-Where does this approach work "within certain boundaries"?
+Where does this approach work, and within what boundaries?
 Where does it break down?
 What are logical next experiments?
 

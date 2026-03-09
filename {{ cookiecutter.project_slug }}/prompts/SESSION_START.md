@@ -209,5 +209,5 @@ Reminder - SMAIRT conventions:
 4. **Track your intellectual contributions** - Note when YOU make critical suggestions vs. AI
 5. **Document dead ends** - These are valuable for future sessions
 
-"It's a breadcrumb trail that allows you to get right back to where you started from—even if you start in a completely new thread, even if you give it to a new API."
+The documentation you create serves as a breadcrumb trail, allowing you to return to your current state even when starting a completely new thread or switching to a different AI tool.
 ```

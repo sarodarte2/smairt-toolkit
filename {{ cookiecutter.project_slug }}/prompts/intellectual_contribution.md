@@ -123,13 +123,13 @@ For each iteration, document:
 
 ### Interpretive Contributions
 - Seeing implications AI missed
-- Recognizing when results "don't feel right"
+- Recognizing when results seem inconsistent or unexpected
 - Connecting results to broader context
 
 ### Critical Judgment
 - Knowing when an approach isn't working
 - Recognizing limitations of AI suggestions
-- Deciding what's "good enough" vs. needs more work
+- Deciding what is sufficient vs. what needs more work
 
 ---
 
@@ -141,7 +141,7 @@ Ask yourself at the end of each iteration:
 2. Did I recognize a dead end before AI did?
 3. What connections did I make between domains or ideas?
 4. Where did I exercise judgment about what to pursue?
-5. What would have happened if I had just "pressed the button"?
+5. What would have happened if I had simply accepted AI suggestions without critical evaluation?
 
 ---
 

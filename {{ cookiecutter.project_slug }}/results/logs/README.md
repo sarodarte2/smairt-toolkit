@@ -10,7 +10,7 @@ script_02_add_noise_output.log
 
 
 
-"It should provide output on the command line but really it should provide an output log file that is named the same thing as the script. That way you have all the log files in one place and you have the scripts which are closely associated with that."
+Scripts should output to both the command line and a log file with a matching name. This keeps all log files in one place, closely associated with their corresponding scripts.
 
 ## Purpose
 

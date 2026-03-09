@@ -4,7 +4,7 @@ Store generated figures and visualizations here.
 
 ## Purpose
 
-"As a parallel thing to the structure—this 4-part structure—is maybe a set of text, a paragraph for each, a figure for the results section, maybe a schematic diagram for the methods showing what the workflow was."
+Alongside the 4-part structure (Background, Hypothesis, Methods, Results), maintain visual artifacts: a figure for the results section and possibly a schematic diagram for the methods showing the workflow.
 
 ## Naming Convention
 
@@ -15,4 +15,4 @@ iteration_03_comparison.png
 
 ## Note
 
-"There are lots of things tested and a final product is not going to have all of those together—it is going to be based on that. And maybe we want to make that available as part of the final paper."
+Not all figures generated during experimentation will appear in the final product. The final paper will be based on selected results, though you may want to make supplementary figures available alongside the publication.

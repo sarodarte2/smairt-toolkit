@@ -88,7 +88,7 @@ At the bottom of each script, paste the output as comments:
 # Notes: Works well with synthetic, need to test noise
 ```
 
-This provides a record for you so you can go back and say "oh that's what the output was." But almost more importantly, it provides a record for AI.
+This provides a record for you to reference later. More importantly, it provides a record for AI to understand your experimental history.
 
 The point of this process is to provide the AI with a list of:
 - Here are all the things we tried

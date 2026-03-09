@@ -40,10 +40,10 @@ Background → Hypothesis → Methods/Code → Results → Analysis → Future D
 ## The Data Progression
 
 1. **Synthetic data first** - Fast iteration, no dependencies
-   - "Synthetic data is going to be very easy to do in this cycle just because you are not dependent on large datasets. You can kind of get an idea of what might work and what might not just from the code itself."
+   - Synthetic data enables rapid iteration without external dependencies. You can quickly assess what might work based on the code itself.
 
 2. **Downloaded benchmark data second** - Diversity, validation, robustness
-   - "Have Claude and the scripts download test data. It's got a really great library because lots and lots of people are doing this kind of thing from all these different disciplines."
+   - Benchmark datasets provide access to well-documented data from many disciplines, offering diversity for validation and robustness testing.
 
 3. **Real data third** - Full test of approach
 
@@ -61,7 +61,7 @@ Background → Hypothesis → Methods/Code → Results → Analysis → Future D
 ### When Interpreting Results
 
 1. Evaluate through the lens of the current hypothesis
-2. Identify where approaches work "within certain boundaries" and where they break
+2. Identify where approaches work within certain boundaries and where they break down
 3. Suggest logical next experiments
 4. Note limitations and caveats
 

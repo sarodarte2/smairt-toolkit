@@ -117,7 +117,7 @@ if __name__ == "__main__":
 === INTERPRETATION ===
 [Add your interpretation of the results]
 [Did this support or refute the hypothesis?]
-[Where did the approach work "within certain boundaries"?]
+[Where did the approach work, and within what boundaries?]
 [Where did it break down?]
 
 === NEXT STEPS ===
@@ -221,7 +221,7 @@ When results show limited success, document where and why:
 # - Works on synthetic data up to X% accuracy
 # - Breaks down when noise > Y%
 # - Not robust to Z
-# - "They work within certain boundaries and then they stop working"
+# - Works within certain boundaries but breaks down under specific conditions
 ```
 
 ---

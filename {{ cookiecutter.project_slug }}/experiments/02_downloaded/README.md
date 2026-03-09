@@ -8,7 +8,7 @@ This phase provides:
 - A nice range of things to test on
 - Validation that your approach is robust across different datasets
 
-"For fundamental algorithm development, it really makes sense to have datasets from different disciplines. And that way it shows that it's robust over these different datasets."
+For fundamental algorithm development, testing across datasets from different disciplines demonstrates robustness and generalizability.
 
 ## Scripts in This Folder
 
