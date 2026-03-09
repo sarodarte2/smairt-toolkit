@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to SMAIRT! This document provides guidelines for contributing to the project.
 
+Note that if you want to *use* the SMAIRT template for your own project please see the main README.
+
 ## Ways to Contribute
 
 ### Reporting Issues
