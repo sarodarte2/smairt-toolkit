@@ -1,7 +1,9 @@
 # Mac-specific
 .DS_Store
 
-.git*
+# Git-related (but allow .github directory)
+.gitattributes
+!.github/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
