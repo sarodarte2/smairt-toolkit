@@ -16,6 +16,13 @@ SMAIRT provides a structured framework for doing tightly integrated AI-assisted 
 
 ---
 
+## Tutorials
+
+- **[Quick Start Guide](QUICKSTART.md)** - Get up and running in 5 minutes
+- **[Complete Tutorial](TUTORIAL.md)** - Full walkthrough with a worked example
+
+---
+
 ## Quick Start
 
 ```bash
