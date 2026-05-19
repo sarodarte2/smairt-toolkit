@@ -16,10 +16,33 @@ SMAIRT provides a structured framework for doing tightly integrated AI-assisted 
 
 ---
 
+## Project Modes
+
+SMAIRT supports two project modes:
+
+### Standard Mode (default)
+For hypothesis-driven research following the traditional scientific method:
+- Synthetic data → Downloaded/Benchmark data → Real data progression
+- Best for: Method development, algorithm validation, exploratory research
+
+### Paper-Driven Mode
+For research starting with a paper outline and real datasets:
+- Paper outline + Real data → Analysis plan → Iterative execution
+- Best for: Transforming existing work into papers, multi-dataset studies, application papers
+
+To create a paper-driven project:
+```bash
+cookiecutter gh:yourusername/smairt-template
+# Select "paper_driven" when prompted for project_mode
+```
+
+---
+
 ## Tutorials
 
 - **[Quick Start Guide](QUICKSTART.md)** - Get up and running in 5 minutes
-- **[Complete Tutorial](TUTORIAL.md)** - Full walkthrough with a worked example
+- **[Complete Tutorial](TUTORIAL.md)** - Full walkthrough with a worked example (Standard Mode)
+- **[Paper-Driven Tutorial](TUTORIAL_PAPER_DRIVEN.md)** - Guide for paper-driven projects
 
 ---
 
@@ -252,12 +275,24 @@ When generating a project, you'll be prompted for:
 | `author_name` | Your name |
 | `author_email` | Your email |
 | `description` | Brief project description |
+| `project_mode` | **standard** (default) or **paper_driven** |
 | `initial_research_question` | The main question you're trying to answer |
 | `domain` | computational_biology, machine_learning, data_science, physics, chemistry, other |
 | `ai_tool` | claude, chatgpt, copilot, other |
 | `include_example` | Include example files (yes/no) |
 | `license` | MIT, BSD-3-Clause, Apache-2.0, GPL-3.0, proprietary |
 | `create_git_repo` | Initialize a git repository (yes/no) |
+
+### Mode Comparison
+
+| Aspect | Standard Mode | Paper-Driven Mode |
+|--------|---------------|-------------------|
+| Starting point | Hypothesis | Paper outline + data |
+| Data progression | Synthetic → Benchmark → Real | All real data |
+| Directory structure | By data type | By paper section |
+| Iteration focus | Method refinement | Parameter tuning |
+| Final output | Validated method | Paper-ready results |
+| Best for | Method development | Writing papers |
 
 ---
 

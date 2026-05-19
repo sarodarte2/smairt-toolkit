@@ -27,23 +27,14 @@ def init_git_repo():
         # Git not installed
         return False
 
-def main():
-    """Main post-generation hook."""
-
-    # Initialize git repo if requested
-    if "{{ cookiecutter.create_git_repo }}" == "yes":
-        if init_git_repo():
-            print("✓ Git repository initialized")
-        else:
-            print("✗ Could not initialize git repository (is git installed?)")
-
-    # Print success message and next steps
+def print_standard_mode_message():
+    """Print success message for standard mode."""
     print("""
 ╔═══════════════════════════════════════════════════════════════════════╗
 ║                                                                       ║
 ║   🧪 SMAIRT Project Created Successfully! 🧪                          ║
 ║                                                                       ║
-║   Scientific Method with AI Research Template                         ║
+║   Scientific Method with AI Research Template - STANDARD MODE         ║
 ║                                                                       ║
 ║   "It's a breadcrumb trail that allows you to get right back to       ║
 ║   where you started from—even if you start in a completely new        ║
@@ -97,6 +88,87 @@ def main():
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 """)
+
+
+def print_paper_driven_mode_message():
+    """Print success message for paper-driven mode."""
+    print("""
+╔═══════════════════════════════════════════════════════════════════════╗
+║                                                                       ║
+║   📄 SMAIRT Project Created Successfully! 📄                          ║
+║                                                                       ║
+║   Scientific Method with AI Research Template - PAPER-DRIVEN MODE     ║
+║                                                                       ║
+║   For research starting with a paper outline and real datasets.       ║
+║                                                                       ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║                                                                       ║
+║   Next steps:                                                         ║
+║                                                                       ║
+║   1. Add your paper outline:                                          ║
+║      paper/outline.md                                                 ║
+║                                                                       ║
+║   2. Add your datasets:                                               ║
+║      data/                                                            ║
+║                                                                       ║
+║   3. Review/update the analysis plan:                                 ║
+║      analysis/ANALYSIS_PLAN.md                                        ║
+║                                                                       ║
+║   4. Start your AI session with:                                      ║
+║      prompts/InitialPrompt_paper_driven.md                            ║
+║                                                                       ║
+║   5. Create your first analysis:                                      ║
+║      python scripts/new_experiment.py --section 01 --name my_analysis ║
+║                                                                       ║
+║   6. Track iterations:                                                ║
+║      python scripts/new_iteration.py --analysis 01_*/01_* --iter 02   ║
+║                                                                       ║
+║   7. Finalize results:                                                ║
+║      python scripts/finalize_iteration.py --analysis ... --iter 02    ║
+║                                                                       ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║                                                                       ║
+║   Paper-Driven Workflow:                                              ║
+║                                                                       ║
+║   Paper outline + Data → Analysis plan → Iterative execution → Paper  ║
+║                                                                       ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║                                                                       ║
+║   Key Files:                                                          ║
+║                                                                       ║
+║   - paper/outline.md         - Your paper structure                   ║
+║   - analysis/ANALYSIS_PLAN.md - Maps analyses to paper sections       ║
+║   - analysis/BREADCRUMB_TRAIL.md - Running log of all work            ║
+║   - FINAL_MANIFEST.md        - Maps final results to paper            ║
+║                                                                       ║
+╠═══════════════════════════════════════════════════════════════════════╣
+║                                                                       ║
+║   Iteration Tracking:                                                 ║
+║                                                                       ║
+║   Each analysis has: iter_01/, iter_02/, ... → final/                 ║
+║   Decisions: ACCEPT (use for paper) / REVISE / ABANDON                ║
+║                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════╝
+""")
+
+
+def main():
+    """Main post-generation hook."""
+
+    # Initialize git repo if requested
+    if "{{ cookiecutter.create_git_repo }}" == "yes":
+        if init_git_repo():
+            print("✓ Git repository initialized")
+        else:
+            print("✗ Could not initialize git repository (is git installed?)")
+
+    # Print success message based on mode
+    project_mode = "{{ cookiecutter.project_mode }}"
+    
+    if project_mode == "paper_driven":
+        print_paper_driven_mode_message()
+    else:
+        print_standard_mode_message()
 
 if __name__ == "__main__":
     main()

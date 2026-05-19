@@ -4,6 +4,7 @@
     "author_name": "Your Name",
     "author_email": "your.email@example.com",
     "description": "A brief description of your research question",
+    "project_mode": ["standard", "paper_driven"],
     "initial_research_question": "What is the main question you are trying to answer?",
     "domain": ["computational_biology", "machine_learning", "data_science", "physics", "chemistry", "other"],
     "ai_tool": ["claude", "chatgpt", "other"],

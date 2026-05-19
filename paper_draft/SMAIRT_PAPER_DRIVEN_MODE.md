@@ -18,7 +18,7 @@ The Paper-Driven mode helps researchers who:
 3. Need to develop a comprehensive analysis plan
 4. Want to maintain SMAIRT's reproducibility and iteration tracking benefits
 
-This mode was developed based on the VaLPAS paper project, where we transformed an application note into a full research paper using real multi-omics data from multiple organisms.
+This mode was developed to support researchers who need to transform existing work, preliminary analyses, or application notes into full research papers.
 
 ---
 
@@ -67,7 +67,7 @@ The paper-driven mode uses a different directory structure. Use Jinja2 condition
 │
 ├── data/
 │   ├── README.md               # Data documentation
-│   └── {organism_or_dataset}/  # Organized by data source
+│   └── {dataset_name}/         # Organized by data source or category
 │
 ├── analysis/
 │   ├── ANALYSIS_PLAN.md        # Comprehensive analysis plan
@@ -97,10 +97,9 @@ The paper-driven mode uses a different directory structure. Use Jinja2 condition
 │   └── XX_figures/             # Final publication figures
 │
 ├── lib/                        # Shared library
-│   ├── evaluation/             # Standardized evaluation
-│   ├── data_sources/           # External data APIs
-│   ├── annotations/            # ID mapping, configs
-│   ├── comparison/             # Comparison with existing tools
+│   ├── core/                   # Core utilities and helpers
+│   ├── io/                     # Data loading and saving
+│   ├── processing/             # Data processing functions
 │   └── visualization/          # Consistent plotting
 │
 ├── prompts/                    # AI prompts
@@ -215,10 +214,10 @@ When creating an analysis plan for a paper-driven project:
 
 ## Key Elements
 
-- **Multiple benchmark sets** where available (e.g., KEGG, STRING, GO)
-- **Multiple metrics** (PPV, TPR, F-score, enrichment, FDR, AUROC, AUPRC)
-- **Comparison with existing tools** where applicable
-- **Cross-dataset/organism comparisons** where applicable
+- **Multiple validation approaches** where available
+- **Multiple metrics** appropriate to your domain
+- **Comparison with existing methods** where applicable
+- **Cross-dataset comparisons** where applicable
 - **Default seed: 1024** for reproducibility
 ```
 
@@ -252,8 +251,8 @@ analysis_name/
 
 | Iter | Date | Description | Key Change | Metrics | Decision |
 |------|------|-------------|------------|---------|----------|
-| 01 | YYYY-MM-DD | Baseline | Initial params | PPV=0.42, F=0.35 | Revise |
-| 02 | YYYY-MM-DD | Tuned LR | lr: 0.001→0.0005 | PPV=0.51, F=0.44 | **ACCEPT** |
+| 01 | YYYY-MM-DD | Baseline | Initial params | metric_a=0.42, metric_b=0.35 | Revise |
+| 02 | YYYY-MM-DD | Tuned params | param: 0.001→0.0005 | metric_a=0.51, metric_b=0.44 | **ACCEPT** |
 
 ## Decision Criteria
 
@@ -296,7 +295,7 @@ YYYY-MM-DD
 Create a new experiment directory for paper-driven SMAIRT project.
 
 Usage:
-    python scripts/new_experiment.py --section 01 --name ecoli_autoencoder
+    python scripts/new_experiment.py --section 01 --name initial_analysis
 """
 
 import argparse
@@ -367,7 +366,7 @@ if __name__ == "__main__":
 Create a new iteration for an existing analysis.
 
 Usage:
-    python scripts/new_iteration.py --analysis 01_bacterial/01_ecoli --iteration 02
+    python scripts/new_iteration.py --analysis 01_results/01_analysis --iteration 02
 """
 
 import argparse
@@ -388,7 +387,7 @@ def create_iteration(analysis: str, iteration: str):
     
     # Copy previous iteration's script as starting point
     prev_iter = int(iteration) - 1
-    prev_script = base.parent / f"iter_{prev_iter:02d}" / f"run_analysis_{prev_iter:02d}.py"
+    prev_script = base.parent / f"iter_{int(iteration)-1:02d}" / f"run_analysis_{int(iteration)-1:02d}.py"
     if prev_script.exists():
         shutil.copy(prev_script, base / f"run_analysis_{iteration}.py")
         print(f"Copied previous script as starting point")
@@ -405,56 +404,59 @@ if __name__ == "__main__":
 
 ### 5. Shared Library Templates
 
-Create template files for the `lib/` directory:
+Create template files for the `lib/` directory. The specific modules you need will depend on your paper's domain. Here are some common patterns:
 
-#### `lib/evaluation/benchmark.py` Template
+#### `lib/core/utils.py` Template
 
 ```python
 """
-Standardized benchmarking interface for paper-driven SMAIRT projects.
+Core utilities for paper-driven SMAIRT projects.
 
-Supports multiple ground truth sources and reports all metrics.
+Add project-specific helper functions here.
 """
 
-from typing import List, Dict, Optional
-import pandas as pd
+from typing import Any, Dict, List, Optional
 from pathlib import Path
+import json
+import yaml
 
-def run_standard_benchmark(
-    associations_file: str,
-    organism: str,
-    output_dir: str,
-    thresholds: List[float] = None,
-    ground_truth_sources: List[str] = None
-) -> Dict:
+def load_config(config_path: str) -> Dict[str, Any]:
     """
-    Run standardized benchmark with multiple ground truth sources.
+    Load configuration from YAML or JSON file.
     
     Parameters:
     -----------
-    associations_file : str
-        Path to associations CSV
-    organism : str
-        Organism key for loading annotations
-    output_dir : str
-        Directory for output files
-    thresholds : List[float]
-        Thresholds to evaluate (default: [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99])
-    ground_truth_sources : List[str]
-        Ground truth sources (default: ["kegg_reactions"])
-        Options: "kegg_reactions", "kegg_modules", "kegg_pathways", "string", "go"
+    config_path : str
+        Path to configuration file
     
     Returns:
     --------
-    Dict with metrics_by_source and file_paths
+    Dict with configuration parameters
     """
-    if thresholds is None:
-        thresholds = [0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]
-    if ground_truth_sources is None:
-        ground_truth_sources = ["kegg_reactions"]
-    
-    # Implementation here
-    pass
+    path = Path(config_path)
+    with open(path) as f:
+        if path.suffix in ['.yaml', '.yml']:
+            return yaml.safe_load(f)
+        elif path.suffix == '.json':
+            return json.load(f)
+        else:
+            raise ValueError(f"Unsupported config format: {path.suffix}")
+
+def ensure_dir(path: str) -> Path:
+    """Create directory if it doesn't exist and return Path object."""
+    p = Path(path)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+def save_results(results: Dict, output_path: str, format: str = 'json'):
+    """Save results dictionary to file."""
+    path = Path(output_path)
+    ensure_dir(path.parent)
+    with open(path, 'w') as f:
+        if format == 'json':
+            json.dump(results, f, indent=2)
+        elif format == 'yaml':
+            yaml.dump(results, f)
 ```
 
 #### `lib/visualization/style.py` Template
@@ -462,11 +464,13 @@ def run_standard_benchmark(
 ```python
 """
 Consistent plot styling for paper-driven SMAIRT projects.
+
+Customize colors and styles for your specific paper.
 """
 
 import matplotlib.pyplot as plt
 
-# Color palette
+# Color palette - customize for your paper
 COLORS = {
     "primary": "#2ecc71",
     "secondary": "#3498db",
@@ -475,13 +479,12 @@ COLORS = {
     "quinary": "#f39c12",
 }
 
-METHOD_COLORS = {
-    "autoencoder": "#2ecc71",
-    "pearson": "#3498db",
-    "spearman": "#9b59b6",
-    "mutual_info": "#e74c3c",
-    "jaccard": "#f39c12",
-}
+# Add domain-specific color mappings as needed
+# Example:
+# CATEGORY_COLORS = {
+#     "category_a": "#2ecc71",
+#     "category_b": "#3498db",
+# }
 
 def setup_plot_style():
     """Set up matplotlib style for publication."""
@@ -491,6 +494,15 @@ def setup_plot_style():
     plt.rcParams['axes.labelsize'] = 12
     plt.rcParams['axes.titlesize'] = 14
     plt.rcParams['figure.dpi'] = 150
+
+def save_figure(fig, path: str, formats: list = None):
+    """Save figure in multiple formats for publication."""
+    if formats is None:
+        formats = ['png', 'pdf', 'svg']
+    from pathlib import Path
+    p = Path(path)
+    for fmt in formats:
+        fig.savefig(p.with_suffix(f'.{fmt}'), bbox_inches='tight', dpi=300)
 ```
 
 ### 6. Update README and Documentation
@@ -581,14 +593,14 @@ Here's how a researcher would use paper-driven mode:
 
 ---
 
-## Notes from VaLPAS Project
+## Lessons Learned
 
-The paper-driven mode was developed based on lessons learned from the VaLPAS paper project:
+Key principles that emerged from developing the paper-driven mode:
 
-1. **Multiple ground truths are essential** - Never rely on a single benchmark
-2. **Multiple metrics matter** - PPV alone is insufficient
-3. **Cross-dataset comparisons** - Map to common identifiers (e.g., KO) for comparison
-4. **Tool comparisons** - Include existing tools for context
-5. **Iteration tracking** - Separate scripts prevent confusion
+1. **Multiple validation approaches are essential** - Never rely on a single validation method
+2. **Multiple metrics matter** - A single metric rarely tells the whole story
+3. **Cross-dataset comparisons** - When possible, validate findings across different datasets
+4. **Method comparisons** - Include existing methods/baselines for context
+5. **Iteration tracking** - Separate scripts per iteration prevent confusion and enable reproducibility
 6. **Final manifest** - Critical for reproducibility and paper writing
 7. **AI-assisted timeline** - Days not weeks with good AI support

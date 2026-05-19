@@ -107,6 +107,7 @@ def print_pre_generation_summary():
     print(f"Project name:      {{ cookiecutter.project_name }}")
     print(f"Project slug:      {{ cookiecutter.project_slug }}")
     print(f"Author:            {{ cookiecutter.author_name }}")
+    print(f"Project mode:      {{ cookiecutter.project_mode }}")
     print(f"Domain:            {{ cookiecutter.domain }}")
     print(f"AI tool:           {{ cookiecutter.ai_tool }}")
     print(f"Create git repo:   {{ cookiecutter.create_git_repo }}")
@@ -132,16 +133,30 @@ def main():
     # If we get here, all critical checks passed
     print("✓ Pre-generation checks passed")
     print()
-    print("Generating SMAIRT project structure...")
-    print()
-    print("The template follows the scientific method in an iterative loop:")
-    print("  Background → Hypothesis → Methods → Results → Analysis → Future Directions")
-    print()
-    print("Data progression:")
-    print("  1. Synthetic data   - Fast iteration, no dependencies")
-    print("  2. Downloaded data  - Benchmark validation, robustness")
-    print("  3. Real data        - Full test of approach")
-    print()
+    
+    project_mode = "{{ cookiecutter.project_mode }}"
+    
+    if project_mode == "paper_driven":
+        print("Generating PAPER-DRIVEN SMAIRT project structure...")
+        print()
+        print("Paper-driven mode is for research starting with:")
+        print("  - A paper outline or structure")
+        print("  - Real datasets ready for analysis")
+        print()
+        print("Workflow:")
+        print("  Paper outline + Data → Analysis plan → Iterative execution → Paper")
+        print()
+    else:
+        print("Generating STANDARD SMAIRT project structure...")
+        print()
+        print("The template follows the scientific method in an iterative loop:")
+        print("  Background → Hypothesis → Methods → Results → Analysis → Future Directions")
+        print()
+        print("Data progression:")
+        print("  1. Synthetic data   - Fast iteration, no dependencies")
+        print("  2. Downloaded data  - Benchmark validation, robustness")
+        print("  3. Real data        - Full test of approach")
+        print()
 
 if __name__ == "__main__":
     main()
