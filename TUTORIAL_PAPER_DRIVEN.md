@@ -387,7 +387,7 @@ Ensure all paper elements are documented:
 
 Start each AI session with:
 ```
-Please read prompts/InitialPrompt_paper_driven.md and help me with my analysis.
+Please read prompts/InitialPrompt_paper_driven.md and prompts/KNOWN_PATTERNS.md and help me with my analysis.
 ```
 
 For iteration reviews:
@@ -400,6 +400,7 @@ Please read prompts/iteration_review_prompt.md and help me evaluate this iterati
 - Update `NOTES.md` after every iteration
 - Keep `ITERATION_LOG.md` current
 - Add entries to `BREADCRUMB_TRAIL.md` regularly
+- Update `prompts/KNOWN_PATTERNS.md` when you solve errors or create reusable code
 
 ### 3. Use Consistent Styling
 
@@ -480,9 +481,10 @@ your_project/
 
 ### Continuing Work
 1. Check `BREADCRUMB_TRAIL.md` for context
-2. Review `ANALYSIS_PLAN.md` for next steps
-3. Create new iteration or new analysis
-4. Update documentation
+2. Review `prompts/KNOWN_PATTERNS.md` for reusable patterns and errors to avoid
+3. Review `ANALYSIS_PLAN.md` for next steps
+4. Create new iteration or new analysis
+5. Update documentation (including KNOWN_PATTERNS.md)
 
 ### Preparing Submission
 1. Run `generate_manifest.py`

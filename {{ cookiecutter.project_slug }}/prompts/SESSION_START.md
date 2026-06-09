@@ -17,6 +17,7 @@ I'm starting a new research project called "{{ cookiecutter.project_name }}" usi
 Please read and understand these files:
 - `prompts/AI_CONTEXT.md` - Your role and the SMAIRT workflow
 - `prompts/CODE_CONVENTIONS.md` - How to format code output
+- `prompts/KNOWN_PATTERNS.md` - Reusable code patterns and common errors to avoid
 
 Research Question: {{ cookiecutter.initial_research_question }}
 
@@ -57,6 +58,7 @@ I'm continuing work on "{{ cookiecutter.project_name }}" - a SMAIRT project.
 Please review:
 - `prompts/AI_CONTEXT.md` - Your role and the workflow
 - `prompts/CODE_CONVENTIONS.md` - Code formatting conventions
+- `prompts/KNOWN_PATTERNS.md` - Reusable patterns and errors to avoid
 
 Current state:
 - **Iteration:** [X]
@@ -197,6 +199,8 @@ Reminder - SMAIRT conventions:
 - Include comment block at end for pasting results
 - Evaluate results through the lens of the hypothesis
 - Note where approaches work "within certain boundaries" and where they break
+- Check prompts/KNOWN_PATTERNS.md before writing code (reuse patterns, avoid known errors)
+- After resolving new errors, suggest adding them to KNOWN_PATTERNS.md
 ```
 
 ---

@@ -115,6 +115,33 @@ The human collaborator will verify important claims independently.
 
 ---
 
+## Known Patterns & Error Prevention
+
+Before generating code, **always check `prompts/KNOWN_PATTERNS.md`**. This file contains:
+
+1. **Reusable code patterns** — Working snippets for data loading, API calls, logging, etc.
+2. **Common errors & fixes** — Mistakes that have already been solved (don't repeat them)
+3. **Environment configuration** — Paths, package versions, platform-specific notes
+4. **Consistency rules** — Standards that must be followed across all scripts (seeds, DPI, formats)
+5. **Anti-patterns** — Approaches that were tried and failed
+
+### When Generating Code
+
+- **Reuse** patterns from `KNOWN_PATTERNS.md` rather than inventing new approaches
+- **Check** the common errors section before writing code that touches those areas
+- **Follow** the consistency rules table for seeds, formats, and conventions
+- **Avoid** anything listed in the anti-patterns section
+
+### When Errors Occur
+
+If a new error is encountered and resolved, suggest adding it to `KNOWN_PATTERNS.md` with:
+- The exact error message
+- The root cause
+- The fix
+- How to prevent it in future scripts
+
+---
+
 ## The Goal
 
 AI excels at regression toward the mean so it can't really innovate in a

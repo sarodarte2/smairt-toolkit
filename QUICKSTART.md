@@ -38,10 +38,11 @@ This creates a new directory with your project structure.
 
 ## Step 3: Prime Your AI
 
-Open your AI assistant and paste the contents of these two files:
+Open your AI assistant and paste the contents of these three files:
 
 1. `prompts/AI_CONTEXT.md` - Explains the SMAIRT framework to AI
 2. `prompts/CODE_CONVENTIONS.md` - How AI should format code
+3. `prompts/KNOWN_PATTERNS.md` - Reusable code patterns and errors to avoid
 
 Or use a ready-made prompt from `prompts/SESSION_START.md`.
 
@@ -77,6 +78,7 @@ python experiments/01_synthetic/script_01_synthetic_baseline.py
 1. **Paste output** into the comment block at the end of your script
 2. **Log the session** in `prompts/session_log.md`
 3. **Note your contributions** in `prompts/intellectual_contribution.md`
+4. **Update patterns/errors** in `prompts/KNOWN_PATTERNS.md` (if you solved a new error or wrote reusable code)
 
 ---
 

@@ -226,6 +226,43 @@ When results show limited success, document where and why:
 
 ---
 
+## Recording Patterns & Errors
+
+After each iteration, update `prompts/KNOWN_PATTERNS.md` with:
+
+### When to Add a Pattern
+
+- A code snippet that will be reused (data loading, API calls, plotting setup)
+- An API call signature that works correctly
+- Environment-specific configuration that took trial and error to get right
+
+### When to Add an Error
+
+- Any error that took more than a few minutes to resolve
+- Environment or dependency issues
+- Subtle bugs that could easily recur (off-by-one, type mismatches, etc.)
+
+### Format
+
+```python
+# === NEW PATTERN: [Brief title] ===
+# Used in: script_XX_name.py
+# Notes: [Why this approach works]
+
+# [Working code]
+```
+
+```python
+# === NEW ERROR FIX: [Brief title] ===
+# Error: [Exact error message]
+# Fix: [What solved it]
+# Prevention: [How to avoid in future]
+```
+
+Keeping this file updated prevents the same mistakes from recurring across sessions and ensures consistency as the project evolves.
+
+---
+
 ## The 4-Part Structure in Code
 
 Remember that each script is part of the 4-part structure:

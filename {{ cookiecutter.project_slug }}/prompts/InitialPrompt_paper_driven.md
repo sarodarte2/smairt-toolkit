@@ -50,6 +50,7 @@ You are helping set up a research project that will produce a scientific paper. 
 - **Multiple validation approaches** - Validate against multiple sources where possible
 - **Reproducibility** - Fixed seeds (default: 1024), documented parameters, version control
 - **Final path capture** - FINAL_MANIFEST.md documents exactly which iteration produced each result
+- **Pattern reuse** - Check `prompts/KNOWN_PATTERNS.md` before writing code; update it when solving new errors or creating reusable patterns
 
 ## Questions to Ask
 

@@ -56,6 +56,7 @@ def print_standard_mode_message():
 ║   4. Set up your AI session with:                                     ║
 ║      prompts/AI_CONTEXT.md (give this to your AI)                     ║
 ║      prompts/CODE_CONVENTIONS.md (give this to your AI)               ║
+║      prompts/KNOWN_PATTERNS.md (reusable code & error fixes)          ║
 ║      prompts/SESSION_START.md (ready-to-paste prompts)                ║
 ║                                                                       ║
 ║   5. Start experimenting:                                             ║

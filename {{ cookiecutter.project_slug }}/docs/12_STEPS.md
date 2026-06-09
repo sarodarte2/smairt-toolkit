@@ -133,8 +133,29 @@ Make things even better by developing an input set of prompts that will be in th
 - Provide an output log file named the same as the script
 - Follow the 4-part structure
 - Generate code that can be tested immediately
+- Check `prompts/KNOWN_PATTERNS.md` for reusable patterns and known errors
 
 See `prompts/00_priming_prompts.md` for templates.
+
+### 10b: Maintain Known Patterns & Errors
+
+Keep `prompts/KNOWN_PATTERNS.md` updated as a living reference. This file prevents the same mistakes from recurring across sessions and ensures code consistency as the project evolves.
+
+**After each iteration, ask yourself:**
+- Did I solve an error that took real time? → Add it to "Common Errors & Fixes"
+- Did I write code that will be reused? → Add it to "Reusable Code Patterns"
+- Did I discover an environment quirk? → Add it to "Environment & Configuration"
+- Did an approach fail fundamentally? → Add it to "Anti-Patterns"
+
+**At the start of each session:**
+- Feed `KNOWN_PATTERNS.md` to your AI alongside `AI_CONTEXT.md` and `CODE_CONVENTIONS.md`
+- This ensures the AI doesn't repeat solved problems or violate consistency rules
+
+This is especially valuable when:
+- Switching between AI tools or starting new threads
+- Coming back to a project after a break
+- Onboarding a collaborator
+- Working with APIs that have specific calling conventions
 
 ---
 

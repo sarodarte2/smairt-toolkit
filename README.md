@@ -132,6 +132,7 @@ your_project/
 ├── prompts/
 │   ├── AI_CONTEXT.md              # Give this to your AI - explains its role
 │   ├── CODE_CONVENTIONS.md        # Give this to your AI - code formatting
+│   ├── KNOWN_PATTERNS.md          # Give this to your AI - reusable code & error fixes
 │   ├── SESSION_START.md           # Ready-to-paste prompts for new sessions
 │   ├── 00_priming_prompts.md      # Additional priming prompts
 │   ├── session_log.md             # Running log of all prompts + responses
@@ -188,6 +189,17 @@ parts of this breadcrumb trail in to a single text file that can be used to
 prompt your AI helper of choice to bring it up to speed on what has been tried,
 what worked, what failed, and lead to the next steps.
 
+### Known Patterns & Error Prevention
+
+SMAIRT includes `prompts/KNOWN_PATTERNS.md` — a living reference that records:
+- **Reusable code patterns** — working snippets for data loading, API calls, plotting, etc.
+- **Common errors & fixes** — recurring mistakes and their solutions
+- **Environment configuration** — paths, versions, platform-specific quirks
+- **Consistency rules** — standards enforced across all scripts (seeds, formats, conventions)
+- **Anti-patterns** — approaches that were tried and failed
+
+Feed this file to your AI at every session start to prevent repeating solved problems and ensure cross-script consistency. This is especially valuable when switching AI tools, starting new threads, or resuming after a break.
+
 ### Intellectual Contribution Tracking
 
 SMAIRT includes a dedicated file for tracking where YOU made critical insights vs. where AI generated ideas.
@@ -197,6 +209,7 @@ SMAIRT includes a dedicated file for tracking where YOU made critical insights v
 The template includes files specifically designed to prime your AI to understand the SMAIRT workflow:
 - `prompts/AI_CONTEXT.md` - Explains AI's role and the framework
 - `prompts/CODE_CONVENTIONS.md` - How to format code output
+- `prompts/KNOWN_PATTERNS.md` - Reusable code patterns and common error fixes
 - `prompts/SESSION_START.md` - Ready-to-paste prompts for new sessions
 
 ---
@@ -238,10 +251,11 @@ Additional helper scripts can be generated on demand using prompts provided in `
 1. Give your AI the context files:
    - `prompts/AI_CONTEXT.md`
    - `prompts/CODE_CONVENTIONS.md`
+   - `prompts/KNOWN_PATTERNS.md`
 
 2. Use the prompts in `prompts/SESSION_START.md` to initialize the session
 
-3. Or run `python scripts/compile_for_ai.py` and paste the output
+3. Or run `python scripts/compile_for_ai.py` and paste the output (includes all context files automatically)
 
 ### Creating New Experiments
 
@@ -262,6 +276,7 @@ After running a script:
 2. Add interpretation and next steps
 3. Update `prompts/session_log.md`
 4. Log your intellectual contributions in `prompts/intellectual_contribution.md`
+5. Update `prompts/KNOWN_PATTERNS.md` with any new reusable patterns or resolved errors
 
 ---
 

@@ -72,6 +72,7 @@ def compile_project():
     key_files = [
         ("prompts/AI_CONTEXT.md", "AI Context (Your Role)"),
         ("prompts/CODE_CONVENTIONS.md", "Code Conventions"),
+        ("prompts/KNOWN_PATTERNS.md", "Known Patterns & Common Errors"),
         ("background/01_initial_question.md", "Initial Research Question"),
         ("hypotheses/hypothesis_log.md", "Hypothesis Log"),
         ("prompts/session_log.md", "Session Log"),
