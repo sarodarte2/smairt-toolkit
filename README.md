@@ -234,7 +234,7 @@ After running experiments:
 | `project_mode` | Standard or paper-driven | standard |
 | `workflow_mode` | IDE-native or browser-paste | ide_native |
 | `ai_tool` | Primary AI tool used | roo_zoo |
-| `domain` | Research domain | computational_biology |
+| `domain` | Research domain | machine_learning |
 | `data_progression` | Data phases to include | synthetic_downloaded_real |
 | `create_git_repo` | Initialize git on creation | yes |
 

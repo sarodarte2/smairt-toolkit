@@ -7,7 +7,7 @@
     "project_mode": ["standard", "paper_driven"],
     "workflow_mode": ["ide_native", "browser_paste"],
     "initial_research_question": "What is the main question you are trying to answer?",
-    "domain": ["computational_biology", "machine_learning", "data_science", "physics", "chemistry", "other"],
+    "domain": ["machine_learning", "data_science", "computational_biology", "physics", "chemistry", "engineering", "other"],
     "ai_tool": ["roo_zoo", "cursor", "windsurf", "claude", "chatgpt", "other"],
     "include_example_project": ["no", "yes"],
     "data_progression": ["synthetic_downloaded_real", "synthetic_real", "downloaded_real", "real_only"],

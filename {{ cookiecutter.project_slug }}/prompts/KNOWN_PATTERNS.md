@@ -61,7 +61,7 @@ Organized by operation type. Each pattern should be copy-pasteable.
 ### 1.4 Metrics & Evaluation
 
 ```python
-# Pattern: [Brief description, e.g., "PPV@K calculation", "AUROC/AUPRC"]
+# Pattern: [Brief description, e.g., "Precision@K calculation", "AUROC/AUPRC", "F1-score"]
 # Used in: [script_XX_name.py]
 # Notes: [Edge cases, expected ranges, validation checks]
 
@@ -139,7 +139,7 @@ Each entry documents a mistake that was made, its impact, and how to prevent it.
 
 **What happened**: [Describe the mistake]
 
-**Impact**: [Quantify the damage — e.g., "PPV degraded 4.7×", "Results were unreproducible"]
+**Impact**: [Quantify the damage — e.g., "Precision degraded 4.7×", "Results were unreproducible"]
 
 **Fix**: [What solved it]
 
@@ -148,18 +148,18 @@ Each entry documents a mistake that was made, its impact, and how to prevent it.
 **Learned from**: [Iteration/script where this was discovered]
 ```
 
-### 2.1 [Example: Self-interactions in benchmark data]
+### 2.1 [Example: Self-referencing entries in evaluation data]
 
-**What happened**: [e.g., Benchmark included A-A pairs which inflated scores]
+**What happened**: [e.g., Evaluation set included self-pairs (A-A) which inflated scores]
 
-**Impact**: [e.g., PPV degraded 4.7×]
+**Impact**: [e.g., Precision degraded 4.7×]
 
 **Fix**:
 ```python
 # [Corrected code]
 ```
 
-**Prevention**: [e.g., Always filter where col_A != col_B before evaluation]
+**Prevention**: [e.g., Always filter where item_A != item_B before evaluation]
 
 **Learned from**: [iter_XX / script_XX]
 
@@ -182,15 +182,15 @@ Each entry documents a mistake that was made, its impact, and how to prevent it.
 
 ---
 
-### 2.3 [Example: Benchmark mismatch]
+### 2.3 [Example: Evaluation set mismatch]
 
-**What happened**: [e.g., Used wrong organism's benchmark for evaluation]
+**What happened**: [e.g., Used wrong dataset's evaluation criteria for scoring]
 
 **Impact**: [e.g., All metrics were meaningless]
 
-**Fix**: [e.g., Parameterize organism in config, validate against data]
+**Fix**: [e.g., Parameterize dataset/domain in config, validate against data]
 
-**Prevention**: [e.g., Pre-flight check #3 — verify benchmark matches data organism]
+**Prevention**: [e.g., Pre-flight check #3 — verify evaluation set matches data domain]
 
 **Learned from**: [iter_XX / script_XX]
 
@@ -232,7 +232,7 @@ Each entry documents a mistake that was made, its impact, and how to prevent it.
 
 ### 2.6 [Example: Inconsistent column names across files]
 
-**What happened**: [e.g., Some files use "gene1/gene2", others "source/target"]
+**What happened**: [e.g., Some files use "item_a/item_b", others "source/target"]
 
 **Impact**: [e.g., Merge failures, silent empty results]
 
@@ -285,14 +285,14 @@ Canonical ways to perform common operations. These are the "right way" to do thi
 | [e.g., Validation] | [e.g., Assert expected columns exist] | [Fail fast on bad data] |
 | [e.g., Missing values] | [e.g., Drop rows with NaN in ID columns] | [Prevent downstream errors] |
 
-### 3.2 Benchmark Construction Standards
+### 3.2 Evaluation Set Construction Standards
 
 | Aspect | Standard | Rationale |
 |--------|----------|-----------|
 | [e.g., Pair ordering] | [e.g., Alphabetical canonical order] | [Prevent duplicates] |
-| [e.g., Self-interactions] | [e.g., Always remove] | [Prevents inflated metrics] |
+| [e.g., Self-references] | [e.g., Always remove] | [Prevents inflated metrics] |
 | [e.g., Deduplication] | [e.g., Always after canonical ordering] | [Exact pair count] |
-| [e.g., Organism check] | [e.g., Validate benchmark matches data] | [Prevent mismatch errors] |
+| [e.g., Domain check] | [e.g., Validate evaluation set matches data] | [Prevent mismatch errors] |
 
 ### 3.3 Tool/Analysis Invocation Standards
 
@@ -327,8 +327,8 @@ Canonical ways to perform common operations. These are the "right way" to do thi
 
 - [ ] **1. Data integrity** — Loaded data has expected shape, dtypes, and no unexpected NaN/null values
 - [ ] **2. ID consistency** — ID columns loaded as correct dtype (typically str); no silent type coercion
-- [ ] **3. Benchmark validity** — Benchmark matches the data being analyzed (correct organism/domain/version)
-- [ ] **4. Self-interactions removed** — No A-A pairs in benchmark or analysis pairs
+- [ ] **3. Evaluation set validity** — Evaluation set matches the data being analyzed (correct domain/version/split)
+- [ ] **4. Self-references removed** — No self-pairs (A-A) in evaluation or analysis sets
 - [ ] **5. Canonical ordering applied** — Pairs are in canonical order (e.g., alphabetical) before deduplication
 - [ ] **6. Deduplication done** — No duplicate pairs after canonical ordering
 - [ ] **7. Column names consistent** — Using standard column names per Section 3.1

@@ -29,10 +29,10 @@ script_[TRACK][NN]_brief_description.py
 
 Examples:
 - `script_A01_baseline_method.py` — Track A: Core approach
-- `script_B01_fitness_data_exploration.py` — Track B: Alternative data
-- `script_C31_genome_baseline.py` — Track C: Pretraining
-- `script_D01_multimodal_baseline.py` — Track D: Fusion methods
-- `script_X1_embedding_dynamics.py` — Track X: Interpretation
+- `script_B01_alternative_data_exploration.py` — Track B: Alternative data source
+- `script_C31_pretraining_baseline.py` — Track C: Pretraining strategy
+- `script_D01_fusion_baseline.py` — Track D: Multi-source fusion
+- `script_X1_embedding_dynamics.py` — Track X: Interpretation & diagnostics
 
 Track assignments should be documented in `plans/`.
 
@@ -157,7 +157,7 @@ Log files go in `results/logs/` and include timestamps for uniqueness:
 
 ```
 results/logs/script_01_initial_test_20240115_143022.log
-results/logs/script_B05_multi_organism_20240220_091544.log
+results/logs/script_B05_multi_source_20240220_091544.log
 ```
 
 The `setup_logging()` function handles this automatically.
@@ -180,7 +180,7 @@ experiments/
 │   ├── script_05_xxx.py
 │   ├── script_B01_xxx.py  # Track B starts here
 │   └── script_D01_xxx.py  # Track D starts here
-└── biological_interpretation/  # Interpretation scripts (Track X)
+└── interpretation/        # Interpretation & diagnostics scripts (Track X)
     └── script_X1_xxx.py
 ```
 

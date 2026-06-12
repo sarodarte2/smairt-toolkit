@@ -85,8 +85,8 @@ Scripts are the atomic unit of experimentation:
 ```
 script_01_initial_smoke_test.py
 script_02_add_noise_robustness.py
-script_B01_fitness_data_exploration.py  (track-based)
-script_D06_hpc.py                        (HPC variant)
+script_B01_alternative_data_exploration.py  (track-based)
+script_D06_hpc.py                            (HPC variant)
 ```
 
 Each script should:
@@ -118,7 +118,7 @@ Log files should be clearly traceable to their source scripts:
 
 ```
 results/logs/script_01_smoke_test_20240115_143022.log
-results/logs/script_B05_multi_organism_20240220_091544.log
+results/logs/script_B05_multi_source_20240220_091544.log
 ```
 
 The `setup_logging()` function from `scripts/shared/` handles this automatically.
