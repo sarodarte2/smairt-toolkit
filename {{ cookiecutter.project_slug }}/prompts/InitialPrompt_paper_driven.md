@@ -1,97 +1,96 @@
-# Paper-Driven SMAIRT Project Setup
+# Initial Prompt: Paper-Driven Mode
 
-{% if cookiecutter.project_mode == 'paper_driven' %}
+Use this prompt when starting an AI session for a paper-driven SMAIRT project.
+
+---
+
 ## Your Task
 
-You are helping set up a research project that will produce a scientific paper. The researcher has:
-1. A paper outline or structure
-2. Real datasets ready for analysis
-3. Specific research questions to answer
+You are helping with a paper-driven research project using the SMAIRT framework.
+
+Please read:
+- `prompts/AI_CONTEXT.md` — Your role and workflow
+- `prompts/CODE_CONVENTIONS.md` — Coding standards
+- `prompts/KNOWN_PATTERNS.md` — Reusable patterns and errors to avoid
+- `paper/outline.md` — The paper structure we're working toward
+- `analysis/ANALYSIS_PLAN.md` — How analyses map to paper sections
+
+---
 
 ## Project Information
 
-- **Project**: {{ cookiecutter.project_name }}
-- **Author**: {{ cookiecutter.author_name }}
-- **Domain**: {{ cookiecutter.domain }}
-- **Research Question**: {{ cookiecutter.initial_research_question }}
+- **Project:** {{ cookiecutter.project_name }}
+- **Author:** {{ cookiecutter.author_name }}
+- **Research Question:** {{ cookiecutter.initial_research_question }}
+- **Mode:** Paper-Driven (working toward a specific paper)
+
+---
 
 ## Process
 
-1. **Read the paper outline** (`paper/outline.md`) to understand:
-   - The overall narrative and structure
-   - What results sections are needed
-   - What figures/tables are expected
+The paper-driven workflow:
 
-2. **Examine the available data** (`data/`) to understand:
-   - What datasets are available
-   - Data formats and quality
-   - What analyses are feasible
+1. **Paper outline exists** — The structure we're writing toward
+2. **Data is available** — Real datasets ready for analysis
+3. **Analysis plan maps sections** — Each paper section has defined analyses
+4. **Iterative execution** — Each analysis goes through iterations until publication-ready
+5. **Final manifest** — Maps final results to paper elements
 
-3. **Review/Update the Analysis Plan** (`analysis/ANALYSIS_PLAN.md`) that:
-   - Maps each paper section to specific analyses
-   - Defines hypotheses for each analysis
-   - Specifies data inputs and expected outputs
-   - Establishes evaluation criteria and metrics
-   - Sets a realistic timeline
-
-4. **Review/Update the Repository Plan** (`analysis/REPOSITORY_PLAN.md`) that:
-   - Defines the directory structure
-   - Documents shared library functions
-   - Establishes naming conventions
-   - Specifies iteration tracking approach
-
-5. **Present both plans for review** before implementation
+---
 
 ## Key Principles
 
-- **All data is real data** - No synthetic/benchmark phases
-- **Iteration tracking** - Separate scripts per iteration (run_analysis_01.py, etc.)
-- **Multiple metrics** - Never rely on a single metric
-- **Multiple validation approaches** - Validate against multiple sources where possible
-- **Reproducibility** - Fixed seeds (default: 1024), documented parameters, version control
-- **Final path capture** - FINAL_MANIFEST.md documents exactly which iteration produced each result
-- **Pattern reuse** - Check `prompts/KNOWN_PATTERNS.md` before writing code; update it when solving new errors or creating reusable patterns
+1. **Every analysis serves a paper section** — No orphan work
+2. **Iterations are numbered** — iter_01, iter_02, ... → final/
+3. **Decisions are documented** — ACCEPT / REVISE / ABANDON for each iteration
+4. **Shared library grows** — Reusable code goes to `scripts/shared/`
+5. **Patterns accumulate** — Update `KNOWN_PATTERNS.md` as you learn
+6. **Plans drive complex work** — Create plan docs before multi-step analyses
+
+---
 
 ## Questions to Ask
 
-Before creating the plan, clarify:
-1. What is the target journal and format requirements?
-2. Are there existing analyses to reproduce/extend?
-3. What computational resources are available (local/HPC/GPU)?
-4. What is the timeline for completion?
-5. Are there specific tools or methods that must be compared against?
+Before starting, the AI should ask about:
+1. What data is available? (format, size, location)
+2. Which paper section should we work on first?
+3. Are there existing results to build on?
+4. What are the computational constraints?
+5. Are there specific statistical methods required?
+
+---
 
 ## Directory Structure
 
 ```
-{{ cookiecutter.project_slug }}/
-├── paper/                      # Paper documents
-│   ├── outline.md              # Paper outline
-│   ├── drafts/                 # Version-controlled drafts
-│   └── reviewer_feedback/      # Feedback documents
-├── data/                       # All datasets
-├── analysis/                   # All analyses
-│   ├── ANALYSIS_PLAN.md        # Analysis plan
-│   ├── REPOSITORY_PLAN.md      # Repository organization
-│   ├── BREADCRUMB_TRAIL.md     # Running log
-│   └── XX_figures/             # Final publication figures
-├── lib/                        # Shared library
-├── prompts/                    # AI prompts (you are here)
-├── scripts/                    # Utility scripts
-├── FINAL_MANIFEST.md           # Maps results to paper
-└── README.md
+paper/
+├── outline.md              # Paper structure
+└── drafts/                 # Draft versions
+
+analysis/
+├── ANALYSIS_PLAN.md        # Maps analyses to paper sections
+├── ANALYSIS_TEMPLATE.md    # Template for analysis files
+├── REPOSITORY_PLAN.md      # Repository-level planning
+└── ANALYSIS_XX.md          # Per-iteration analysis
+
+experiments/
+├── 01_synthetic/           # If applicable
+├── 02_downloaded/          # If applicable
+└── 03_real_data/           # Primary for paper-driven
+
+scripts/
+├── shared/                 # Reusable library
+├── new_experiment.py       # Create new analysis
+├── new_iteration.py        # Create new iteration
+└── finalize_iteration.py   # Mark iteration as final
 ```
+
+---
 
 ## Getting Started
 
-1. Review the paper outline in `paper/outline.md`
-2. Check what data is available in `data/`
-3. Update `analysis/ANALYSIS_PLAN.md` with specific analyses
-4. Begin with the first analysis section
-{% else %}
-This prompt is for paper-driven mode only.
-
-For standard SMAIRT mode, see:
-- `AI_CONTEXT.md` for project context
-- `SESSION_START.md` for session prompts
-{% endif %}
+1. Review `paper/outline.md` and `analysis/ANALYSIS_PLAN.md`
+2. Identify the first analysis to tackle
+3. Create a hypothesis for it
+4. Write the experiment script
+5. Run, analyze, iterate

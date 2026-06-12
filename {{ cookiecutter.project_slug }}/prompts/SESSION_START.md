@@ -1,217 +1,221 @@
-# {{ cookiecutter.project_slug }}/prompts/SESSION_START.md
-
-```markdown
 # Session Start Prompts
 
-Ready-to-paste prompts for starting new AI sessions.
+Context-setting prompts for different situations in SMAIRT projects.
 
 ---
 
-## First Session Prompt
+## Project Onboarding
 
-Use this for the very first session on a new project:
+Use this when the AI first encounters your project (new conversation, new tool, or context window reset):
 
 ```
-I'm starting a new research project called "{{ cookiecutter.project_name }}" using the SMAIRT framework (Scientific Method with AI Research Template).
+I'm working on "{{ cookiecutter.project_name }}" — a SMAIRT project (Scientific Method with AI Research Template).
 
-Please read and understand these files:
-- `prompts/AI_CONTEXT.md` - Your role and the SMAIRT workflow
-- `prompts/CODE_CONVENTIONS.md` - How to format code output
-- `prompts/KNOWN_PATTERNS.md` - Reusable code patterns and common errors to avoid
+Please read these files to understand the project:
+1. prompts/AI_CONTEXT.md — Your role and the SMAIRT workflow
+2. prompts/CODE_CONVENTIONS.md — Code formatting conventions
+3. prompts/KNOWN_PATTERNS.md — Reusable patterns and errors to avoid
+4. prompts/CONTEXT_INDEX.md — Index of what to read for different tasks
 
 Research Question: {{ cookiecutter.initial_research_question }}
 
-The SMAIRT framework follows the scientific method in an iterative loop:
-Background → Hypothesis → Methods/Code → Results → Analysis → Future Directions → (repeat)
-
-We record 4 pieces of information in separate files:
-1. Background - The question, what's known from literature, summary of previous results
-2. Hypothesis - What we're testing (could be at end of background)
-3. Methods - The actual code and data required to test the hypothesis
-4. Results - The log file output plus interpretation
-
-For all code you generate:
-1. Use numbered script naming: script_XX_brief_description.py
-2. Output to both console AND a log file in results/logs/
-3. Include a comment block at the end for pasting results
-
-If I'm starting with real data you should prompt me about that data.
-If I have code that I've written that would be useful you
-should ask me about that.
-
-Please help me:
-1. Refine the research question
-2. Identify what's known about this area
-3. Formulate an initial hypothesis
-4. Design the first experiment
+Then help me:
+1. Understand the current state of the project
+2. Identify what's been tried and what worked
+3. Plan the next experiment
 ```
 
 ---
 
-## Continuing Session Prompt
+## Context Refresh
 
-Use this when starting a new session on an existing project:
+Use when returning after a gap or when context gets stale:
 
 ```
-I'm continuing work on "{{ cookiecutter.project_name }}" - a SMAIRT project.
+Continuing "{{ cookiecutter.project_name }}" — a SMAIRT project.
 
-Please review:
-- `prompts/AI_CONTEXT.md` - Your role and the workflow
-- `prompts/CODE_CONVENTIONS.md` - Code formatting conventions
-- `prompts/KNOWN_PATTERNS.md` - Reusable patterns and errors to avoid
+Please read:
+- prompts/AI_CONTEXT.md (workflow)
+- prompts/KNOWN_PATTERNS.md (patterns & errors)
+- The most recent analysis file in analysis/
+- The most recent hypothesis file in hypotheses/
 
 Current state:
-- **Iteration:** [X]
+- **Track:** [A/B/C/D/...]
+- **Iteration:** [XX]
 - **Phase:** [synthetic / downloaded / real]
-- **Hypothesis being tested:** [State it]
 - **Last experiment:** [script_XX_description.py]
-- **Last result:** [Brief summary of what happened]
 
-Here's the recent session log:
-[Paste relevant entries from prompts/session_log.md]
-
-Here's the current hypothesis log:
-[Paste from hypotheses/hypothesis_log.md]
-
-Current limitations identified:
-[Paste from analysis/iteration_log.md]
-
-Please help me design the next experiment.
+Help me continue from where we left off.
 ```
 
 ---
 
-## Quick Context Reload Prompt
+## Quick Task
 
-A shorter version when context is fresh:
+Use for focused work that doesn't need full project context:
 
 ```
-Continuing "{{ cookiecutter.project_name }}" - SMAIRT project.
+SMAIRT project "{{ cookiecutter.project_name }}".
+Read prompts/CODE_CONVENTIONS.md and prompts/KNOWN_PATTERNS.md.
 
-Iteration [X], Phase [synthetic/downloaded/real].
-Hypothesis: [State hypothesis]
-Last result: [What happened]
-
-[Paste recent output or session_log entries]
-
-What should we try next?
+Task: [Specific request]
 ```
 
 ---
 
-## Full Context Reload Prompt
+## Planning Session
 
-When you need to bring AI fully up to speed:
+Use when you need to design a new track or complex experiment:
 
 ```
-I'm continuing work on "{{ cookiecutter.project_name }}" using the SMAIRT framework.
+I need to plan a new experimental track for "{{ cookiecutter.project_name }}".
 
-I'll paste the compiled project state from scripts/compile_for_ai.py:
+Please read:
+- prompts/AI_CONTEXT.md
+- The most recent analysis files in analysis/
+- plans/ directory (existing plans for context)
 
-[Paste output from compile_for_ai.py]
+Goal: [What I want to achieve]
+Constraints: [Time, compute, data limitations]
 
-Please review this context and help me continue from where we left off.
+Help me create a plan document (plans/PLAN_[TRACK]_[DESCRIPTION].md) with:
+- Problem statement
+- Approach
+- Success criteria
+- Dependencies
+- Step-by-step execution plan
 ```
 
 ---
 
-## Interpretation Prompt
+## Interpretation Session
 
-Use after running an experiment:
+Use after running an experiment to analyze results:
 
 ```
-I just ran script_XX and here are the results:
+I just ran script_XX and the results are in results/logs/script_XX_*.log.
 
-[Paste output]
+Please read:
+- The log file(s)
+- hypotheses/HYPOTHESIS_XX.md (what we predicted)
+- The script itself for methodology context
 
-The hypothesis we were testing: [State hypothesis]
-
-Please help me interpret these results:
-1. Do they support or refute the hypothesis?
+Help me interpret:
+1. Do results support or refute the hypothesis?
 2. Where does this approach work "within certain boundaries"?
-3. Where does it break down or stop working?
-4. What limitations or caveats should I note?
-5. What are the logical next experiments to try?
-6. Are there any surprising observations worth investigating?
+3. Where does it break down?
+4. What are logical next experiments?
+
+Then write the analysis to analysis/ANALYSIS_XX.md.
 ```
 
 ---
 
-## Dead End Prompt
+## HPC Submission
 
-When you seem to be at a dead end:
+Use when preparing jobs for high-performance computing:
 
 ```
-We seem to be at a dead end with the current approach.
+I need to run script_XX on HPC.
 
-What we've tried:
-[List approaches from session_log.md]
+Please read:
+- The experiment script
+- prompts/CODE_CONVENTIONS.md (HPC section)
+- hpc/ directory for existing templates
 
-Where things break down:
-[Describe limitations]
-
-The original hypothesis was: [State it]
-The research question is: [State it]
-
-Can you suggest:
-1. Alternative approaches we haven't considered?
-2. Ways to reframe the problem?
-3. Related problems in other domains that might have solutions?
-4. Whether we should adjust the hypothesis?
-
-Note: This is where I need to be especially attentive to making my own intellectual contribution. You may suggest things, but I'll evaluate whether they represent truly innovative directions or just variations on what we've tried.
+Generate:
+1. A SLURM/PBS job script in hpc/
+2. Any needed modifications for multi-GPU/distributed execution
+3. A monitor script if the job is long-running
 ```
 
 ---
 
-## Phase Transition Prompt
+## Dead End / Pivot
 
-When moving from synthetic → downloaded or downloaded → real:
+Use when the current approach isn't working:
 
 ```
-We're transitioning from [synthetic/downloaded] data to [downloaded/real] data.
+The current approach seems to be at a dead end.
 
-Summary of what worked in the previous phase:
-[Paste from analysis/iteration_log.md]
+What we've tried (read these analysis files):
+- analysis/ANALYSIS_XX.md
+- analysis/ANALYSIS_YY.md
 
-Hypothesis that was supported:
-[State it]
+Where things break down: [Brief description]
+The research question is: {{ cookiecutter.initial_research_question }}
 
-Limitations identified:
-[List them]
+Help me:
+1. Identify alternative approaches we haven't considered
+2. Determine if we should reframe the problem
+3. Check if related problems in other domains have solutions
+4. Decide whether to adjust the hypothesis
 
-For the next phase, please help me:
-1. Identify appropriate [benchmark datasets / real data] to test on
-2. Adapt the approach for this new data
-3. Design experiments that will validate whether results transfer
+Write a pivot plan to plans/PLAN_[NEW_DIRECTION].md.
+```
+
+---
+
+## Phase Transition
+
+Use when moving from synthetic → downloaded or downloaded → real:
+
+```
+We're transitioning from [synthetic/downloaded] to [downloaded/real] data.
+
+Please read:
+- Recent analysis files for the current phase
+- scripts/shared/ (what utilities we have)
+
+Summary of what worked in the previous phase: [or point to analysis files]
+
+Help me:
+1. Identify appropriate data for the next phase
+2. Adapt the approach for new data characteristics
+3. Design experiments that validate whether results transfer
+4. Update scripts/shared/ if needed for new data formats
+```
+
+---
+
+## Full Context Reload
+
+Use when transferring to a different AI tool or archival:
+
+```
+I need to bring you fully up to speed on "{{ cookiecutter.project_name }}".
+
+Please read prompts/compiled_for_ai.md (generated by scripts/compile_for_ai.py).
+
+This contains the full project state. Help me continue from where we left off.
 ```
 
 ---
 
 ## Priming Reminders
 
-If AI forgets conventions mid-session:
+If AI loses track of conventions mid-session:
 
 ```
-Reminder - SMAIRT conventions:
-- Script naming: script_XX_brief_description.py
-- Output to console AND results/logs/
-- Include comment block at end for pasting results
-- Evaluate results through the lens of the hypothesis
+SMAIRT conventions reminder:
+- Script naming: script_XX_brief_description.py (or track-based: script_A01_...)
+- Use TeeLogger from scripts/shared/logging for output
+- Check prompts/KNOWN_PATTERNS.md before writing code
+- Write hypothesis files BEFORE experiments
+- Write analysis files AFTER interpreting results
+- Update KNOWN_PATTERNS.md when new errors are resolved
+- Evaluate results through the lens of the stated hypothesis
 - Note where approaches work "within certain boundaries" and where they break
-- Check prompts/KNOWN_PATTERNS.md before writing code (reuse patterns, avoid known errors)
-- After resolving new errors, suggest adding them to KNOWN_PATTERNS.md
 ```
 
 ---
 
 ## Tips for Effective Sessions
 
-1. **Start each session by providing context** - AI doesn't remember previous sessions
-2. **Feed the breadcrumb trail back** - Paste previous outputs and session logs
-3. **State the current hypothesis clearly** - All interpretation should be through this lens
-4. **Track your intellectual contributions** - Note when YOU make critical suggestions vs. AI
-5. **Document dead ends** - These are valuable for future sessions
-
-The documentation you create serves as a breadcrumb trail, allowing you to return to your current state even when starting a completely new thread or switching to a different AI tool.
-```
+1. **Let the AI read files** — Don't paste content; point to file paths
+2. **State the current hypothesis clearly** — All interpretation flows through this lens
+3. **Track your intellectual contributions** — Note in `prompts/intellectual_contribution.md`
+4. **Write plans before complex work** — Plans prevent scope creep
+5. **Document dead ends** — They're valuable for preventing repeated mistakes
+6. **Update KNOWN_PATTERNS.md** — After resolving errors or discovering reusable code

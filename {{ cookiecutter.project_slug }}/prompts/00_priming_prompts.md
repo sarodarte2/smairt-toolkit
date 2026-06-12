@@ -1,48 +1,63 @@
-# Priming Prompts for {{ cookiecutter.project_name }}
+# Priming Prompts for {{ cookiecutter.project_slug }}
 
-## First Time Setup
+## IDE-Native Quick Start
 
-At the start of your first session, ask AI to read:
-1. `prompts/AI_CONTEXT.md` - Framework understanding
-2. `prompts/CODE_CONVENTIONS.md` - How to format output
-3. `background/01_initial_question.md` - The research question
+When your AI first encounters this project:
 
-## Session Start Prompt
+```
+Please read prompts/AI_CONTEXT.md and prompts/CONTEXT_INDEX.md
+to understand this SMAIRT project.
+```
 
-See `prompts/SESSION_START.md` for ready-to-paste prompts.
+## Context Refresh
 
-## Quick Priming Prompt
+After a gap or context window reset:
 
-If you need something shorter:
-This is a SMAIRT project (Scientific Method with AI Research Template).
+```
+SMAIRT project "{{ cookiecutter.project_name }}".
+Read prompts/AI_CONTEXT.md, then check the most recent files in
+analysis/ and hypotheses/ to see current state.
+```
 
-Key conventions:
+## Task-Specific Priming
 
-Scripts named: script_XX_description.py
-Output to console AND results/logs/
-Paste output as comments at end of scripts
-Follow: Background → Hypothesis → Methods → Results → Analysis → Future Directions
-Current iteration: [X]
-Phase: [synthetic/downloaded/real]
-Hypothesis: [Y]
+### Before Writing Code
+```
+Read prompts/CODE_CONVENTIONS.md and prompts/KNOWN_PATTERNS.md
+before generating any scripts.
+```
 
-[Your request here]
+### Before Interpreting Results
+```
+Read the hypothesis file and the log output, then write analysis
+following the template in analysis/ANALYSIS_TEMPLATE.md.
+```
 
-## Interpretation Prompt
+### Before Planning
+```
+Read existing plans in plans/ and recent analysis files.
+Then create a plan following plans/README.md template.
+```
 
-After running an experiment:
-Results from script_XX:
+## Mid-Session Reminder
 
-[Paste output]
+If the AI loses track of conventions:
 
-Interpret through the lens of the hypothesis: [State hypothesis]
+```
+SMAIRT reminder:
+- Scripts: script_XX_description.py (or track-based: script_A01_...)
+- Use TeeLogger from scripts/shared/logging
+- Check KNOWN_PATTERNS.md before writing code
+- Write hypothesis files BEFORE experiments
+- Write analysis files AFTER results
+- Note boundaries: where it works, where it breaks
+```
 
-Does this support or refute the hypothesis?
-Where does this approach work, and within what boundaries?
-Where does it break down?
-What are logical next experiments?
+## Cross-Tool Transfer
 
-## Compile Context Prompts
+When switching to a different AI tool:
 
-When context gets long:
-Please run scripts/compile_for_ai.py and I'll paste the output so you have full project context.
+```bash
+python scripts/compile_for_ai.py
+# Then provide prompts/compiled_for_ai.md to the new tool
+```

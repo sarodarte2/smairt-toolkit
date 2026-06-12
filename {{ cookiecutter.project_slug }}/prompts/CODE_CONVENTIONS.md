@@ -6,7 +6,9 @@ When generating code for this project, follow these conventions.
 
 ## Script Naming
 
-Use numbered scripts for each round:
+### Sequential Numbering (Early Project)
+
+Use numbered scripts for each iteration:
 
 ```
 script_XX_brief_description.py
@@ -16,9 +18,32 @@ Examples:
 - `script_01_initial_synthetic_test.py`
 - `script_02_add_noise_robustness.py`
 - `script_03_iris_benchmark.py`
-- `script_04_real_data_validation.py`
 
-This provides a clear timeline of what was tried and allows very rapid turnaround time.
+### Track-Based Naming (Mature Project)
+
+When the project forks into parallel investigations, use letter-prefixed tracks:
+
+```
+script_[TRACK][NN]_brief_description.py
+```
+
+Examples:
+- `script_A01_baseline_method.py` — Track A: Core approach
+- `script_B01_fitness_data_exploration.py` — Track B: Alternative data
+- `script_C31_genome_baseline.py` — Track C: Pretraining
+- `script_D01_multimodal_baseline.py` — Track D: Fusion methods
+- `script_X1_embedding_dynamics.py` — Track X: Interpretation
+
+Track assignments should be documented in `plans/`.
+
+### HPC Scripts
+
+Scripts designed for HPC execution append `_hpc`:
+
+```
+script_D06_hpc.py
+script_E03_hpc.py
+```
 
 ---
 
@@ -27,154 +52,115 @@ This provides a clear timeline of what was tried and allows very rapid turnaroun
 Every script should:
 
 1. **Print to console** for immediate feedback
-2. **Write to log file** at `../../results/logs/script_XX_description_output.log`
-3. **Include a results comment block** at the end for pasting output
+2. **Write to log file** using `TeeLogger` from `scripts/shared/logging`
+3. **Include hypothesis in docstring** for the audit trail
 
 ---
 
 ## Script Template
 
 ```python
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Script XX: Brief description of what this script tests
-Hypothesis: [What we're testing]
+
+Hypothesis: HYPOTHESIS_XX.md
 Phase: synthetic / downloaded / real
+Track: [A/B/C/D/...] (if applicable)
 Iteration: [X]
+
+Depends on:
+  - [list prior scripts or data this builds on]
 """
 
-import os
 import sys
+from pathlib import Path
 from datetime import datetime
+
+# === PATH SETUP ===
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.shared import TeeLogger, setup_logging
 
 # === CONFIGURATION ===
 SCRIPT_NAME = "script_XX_description"
-LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "results", "logs")
-
-# === LOGGING SETUP ===
-class Logger:
-    """Log to both console and file."""
-    def __init__(self, log_path):
-        self.terminal = sys.stdout
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        self.log_file = open(log_path, "w")
-
-    def write(self, message):
-        self.terminal.write(message)
-        self.log_file.write(message)
-
-    def flush(self):
-        self.terminal.flush()
-        self.log_file.flush()
-
-    def close(self):
-        self.log_file.close()
+LOG_DIR = PROJECT_ROOT / "results" / "logs"
 
 # === MAIN CODE ===
 def main():
-    # Setup logging
-    log_path = os.path.join(LOG_DIR, f"{SCRIPT_NAME}_output.log")
-    sys.stdout = Logger(log_path)
+    log_path = setup_logging(SCRIPT_NAME, LOG_DIR)
 
-    print(f"{'='*60}")
-    print(f"Script: {SCRIPT_NAME}")
-    print(f"Timestamp: {datetime.now().isoformat()}")
-    print(f"Hypothesis: [STATE HYPOTHESIS HERE]")
-    print(f"{'='*60}")
-    print()
+    with TeeLogger(log_path):
+        print(f"{'='*60}")
+        print(f"Script: {SCRIPT_NAME}")
+        print(f"Timestamp: {datetime.now().isoformat()}")
+        print(f"Hypothesis: [State hypothesis here]")
+        print(f"{'='*60}")
+        print()
 
-    # ========================================
-    # YOUR CODE HERE
-    # ========================================
-
+        # ========================================
+        # YOUR CODE HERE
+        # ========================================
 
 
-    # ========================================
-    # END YOUR CODE
-    # ========================================
 
-    print()
-    print(f"{'='*60}")
-    print("=== COMPLETE ===")
-    print(f"{'='*60}")
+        # ========================================
+        # END YOUR CODE
+        # ========================================
 
-    # Close logger
-    sys.stdout.close()
-    sys.stdout = sys.__stdout__
+        print()
+        print(f"{'='*60}")
+        print("=== COMPLETE ===")
+        print(f"{'='*60}")
 
 if __name__ == "__main__":
     main()
-
-
-# === PASTE OUTPUT HERE ===
-"""
-[After running, paste the console output here as a comment]
-[This creates a breadcrumb trail for future AI sessions]
-
-=== OUTPUT ===
-
-
-=== INTERPRETATION ===
-[Add your interpretation of the results]
-[Did this support or refute the hypothesis?]
-[Where did the approach work, and within what boundaries?]
-[Where did it break down?]
-
-=== NEXT STEPS ===
-[What should we try next based on these results?]
-
-"""
 ```
 
 ---
 
-### The Breadcrumb Trail
+## The Audit Trail
 
-Output is pasted at the bottom of scripts as comments. This creates a breadcrumb trail so when you feed the repo back to AI, it can immediately see:
-- All the things you've tried
-- The different datasets you ran on
-- The algorithms you tried
-- The prompts that went into it
-- What the output was
+Every experiment produces a complete audit trail across multiple files:
 
-You can then use the helper script scripts/compile_for_ai.py to combine all the
-parts of this breadcrumb trail in to a single text file that can be used to
-prompt your AI helper of choice to bring it up to speed on what has been tried,
-what worked, what failed, and lead to the next steps.
+| Artifact | Location | Purpose |
+|----------|----------|---------|
+| Hypothesis | `hypotheses/HYPOTHESIS_XX.md` | What we predict and why |
+| Script | `experiments/XX_phase/script_XX_*.py` | What code was run |
+| Log file | `results/logs/script_XX_*.log` | Raw output |
+| Analysis | `analysis/ANALYSIS_XX.md` | Interpretation & next steps |
+
+This replaces the legacy "paste output as comments" pattern. The AI reads log
+files directly — no need to copy output into scripts.
 
 ---
 
-## Results Comment Block
+## Using the Shared Library
 
-At the end of every script, include this block:
+Extract common code to `scripts/shared/` when patterns repeat across 3+ scripts:
 
 ```python
-# === PASTE OUTPUT HERE ===
-"""
-=== OUTPUT ===
-[Paste console output here]
-
-=== INTERPRETATION ===
-[Did this support the hypothesis?]
-[What worked? Within what boundaries?]
-[What didn't work? Where did it break?]
-
-=== NEXT STEPS ===
-[What should we try next?]
-"""
+# Import shared utilities
+from scripts.shared import TeeLogger, setup_logging
+from scripts.shared.data_loading import load_data
+from scripts.shared.metrics import compute_score
 ```
+
+See `scripts/shared/README.md` for guidance on when and how to extract code.
 
 ---
 
 ## Log File Naming
 
-Log files go in `results/logs/` and should match script names:
+Log files go in `results/logs/` and include timestamps for uniqueness:
 
-| Script | Log File |
-|--------|----------|
-| `script_01_initial_test.py` | `script_01_initial_test_output.log` |
-| `script_02_add_noise.py` | `script_02_add_noise_output.log` |
-| `script_03_benchmark.py` | `script_03_benchmark_output.log` |
+```
+results/logs/script_01_initial_test_20240115_143022.log
+results/logs/script_B05_multi_organism_20240220_091544.log
+```
+
+The `setup_logging()` function handles this automatically.
 
 ---
 
@@ -184,15 +170,18 @@ Place scripts in the appropriate phase directory:
 
 ```
 experiments/
-├── 01_synthetic/      # Phase 1: Synthetic data tests
+├── 01_synthetic/          # Phase 1: Synthetic data tests
 │   ├── script_01_xxx.py
 │   └── script_02_xxx.py
-├── 02_downloaded/     # Phase 2: Benchmark data tests
+├── 02_downloaded/         # Phase 2: Benchmark data tests
 │   ├── script_03_xxx.py
 │   └── script_04_xxx.py
-└── 03_real_data/      # Phase 3: Real data tests
-    ├── script_05_xxx.py
-    └── script_06_xxx.py
+├── 03_real_data/          # Phase 3: Real data tests
+│   ├── script_05_xxx.py
+│   ├── script_B01_xxx.py  # Track B starts here
+│   └── script_D01_xxx.py  # Track D starts here
+└── biological_interpretation/  # Interpretation scripts (Track X)
+    └── script_X1_xxx.py
 ```
 
 ---
@@ -207,7 +196,6 @@ assert data is not None, "Data failed to load"
 assert len(data) > 0, "Data is empty"
 print(f"Loaded {len(data)} samples")
 print(f"Data shape: {data.shape}")
-print(f"Data types: {data.dtypes}")
 ```
 
 ---
@@ -228,38 +216,62 @@ When results show limited success, document where and why:
 
 ## Recording Patterns & Errors
 
-After each iteration, update `prompts/KNOWN_PATTERNS.md` with:
-
 ### When to Add a Pattern
 
-- A code snippet that will be reused (data loading, API calls, plotting setup)
-- An API call signature that works correctly
-- Environment-specific configuration that took trial and error to get right
+After solving a non-trivial coding problem, add the working pattern to
+`prompts/KNOWN_PATTERNS.md`:
+- Data loading approaches that work
+- API call configurations
+- Model initialization patterns
 
 ### When to Add an Error
 
-- Any error that took more than a few minutes to resolve
-- Environment or dependency issues
-- Subtle bugs that could easily recur (off-by-one, type mismatches, etc.)
+After resolving a bug that cost significant time, add it to
+`prompts/KNOWN_PATTERNS.md`:
+- What happened (error message)
+- Impact (time lost, wrong results, etc.)
+- The fix
+- Prevention strategy
 
-### Format
+---
+
+## HPC Conventions
+
+### Device-Agnostic Code
+
+Scripts that may run on HPC should support CPU/GPU switching via configuration:
 
 ```python
-# === NEW PATTERN: [Brief title] ===
-# Used in: script_XX_name.py
-# Notes: [Why this approach works]
-
-# [Working code]
+CONFIG = {
+    "hardware": {
+        "accelerator": "gpu",    # "gpu", "cpu", "auto"
+        "devices": 1,            # 1, 4, "auto"
+        "precision": "32-true",  # "32-true", "bf16-mixed"
+    },
+    "training": {
+        "max_epochs": 100,
+        "batch_size": 64,
+    }
+}
 ```
+
+### SLURM Job Scripts
+
+Place in `hpc/` with naming matching the experiment script:
+
+```
+hpc/script_D06_hpc.csh
+hpc/script_E03_hpc.csh
+```
+
+### Monitor Scripts
+
+For long-running HPC jobs, create companion monitor scripts:
 
 ```python
-# === NEW ERROR FIX: [Brief title] ===
-# Error: [Exact error message]
-# Fix: [What solved it]
-# Prevention: [How to avoid in future]
+# scripts/monitor_XX_progress.py
+# Reads partial results and reports progress
 ```
-
-Keeping this file updated prevents the same mistakes from recurring across sessions and ensures consistency as the project evolves.
 
 ---
 
@@ -267,7 +279,7 @@ Keeping this file updated prevents the same mistakes from recurring across sessi
 
 Remember that each script is part of the 4-part structure:
 
-1. **Background** → documented in `background/` folder
-2. **Hypothesis** → stated in script docstring
+1. **Background** → documented in `background/` folder and hypothesis file
+2. **Hypothesis** → stated in script docstring, detailed in `hypotheses/HYPOTHESIS_XX.md`
 3. **Methods** → the script itself (code + data)
-4. **Results** → the output log + pasted output + interpretation
+4. **Results** → the log file output + `analysis/ANALYSIS_XX.md`

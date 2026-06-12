@@ -385,21 +385,21 @@ Ensure all paper elements are documented:
 
 ### 1. Use AI Effectively
 
-Start each AI session with:
+Point your AI to the right context:
 ```
 Please read prompts/InitialPrompt_paper_driven.md and prompts/KNOWN_PATTERNS.md and help me with my analysis.
 ```
 
 For iteration reviews:
 ```
-Please read prompts/iteration_review_prompt.md and help me evaluate this iteration.
+Please read the most recent analysis file and prompts/iteration_review_prompt.md to help me evaluate this iteration.
 ```
 
 ### 2. Document Everything
 
 - Update `NOTES.md` after every iteration
 - Keep `ITERATION_LOG.md` current
-- Add entries to `BREADCRUMB_TRAIL.md` regularly
+- Write per-iteration analysis files (`analysis/ANALYSIS_XX.md`)
 - Update `prompts/KNOWN_PATTERNS.md` when you solve errors or create reusable code
 
 ### 3. Use Consistent Styling
@@ -480,7 +480,7 @@ your_project/
 5. Start first analysis
 
 ### Continuing Work
-1. Check `BREADCRUMB_TRAIL.md` for context
+1. AI reads recent analysis files for context
 2. Review `prompts/KNOWN_PATTERNS.md` for reusable patterns and errors to avoid
 3. Review `ANALYSIS_PLAN.md` for next steps
 4. Create new iteration or new analysis
