@@ -73,6 +73,7 @@ See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 - **[QUICKSTART.md](QUICKSTART.md)** — Get started in 5 minutes
 - **[TUTORIAL.md](TUTORIAL.md)** — Full standard mode walkthrough
 - **[TUTORIAL_PAPER_DRIVEN.md](TUTORIAL_PAPER_DRIVEN.md)** — Paper-driven mode guide
+- **[TUTORIAL_HPC.md](TUTORIAL_HPC.md)** — HPC/SLURM submission guide
 
 ---
 
@@ -191,6 +192,26 @@ script_X1_...   — Track X (interpretation)
 
 ### Plans Directory
 `plans/` holds planning documents created before complex work begins.
+
+### Git Repository & Collaboration
+Projects are initialized as git repositories by default (`create_git_repo: yes`). SMAIRT includes best-practice guides for both solo and collaborative workflows:
+- **Single-user** — Commit discipline, phase tagging, atomic commits per iteration
+- **Collaborative** — Branch strategy, file ownership conventions, merge conflict prevention, intellectual contribution tracking per team member
+
+See `docs/BEST_PRACTICE_SINGLE.md` and `docs/BEST_PRACTICE_COLLABORATIVE.md` in generated projects.
+
+### MCP Skills Integration
+SMAIRT ships with two [MCP skills](skills/) that AI tool agents can load for structured guidance:
+- **`smairt-research`** — The full standard-mode workflow, audit trail conventions, and script patterns
+- **`smairt-paper-driven`** — Paper-driven iteration structure, analysis plans, and finalization steps
+
+Skills give AI assistants persistent context about SMAIRT conventions without requiring manual prompt priming each session.
+
+### HPC Support
+Generated projects include an `hpc/` directory with SLURM templates, a cluster configuration file, and a job-monitoring script. See [TUTORIAL_HPC.md](TUTORIAL_HPC.md) for a walkthrough covering:
+- Adapting the SLURM template to your cluster (partitions, accounts, modules)
+- Submitting experiment scripts as batch jobs
+- Monitoring jobs and integrating HPC logs with the audit trail
 
 ---
 
