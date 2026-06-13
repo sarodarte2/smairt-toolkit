@@ -21,7 +21,7 @@ This document defines the repository organization for the paper-driven project.
 │   └── {dataset_name}/         # Organized by source
 │
 ├── analysis/                   # All analyses
-│   ├── ANALYSIS_PLAN.md        # This file
+│   ├── ANALYSIS_PLAN.md        # Analysis planning
 │   ├── REPOSITORY_PLAN.md      # Repository organization
 │   ├── BREADCRUMB_TRAIL.md     # Running log
 │   ├── 01_{section}/           # Maps to paper section
@@ -35,10 +35,15 @@ This document defines the repository organization for the paper-driven project.
 │   ├── processing/             # Processing functions
 │   └── visualization/          # Plotting
 │
-├── prompts/                    # AI prompts
-│   ├── InitialPrompt.txt
+├── prompts/                    # AI prompts & context
+│   ├── InitialPrompt_paper_driven.md
 │   ├── AI_CONTEXT.md
+│   ├── CODE_CONVENTIONS.md
+│   ├── KNOWN_PATTERNS.md
 │   └── ...
+│
+├── plans/                      # AI-generated plans (git-tracked)
+│   └── README.md
 │
 ├── hpc/                        # HPC configuration (if needed)
 │   ├── config.yaml
@@ -47,10 +52,14 @@ This document defines the repository organization for the paper-driven project.
 ├── scripts/                    # Utility scripts
 │   ├── new_experiment.py
 │   ├── new_iteration.py
-│   └── generate_manifest.py
+│   ├── generate_manifest.py
+│   └── shared/                 # TeeLogger & shared utilities
+│
+├── results/                    # All output
+│   ├── logs/                   # Auto-captured script output
+│   └── figures/                # Generated figures
 │
 ├── FINAL_MANIFEST.md           # Maps results to paper
-├── AI_CONTEXT.md               # Current state for AI
 └── README.md
 ```
 

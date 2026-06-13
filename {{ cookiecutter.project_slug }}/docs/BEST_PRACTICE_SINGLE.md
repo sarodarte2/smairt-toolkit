@@ -6,18 +6,17 @@
 
 **At Project Start:**
 1. `background/01_initial_question.md` - Define your research question
-2. `hypotheses/hypothesis_log.md` - Record your first hypothesis
-3. `prompts/session_log.md` - Begin logging your first AI session
+2. `hypotheses/H1_*.md` - Record your first hypothesis (using `HYPOTHESIS_TEMPLATE.md`)
+3. `prompts/KNOWN_PATTERNS.md` - Begin documenting patterns as they emerge
 4. `prompts/intellectual_contribution.md` - Start tracking your contributions
 
 **At Each Iteration:**
-1. Create script: `experiments/[phase]/script_XX_description.py`
-2. Run and paste output as comments at bottom of script
-3. Update `hypotheses/hypothesis_log.md` with results (supported/not supported)
-4. Update `analysis/iteration_log.md` with interpretation
-5. Update `analysis/future_directions.md` for next iteration
-6. Update `prompts/session_log.md` with prompts and responses
-7. Update `prompts/intellectual_contribution.md` with YOUR critical insights
+1. Create script: `experiments/[phase]/script_XX_description.py` (uses TeeLogger)
+2. Run script — output auto-captured to `results/logs/`
+3. Update `hypotheses/` with results (supported/not supported)
+4. Document interpretation in `analysis/ANALYSIS_TEMPLATE.md` (copy for each iteration)
+5. Update `prompts/KNOWN_PATTERNS.md` with any patterns or errors discovered
+6. Update `prompts/intellectual_contribution.md` with YOUR critical insights
 
 {% if cookiecutter.starting_phase != 'real' %}
 **At Phase Transitions:**
