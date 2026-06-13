@@ -13,8 +13,10 @@ Paper-driven mode is designed for researchers who:
 - Want to maintain SMAIRT's reproducibility and iteration tracking benefits
 
 **Key Difference from Standard SMAIRT:**
-- Standard SMAIRT: Hypothesis → Synthetic data → Benchmark data → Real data
+- Standard SMAIRT: Hypothesis → Data progression (synthetic → downloaded → real)
 - Paper-Driven SMAIRT: Paper outline + Real datasets → Analysis plan → Iterative execution
+
+Both modes share the same core principles: the 10 Steps, the audit trail, intellectual contribution tracking, and KNOWN_PATTERNS.md.
 
 ---
 
@@ -25,10 +27,10 @@ Paper-driven mode is designed for researchers who:
 pip install cookiecutter
 
 # Create a new SMAIRT project
-cookiecutter gh:yourusername/smairt-template
+cookiecutter gh:yourusername/smairt-cookiecutter
 ```
 
-When prompted, select `paper_driven` for the `project_mode` option.
+When prompted, select `paper_driven` for the `project_mode` option. The `starting_phase` will automatically be set to `real` since paper-driven mode works directly with your datasets.
 
 You'll see output like:
 ```
@@ -126,6 +128,25 @@ Edit `analysis/ANALYSIS_PLAN.md` to map your paper sections to specific analyses
 - Table 1: Summary statistics
 ```
 
+You can also create a more detailed plan in `plans/` if the analysis requires multi-step coordination:
+
+```markdown
+# plans/analysis_01_plan.md
+
+## Goal
+Answer specific research question using dataset A.
+
+## Steps
+1. Data validation and characterization
+2. Apply method X with baseline parameters
+3. Tune parameters based on initial results
+4. Generate publication-quality figures
+
+## Risks
+- Data may have missing values requiring imputation
+- Method X may not converge for this data type
+```
+
 ---
 
 ## Step 5: Start Your First Analysis
@@ -154,7 +175,23 @@ analysis/01_first_analysis/
 
 ## Step 6: Run Your First Iteration
 
-### 6.1 Create Your Analysis Script
+### 6.1 Prime Your AI
+
+**IDE-Native (Roo/Zoo, Cursor, Windsurf):** Your AI can read project files directly. Start with:
+
+```
+Please read prompts/AI_CONTEXT.md, prompts/CODE_CONVENTIONS.md, and prompts/KNOWN_PATTERNS.md.
+
+I'm working in paper-driven mode on [brief description].
+I'm starting analysis 01: [analysis name].
+My hypothesis: [what you expect to find]
+
+Please help me create the analysis script using TeeLogger for the audit trail.
+```
+
+**Browser-Paste:** Run `python scripts/compile_for_ai.py` and paste the output, followed by `prompts/InitialPrompt_paper_driven.md`.
+
+### 6.2 Create Your Analysis Script
 
 Create `analysis/01_first_analysis/iterations/iter_01/run_analysis_01.py`:
 
@@ -162,43 +199,74 @@ Create `analysis/01_first_analysis/iterations/iter_01/run_analysis_01.py`:
 #!/usr/bin/env python
 """
 First analysis - Iteration 01
+
 Hypothesis: [Your hypothesis]
+Analysis: 01_first_analysis
+Iteration: 01
 """
 
 import sys
-sys.path.insert(0, '../../../..')  # Add project root to path
+from pathlib import Path
+from datetime import datetime
 
+# === PATH SETUP ===
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.shared import TeeLogger, setup_logging
 from lib.core.utils import load_config, set_seed, save_results
 from lib.visualization.style import setup_plot_style, save_figure
 import matplotlib.pyplot as plt
 
-# Load config
+# === CONFIGURATION ===
+SCRIPT_NAME = "run_analysis_01_iter01"
+LOG_DIR = PROJECT_ROOT / "results" / "logs"
 config = load_config('config_01.yaml')
 set_seed(config.get('seed', 1024))
 
-# Set up plotting
-setup_plot_style()
+# === MAIN CODE ===
+def main():
+    log_path = setup_logging(SCRIPT_NAME, LOG_DIR)
 
-# Your analysis code here
-# ...
+    with TeeLogger(log_path):
+        print(f"{'='*60}")
+        print(f"Script: {SCRIPT_NAME}")
+        print(f"Timestamp: {datetime.now().isoformat()}")
+        print(f"Hypothesis: [State hypothesis here]")
+        print(f"{'='*60}")
+        print()
 
-# Save results
-results = {
-    'metric_a': 0.85,
-    'metric_b': 0.72,
-}
-save_results(results, 'results/metrics.json')
+        # Set up plotting
+        setup_plot_style()
 
-# Create figure
-fig, ax = plt.subplots(figsize=(8, 6))
-# ... your plotting code ...
-save_figure(fig, 'figures/fig_01_comparison')
+        # Your analysis code here
+        # ...
 
-print("Analysis complete!")
-print(f"Results: {results}")
+        # Save results
+        results = {
+            'metric_a': 0.85,
+            'metric_b': 0.72,
+        }
+        save_results(results, 'results/metrics.json')
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(8, 6))
+        # ... your plotting code ...
+        save_figure(fig, 'figures/fig_01_comparison')
+
+        print()
+        print(f"Results: {results}")
+        print(f"{'='*60}")
+        print("=== COMPLETE ===")
+        print(f"{'='*60}")
+
+if __name__ == "__main__":
+    main()
 ```
 
-### 6.2 Configure Your Analysis
+Output is automatically captured to `results/logs/run_analysis_01_iter01_YYYYMMDD_HHMMSS.log` via TeeLogger — no need to paste output anywhere.
+
+### 6.3 Configure Your Analysis
 
 Edit `config_01.yaml`:
 
@@ -217,7 +285,7 @@ output:
   figures_dir: "figures/"
 ```
 
-### 6.3 Run and Document
+### 6.4 Run and Document
 
 ```bash
 cd analysis/01_first_analysis/iterations/iter_01
@@ -250,6 +318,24 @@ REVISE - Try different threshold values
 - Test threshold = 0.6, 0.7
 ```
 
+Also write `analysis/ANALYSIS_01.md` for the project-level audit trail:
+
+```markdown
+# Analysis 01: First Analysis - Iteration 01
+
+## Hypothesis
+Threshold of 0.5 will be optimal for dataset A.
+
+## Result
+metric_a: 0.85, metric_b: 0.72. Threshold needs tuning.
+
+## Interpretation
+Method works but may benefit from higher threshold. Decision: REVISE.
+
+## Next Steps
+Test threshold = 0.6, 0.7 in iteration 02.
+```
+
 ---
 
 ## Step 7: Iterate
@@ -279,6 +365,17 @@ Run the new iteration and update `ITERATION_LOG.md`:
 |------|------|-------------|------------|---------|----------|
 | 01 | 2024-01-15 | Baseline | Initial | a=0.85, b=0.72 | Revise |
 | 02 | 2024-01-16 | Tuned threshold | 0.5→0.6 | a=0.89, b=0.78 | **ACCEPT** |
+```
+
+### 7.4 Update Known Patterns
+
+If you discovered something reusable, add it to `prompts/KNOWN_PATTERNS.md`:
+
+```markdown
+### 1.X Threshold Sensitivity for Method X
+**Context**: When applying method X to datasets with high variance
+**Pattern**: Start with threshold = 0.6, not 0.5
+**Why**: Lower thresholds include noise; 0.6 is the sweet spot for this data type
 ```
 
 ---
@@ -340,6 +437,26 @@ Add entries to `analysis/BREADCRUMB_TRAIL.md`:
 - Apply same approach to dataset_b
 ```
 
+### Track Intellectual Contributions
+
+Update `prompts/intellectual_contribution.md`:
+
+```markdown
+## Analysis 01 - First Analysis
+
+### What I Contributed
+- Identified threshold sensitivity as the key parameter
+- Chose to tune threshold rather than switch methods (AI suggested method Y)
+- Interpreted the metric improvement in context of the research question
+
+### Where AI Helped
+- Generated boilerplate analysis code
+- Suggested visualization approaches
+- Implemented parameter sweep efficiently
+```
+
+> **Note:** If your AI has Active Innovation Detection enabled, it will proactively flag when you make novel contributions — you don't have to remember to log them yourself.
+
 ### Generate Manifest
 
 ```bash
@@ -379,21 +496,44 @@ Ensure all paper elements are documented:
 | Table 1 | 01_first_analysis | iter_02 | ✓ Finalized |
 ```
 
+### Review the Audit Trail
+
+Your project now contains a complete record:
+
+```
+results/logs/
+├── run_analysis_01_iter01_20240115_143022.log
+├── run_analysis_01_iter02_20240116_091544.log
+└── run_analysis_02_iter01_20240117_102233.log
+
+analysis/
+├── ANALYSIS_01.md    # Interpretation of iter_01
+├── ANALYSIS_02.md    # Interpretation of iter_02
+└── ...
+```
+
+Each script run is automatically logged. Hypotheses, scripts, logs, and analyses form the complete breadcrumb trail.
+
 ---
 
 ## Tips for Success
 
 ### 1. Use AI Effectively
 
-Point your AI to the right context:
+**IDE-Native** (recommended): Your AI reads files directly. Point it to context:
 ```
-Please read prompts/InitialPrompt_paper_driven.md and prompts/KNOWN_PATTERNS.md and help me with my analysis.
+Please read the log file at results/logs/run_analysis_01_iter02_*.log
+and help me interpret the results against HYPOTHESIS_01.md.
 ```
 
 For iteration reviews:
 ```
-Please read the most recent analysis file and prompts/iteration_review_prompt.md to help me evaluate this iteration.
+Please read analysis/01_first_analysis/iterations/ITERATION_LOG.md
+and prompts/iteration_review_prompt.md to help me evaluate whether
+to accept or revise this iteration.
 ```
+
+**Browser-Paste**: Run `python scripts/compile_for_ai.py` to get a single file you can paste.
 
 ### 2. Document Everything
 
@@ -401,6 +541,7 @@ Please read the most recent analysis file and prompts/iteration_review_prompt.md
 - Keep `ITERATION_LOG.md` current
 - Write per-iteration analysis files (`analysis/ANALYSIS_XX.md`)
 - Update `prompts/KNOWN_PATTERNS.md` when you solve errors or create reusable code
+- Track intellectual contributions (or let Active Innovation Detection help)
 
 ### 3. Use Consistent Styling
 
@@ -421,6 +562,10 @@ set_seed(1024)  # Default seed
 
 Never modify a previous iteration's files. Always create a new iteration for changes.
 
+### 6. Maintain Known Patterns
+
+When you discover something important — a working code pattern, a recurring error, or a project-specific convention — add it to `prompts/KNOWN_PATTERNS.md`. This prevents the AI from repeating past mistakes across sessions.
+
 ---
 
 ## Directory Structure Reference
@@ -435,10 +580,20 @@ your_project/
 ├── data/
 │   └── {dataset}/              # Your datasets
 │
+├── plans/                      # Research plans & coordination
+│
+├── prompts/                    # AI context files
+│   ├── AI_CONTEXT.md           # Core AI instructions
+│   ├── CODE_CONVENTIONS.md     # Script structure rules
+│   ├── KNOWN_PATTERNS.md       # Reusable patterns & errors
+│   ├── SESSION_START.md        # Priming prompts
+│   └── intellectual_contribution.md
+│
 ├── analysis/
 │   ├── ANALYSIS_PLAN.md        # Maps analyses to paper
 │   ├── REPOSITORY_PLAN.md      # Repository organization
 │   ├── BREADCRUMB_TRAIL.md     # Running log
+│   ├── ANALYSIS_01.md          # Per-iteration interpretations
 │   ├── 01_{analysis}/
 │   │   ├── README.md
 │   │   ├── hypotheses.md
@@ -452,6 +607,10 @@ your_project/
 │   │       └── figures/
 │   └── XX_figures/             # Final publication figures
 │
+├── results/
+│   ├── logs/                   # Auto-generated by TeeLogger
+│   └── figures/
+│
 ├── lib/                        # Shared library
 │   ├── core/utils.py
 │   ├── io/data_loader.py
@@ -459,9 +618,11 @@ your_project/
 │   └── visualization/style.py
 │
 ├── scripts/
+│   ├── shared/                 # TeeLogger, setup_logging
 │   ├── new_experiment.py
 │   ├── new_iteration.py
 │   ├── finalize_iteration.py
+│   ├── compile_for_ai.py
 │   └── generate_manifest.py
 │
 ├── FINAL_MANIFEST.md           # Maps results to paper
@@ -476,11 +637,11 @@ your_project/
 1. Create project with `paper_driven` mode
 2. Add paper outline
 3. Add data
-4. Create analysis plan
+4. Create analysis plan (in `analysis/ANALYSIS_PLAN.md` and/or `plans/`)
 5. Start first analysis
 
 ### Continuing Work
-1. AI reads recent analysis files for context
+1. AI reads recent analysis files and logs for context (IDE-native)
 2. Review `prompts/KNOWN_PATTERNS.md` for reusable patterns and errors to avoid
 3. Review `ANALYSIS_PLAN.md` for next steps
 4. Create new iteration or new analysis
@@ -491,13 +652,14 @@ your_project/
 2. Review all `SELECTED.md` files
 3. Collect final figures
 4. Verify reproducibility
+5. Review `prompts/intellectual_contribution.md` for attribution
 
 ---
 
 ## Getting Help
 
 - Review `prompts/InitialPrompt_paper_driven.md` for AI assistance
-- Check `analysis/REPOSITORY_PLAN.md` for conventions
+- Check `prompts/SESSION_START.md` for session priming prompts
+- See `analysis/REPOSITORY_PLAN.md` for conventions
 - See `lib/README.md` for shared library usage
-
-Happy researching! 🔬📄
+- Read `docs/SMAIRT_PHILOSOPHY.md` for framework principles
