@@ -4,6 +4,14 @@ A [cookiecutter](https://cookiecutter.readthedocs.io/) template for AI-accelerat
 
 ---
 
+## The Hard Problem of Science
+
+> AI excels at regression toward the mean — it can't innovate in a meaningful way. But it CAN help you get quickly to the frontier of what's already known.
+
+SMAIRT helps you move quickly from not knowing much to being at the frontier of an area, where you can see the gaps and make genuine contributions.
+
+---
+
 ## Overview
 
 SMAIRT is designed for researchers who use AI tools (VSCode Roo/Zoo, Cursor, Windsurf, ChatGPT, Claude) to accelerate their research. It provides:
@@ -18,14 +26,16 @@ SMAIRT is designed for researchers who use AI tools (VSCode Roo/Zoo, Cursor, Win
 ## Project Modes
 
 ### Standard Mode (default)
-Hypothesis-driven exploration progressing through:
-1. Synthetic data → 2. Downloaded benchmarks → 3. Real data
-# Select "standard" when prompted for project_mode
+
+Hypothesis-driven exploration with a configurable starting phase. Choose where to begin based on your data situation:
+
+- **Synthetic** — Full 3-phase progression (synthetic → downloaded → real). Best for algorithm development and new methods where you want fast iteration without data dependencies.
+- **Downloaded** — Start with established benchmarks. Best when validated datasets already exist for your problem.
+- **Real** — Start directly with your own data. Best when you're bringing your own dataset or synthetic data doesn't apply.
 
 ### Paper-Driven Mode
-For research that starts with a paper outline and real datasets:
-Perfect for more mature ideas and paper revisions
-# Select "paper_driven" when prompted for project_mode
+
+For research that starts with a paper outline and real datasets. Perfect for more mature ideas, paper revisions, or when you already know the structure of the story you're telling.
 
 ---
 
@@ -239,14 +249,6 @@ After running experiments:
 | `domain` | Research domain | machine_learning |
 | `starting_phase` | Where to begin experiments | synthetic |
 | `create_git_repo` | Initialize git on creation | yes |
-
----
-
-## The Hard Problem of Science
-
-> AI excels at regression toward the mean — it can't innovate in a meaningful way. But it CAN help you get quickly to the frontier of what's already known.
-
-SMAIRT helps you move quickly from not knowing much to being at the frontier of an area, where you can see the gaps and make genuine contributions.
 
 ---
 
