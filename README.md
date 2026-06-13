@@ -174,7 +174,7 @@ The AI reads these directly (no copy-pasting needed in IDE-native mode).
 - Pre-flight checklist
 
 ### Intellectual Contribution Tracking
-Track where YOU make critical decisions in `prompts/intellectual_contribution.md`.
+Track where YOU make critical decisions in `prompts/intellectual_contribution.md`. The AI actively watches for novel contributions — unexpected connections, creative pivots, or domain insights — and asks whether to log them. This ensures your genuine innovations don't get lost in the flow of AI-assisted work.
 
 ### Multi-Track Experimentation
 As projects grow, fork into parallel tracks:
