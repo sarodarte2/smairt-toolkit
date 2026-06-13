@@ -31,7 +31,7 @@ You'll be prompted for:
 - **Workflow mode** — `ide_native` (recommended for Roo/Cursor) or `browser_paste`
 - **AI tool** — Which AI tool you primarily use
 - **Research question** — What you're investigating
-- **Data progression** — Which phases apply to your project
+- **Starting phase** — Where to begin: `synthetic`, `downloaded`, or `real`
 
 ---
 

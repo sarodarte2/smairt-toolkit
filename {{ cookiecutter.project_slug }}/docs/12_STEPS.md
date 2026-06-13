@@ -1,4 +1,4 @@
-# The SMAIRT 12 Steps
+# The SMAIRT 10 Steps
 
 A concise reference for the Scientific Method with AI Research Template workflow.
 
@@ -6,7 +6,7 @@ A concise reference for the Scientific Method with AI Research Template workflow
 
 ## Overview
 
-These 12 steps define how to work with AI in a research context, maintaining
+These 10 steps define how to work with AI in a research context, maintaining
 scientific rigor while moving quickly. Adapted for IDE-native AI tools (VSCode
 Roo/Zoo, Cursor, Windsurf) where the AI has direct file access.
 
@@ -41,44 +41,67 @@ This forces clarity and prevents post-hoc rationalization.
 
 ---
 
-## Step 3: Start with Synthetic Data
-
-Synthetic data enables rapid iteration without external dependencies.
+## Step 3: Follow the Data Progression
+{% if cookiecutter.starting_phase == 'synthetic' %}
+This project uses the full three-phase data progression:
 
 ```
-Phase 1: Synthetic → Fast feedback, verify code works
-Phase 2: Downloaded → Diversity, robustness testing
-Phase 3: Real data → Full validation
+Phase 1: Synthetic   → Fast feedback, verify code works
+Phase 2: Downloaded  → Diversity, robustness testing
+Phase 3: Real data   → Full validation
 ```
 
-Don't skip to real data prematurely. Synthetic data helps you:
+**Start with synthetic data.** Don't skip to real data prematurely. Synthetic data helps you:
 - Verify your code is correct
 - Understand algorithm behavior under controlled conditions
 - Iterate quickly (seconds vs. hours)
 
+**Progress to downloaded benchmarks** for diversity:
+- Test across different data characteristics
+- Compare against known results
+- Ensure approach isn't overfit to synthetic patterns
+
+**Then test on real data** — the ultimate validation:
+- Expect noise, messiness, and edge cases
+- Results that don't match synthetic performance reveal true boundaries
+{% elif cookiecutter.starting_phase == 'downloaded' %}
+This project starts with downloaded/benchmark data:
+
+```
+Phase 1: Downloaded  → Diversity, robustness testing
+Phase 2: Real data   → Full validation
+```
+
+**Start with benchmark data.** These provide:
+- Diversity across different data characteristics
+- Validation against known results
+- Robustness testing before committing to your target data
+
+**Then test on real data** — the ultimate validation:
+- Expect noise, messiness, and edge cases
+- Results that don't match benchmark performance reveal true boundaries
+
+> **Tip**: You can always add a synthetic phase later (`experiments/01_synthetic/`) if you need to isolate and test specific components.
+{% elif cookiecutter.starting_phase == 'real' %}
+This project works directly with real data:
+
+```
+Phase 1: Real data → Your actual target data
+```
+
+You're bringing your own data and starting experiments directly. This is appropriate when:
+- Your data is already available and well-understood
+- The research question is specific to your dataset
+- Synthetic approximations wouldn't be meaningful
+
+Place scripts in `experiments/03_real_data/`.
+
+> **Tip**: You can always add earlier phases later if you need to isolate and test specific components in a controlled setting.
+{% endif %}
+
 ---
 
-## Step 4: Progress to Downloaded Benchmark Data
-
-Benchmark datasets provide:
-- **Diversity** — Test across different data characteristics
-- **Validation** — Compare against known results
-- **Robustness** — Ensure approach isn't overfit to synthetic patterns
-
----
-
-## Step 5: Then Test on Real Data
-
-Real data is the ultimate test. Expect:
-- Noise and messiness
-- Missing values and edge cases
-- Results that don't match synthetic performance
-
-This is where you learn the true boundaries of your approach.
-
----
-
-## Step 6: Number Your Scripts Sequentially
+## Step 4: Number Your Scripts Sequentially
 
 Scripts are the atomic unit of experimentation:
 
@@ -97,7 +120,7 @@ Each script should:
 
 ---
 
-## Step 7: Maintain the Audit Trail
+## Step 5: Maintain the Audit Trail
 
 Every experiment produces a trail of evidence:
 
@@ -112,7 +135,7 @@ The AI reads these files directly — no need to manually copy anything.
 
 ---
 
-## Step 8: Name Log Files to Match Scripts
+## Step 6: Name Log Files to Match Scripts
 
 Log files should be clearly traceable to their source scripts:
 
@@ -125,7 +148,7 @@ The `setup_logging()` function from `scripts/shared/` handles this automatically
 
 ---
 
-## Step 9: Use compile_for_ai.py for Cross-Tool Transfer
+## Step 7: Use compile_for_ai.py for Cross-Tool Transfer
 
 `scripts/compile_for_ai.py` generates a single document containing the full
 project state. Use it when:
@@ -139,12 +162,12 @@ In normal IDE-native workflow, the AI reads files directly and doesn't need this
 
 ---
 
-## Step 10: Use Priming Prompts
+## Step 8: Use Priming Prompts
 
 See `prompts/SESSION_START.md` for context-setting prompts appropriate to different
 situations (onboarding, context refresh, planning, interpretation, etc.).
 
-### 10b: Maintain Known Patterns & Errors
+### 8b: Maintain Known Patterns & Errors
 
 After each iteration, update `prompts/KNOWN_PATTERNS.md` with:
 - **Reusable patterns** — Code that works and should be reused
@@ -154,7 +177,7 @@ After each iteration, update `prompts/KNOWN_PATTERNS.md` with:
 
 ---
 
-## Step 11: Follow the 4-Part Scientific Method Structure
+## Step 9: Follow the 4-Part Scientific Method Structure
 
 Every iteration follows this structure:
 
@@ -181,7 +204,7 @@ Every iteration follows this structure:
 
 ---
 
-## Step 12: Use Future Directions to Seed Next Iteration
+## Step 10: Use Future Directions to Seed Next Iteration
 
 The "Next Steps" section of each analysis file seeds the next hypothesis.
 

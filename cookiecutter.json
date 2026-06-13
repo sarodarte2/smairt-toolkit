@@ -10,7 +10,7 @@
     "domain": ["machine_learning", "data_science", "computational_biology", "physics", "chemistry", "engineering", "other"],
     "ai_tool": ["roo_zoo", "cursor", "windsurf", "claude", "chatgpt", "other"],
     "include_example_project": ["no", "yes"],
-    "data_progression": ["synthetic_downloaded_real", "synthetic_real", "downloaded_real", "real_only"],
+    "starting_phase": ["synthetic", "downloaded", "real"],
     "license": ["MIT", "BSD-3-Clause", "Apache-2.0", "GPL-3.0", "proprietary"],
     "create_git_repo": ["yes", "no"],
     "_copy_without_render": [

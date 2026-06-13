@@ -157,12 +157,13 @@ Write a pivot plan to plans/PLAN_[NEW_DIRECTION].md.
 
 ---
 
+{% if cookiecutter.starting_phase != 'real' %}
 ## Phase Transition
 
-Use when moving from synthetic → downloaded or downloaded → real:
+Use when moving between data phases:
 
 ```
-We're transitioning from [synthetic/downloaded] to [downloaded/real] data.
+We're transitioning from [current phase] to [next phase] data.
 
 Please read:
 - Recent analysis files for the current phase
@@ -178,6 +179,7 @@ Help me:
 ```
 
 ---
+{% endif %}
 
 ## Full Context Reload
 

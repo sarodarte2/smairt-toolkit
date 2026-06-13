@@ -167,7 +167,7 @@ The `setup_logging()` function handles this automatically.
 ## Directory Conventions
 
 Place scripts in the appropriate phase directory:
-
+{% if cookiecutter.starting_phase == 'synthetic' %}
 ```
 experiments/
 ├── 01_synthetic/          # Phase 1: Synthetic data tests
@@ -183,6 +183,31 @@ experiments/
 └── interpretation/        # Interpretation & diagnostics scripts (Track X)
     └── script_X1_xxx.py
 ```
+{% elif cookiecutter.starting_phase == 'downloaded' %}
+```
+experiments/
+├── 02_downloaded/         # Phase 1: Benchmark data tests
+│   ├── script_01_xxx.py
+│   └── script_02_xxx.py
+├── 03_real_data/          # Phase 2: Real data tests
+│   ├── script_03_xxx.py
+│   ├── script_B01_xxx.py  # Track B starts here
+│   └── script_D01_xxx.py  # Track D starts here
+└── interpretation/        # Interpretation & diagnostics scripts (Track X)
+    └── script_X1_xxx.py
+```
+{% elif cookiecutter.starting_phase == 'real' %}
+```
+experiments/
+├── 03_real_data/          # All experiments go here
+│   ├── script_01_xxx.py
+│   ├── script_02_xxx.py
+│   ├── script_B01_xxx.py  # Track B
+│   └── script_D01_xxx.py  # Track D
+└── interpretation/        # Interpretation & diagnostics scripts (Track X)
+    └── script_X1_xxx.py
+```
+{% endif %}
 
 ---
 

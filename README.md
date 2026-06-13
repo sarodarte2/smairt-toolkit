@@ -20,12 +20,12 @@ SMAIRT is designed for researchers who use AI tools (VSCode Roo/Zoo, Cursor, Win
 ### Standard Mode (default)
 Hypothesis-driven exploration progressing through:
 1. Synthetic data → 2. Downloaded benchmarks → 3. Real data
+# Select "standard" when prompted for project_mode
 
 ### Paper-Driven Mode
 For research that starts with a paper outline and real datasets:
-```bash
+Perfect for more mature ideas and paper revisions
 # Select "paper_driven" when prompted for project_mode
-```
 
 ---
 
@@ -98,11 +98,13 @@ Every iteration produces:
 
 ### Data Progression
 
-```
-Phase 1: Synthetic    → Fast iteration, verify approach
-Phase 2: Downloaded   → Benchmark validation, robustness
-Phase 3: Real data    → Full test of the approach
-```
+Choose your starting phase when creating a project:
+
+| Starting Phase | Directories Created | Best For |
+|----------------|--------------------|----|
+| `synthetic` (default) | 01_synthetic → 02_downloaded → 03_real_data | Algorithm development, new methods |
+| `downloaded` | 02_downloaded → 03_real_data | Known benchmarks, existing methods |
+| `real` | 03_real_data only | Bringing your own data, domain-specific questions |
 
 ---
 
@@ -235,7 +237,7 @@ After running experiments:
 | `workflow_mode` | IDE-native or browser-paste | ide_native |
 | `ai_tool` | Primary AI tool used | roo_zoo |
 | `domain` | Research domain | machine_learning |
-| `data_progression` | Data phases to include | synthetic_downloaded_real |
+| `starting_phase` | Where to begin experiments | synthetic |
 | `create_git_repo` | Initialize git on creation | yes |
 
 ---

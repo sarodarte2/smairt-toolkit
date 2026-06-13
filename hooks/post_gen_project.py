@@ -8,6 +8,7 @@ and prints mode-appropriate success messages.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 
@@ -27,6 +28,34 @@ def init_git_repo():
     except FileNotFoundError:
         # Git not installed
         return False
+
+def remove_earlier_phases(starting_phase):
+    """Remove experiment and data directories for phases before the starting phase.
+
+    - synthetic: keep all three phases (full progression)
+    - downloaded: remove 01_synthetic experiments and data/synthetic
+    - real: remove 01_synthetic + 02_downloaded experiments and data/synthetic + data/downloaded
+    """
+    dirs_to_remove = []
+
+    if starting_phase == "downloaded":
+        dirs_to_remove = [
+            os.path.join("experiments", "01_synthetic"),
+            os.path.join("data", "synthetic"),
+        ]
+    elif starting_phase == "real":
+        dirs_to_remove = [
+            os.path.join("experiments", "01_synthetic"),
+            os.path.join("experiments", "02_downloaded"),
+            os.path.join("data", "synthetic"),
+            os.path.join("data", "downloaded"),
+        ]
+
+    for d in dirs_to_remove:
+        if os.path.exists(d):
+            shutil.rmtree(d)
+            print(f"  Removed {d}/ (not needed for starting_phase={starting_phase})")
+
 
 def remove_browser_paste_files():
     """Remove files that are only needed for browser-paste workflow."""
@@ -74,7 +103,7 @@ def print_ide_native_message():
 ║                                                                       ║
 ║   plans/          — Planning documents (create before complex work)   ║
 ║   hypotheses/     — Per-iteration hypothesis files                    ║
-║   experiments/    — Scripts by phase (synthetic → downloaded → real)   ║
+║   experiments/    — Scripts by data phase                              ║
 ║   analysis/       — Per-iteration analysis files                      ║
 ║   scripts/shared/ — Reusable utilities (logging, metrics, etc.)       ║
 ║   prompts/        — AI context, conventions, patterns                 ║
@@ -128,11 +157,14 @@ def print_browser_paste_message():
 ║                                                                       ║
 ╠═══════════════════════════════════════════════════════════════════════╣
 ║                                                                       ║
-║   Data Progression:                                                   ║
-║                                                                       ║
+║   Data Progression (starting_phase: {{ cookiecutter.starting_phase }}):║
+║                                                                       ║{% if cookiecutter.starting_phase == 'synthetic' %}
 ║   1. Synthetic   (experiments/01_synthetic/)  - Fast iteration        ║
 ║   2. Downloaded  (experiments/02_downloaded/) - Benchmark validation   ║
-║   3. Real data   (experiments/03_real_data/)  - Full test             ║
+║   3. Real data   (experiments/03_real_data/)  - Full test             ║{% elif cookiecutter.starting_phase == 'downloaded' %}
+║   1. Downloaded  (experiments/02_downloaded/) - Benchmark validation   ║
+║   2. Real data   (experiments/03_real_data/)  - Full test             ║{% else %}
+║   1. Real data   (experiments/03_real_data/)  - Direct work           ║{% endif %}
 ║                                                                       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 """)
@@ -189,6 +221,11 @@ def main():
             print("✓ Git repository initialized")
         else:
             print("✗ Could not initialize git repository (is git installed?)")
+
+    # Handle starting phase — remove directories for phases before the chosen start
+    starting_phase = "{{ cookiecutter.starting_phase }}"
+    if starting_phase != "synthetic":
+        remove_earlier_phases(starting_phase)
 
     # Handle workflow mode
     workflow_mode = "{{ cookiecutter.workflow_mode }}"

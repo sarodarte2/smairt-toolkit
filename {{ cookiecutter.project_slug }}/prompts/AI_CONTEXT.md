@@ -66,14 +66,26 @@ Each iteration produces:
 ---
 
 ## The Data Progression
+{% if cookiecutter.starting_phase == 'synthetic' %}
+This project uses the full three-phase data progression:
 
-1. **Synthetic data first** - Fast iteration, no dependencies
-   - Synthetic data enables rapid iteration without external dependencies
+1. **Synthetic data first** (`experiments/01_synthetic/`) - Fast iteration, no dependencies
+2. **Downloaded benchmark data second** (`experiments/02_downloaded/`) - Diversity, validation, robustness
+3. **Real data third** (`experiments/03_real_data/`) - Full test of approach
+{% elif cookiecutter.starting_phase == 'downloaded' %}
+This project starts at downloaded/benchmark data (skipping synthetic):
 
-2. **Downloaded benchmark data second** - Diversity, validation, robustness
-   - Benchmark datasets provide well-documented data for validation
+1. **Downloaded benchmark data** (`experiments/02_downloaded/`) - Diversity, validation, robustness
+2. **Real data** (`experiments/03_real_data/`) - Full test of approach
 
-3. **Real data third** - Full test of approach
+Note: You can always create synthetic experiments later if needed by adding `experiments/01_synthetic/`.
+{% elif cookiecutter.starting_phase == 'real' %}
+This project works directly with real data:
+
+1. **Real data** (`experiments/03_real_data/`) - Your actual target data
+
+Note: You can always add earlier phases (synthetic, downloaded) later if you need to isolate and test specific components.
+{% endif %}
 
 ---
 
@@ -121,8 +133,10 @@ prompts/           # AI context, conventions, known patterns, intellectual contr
 plans/             # Planning documents for tracks and complex experiments
 background/        # Research question, literature, prior results
 hypotheses/        # Per-iteration hypothesis files (HYPOTHESIS_XX.md)
-experiments/       # Scripts by phase (01_synthetic, 02_downloaded, 03_real_data)
-results/           # Logs and figures
+{% if cookiecutter.starting_phase == 'synthetic' %}experiments/       # Scripts by phase (01_synthetic, 02_downloaded, 03_real_data)
+{% elif cookiecutter.starting_phase == 'downloaded' %}experiments/       # Scripts by phase (02_downloaded, 03_real_data)
+{% else %}experiments/       # Scripts (03_real_data)
+{% endif %}results/           # Logs and figures
 analysis/          # Per-iteration analysis files (ANALYSIS_XX.md)
 data/              # Data files by phase
 scripts/           # Helper scripts and shared library

@@ -19,9 +19,11 @@
 6. Update `prompts/session_log.md` with prompts and responses
 7. Update `prompts/intellectual_contribution.md` with YOUR critical insights
 
-**At Phase Transitions (synthetic → downloaded → real):**
+{% if cookiecutter.starting_phase != 'real' %}
+**At Phase Transitions:**
 1. Create `background/iteration_XX_background.md` summarizing what was learned
 2. Archive or tag the phase completion
+{% endif %}
 
 ### Git Workflow
 

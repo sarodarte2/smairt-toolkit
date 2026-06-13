@@ -24,5 +24,5 @@ noise levels, and with different types of structures.
 ## Output Convention
 
 1. Output to console for immediate feedback
-2. Output to log file: `../../results/logs/script_XX_description_output.log`
-3. Paste output as comments at end of script (breadcrumb trail)
+2. Output to log file via `TeeLogger`: `../../results/logs/script_XX_description_TIMESTAMP.log`
+3. Reference hypothesis file in script docstring (audit trail)
