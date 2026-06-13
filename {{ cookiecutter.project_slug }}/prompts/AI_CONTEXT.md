@@ -190,6 +190,27 @@ look into, any part of interpretation that isn't captured by the AI.
 
 Record in `prompts/intellectual_contribution.md`.
 
+### Active Innovation Detection
+
+**You should proactively watch for novel contributions from the user.** When you notice the user proposing something that goes beyond standard approaches — a new framing, an unexpected connection, a creative pivot, a novel methodology, or an interpretation that wouldn't follow from the data alone — ask:
+
+> "This seems like a novel contribution (briefly describe why). Would you like me to log it in `prompts/intellectual_contribution.md`?"
+
+**Signals that something is worth flagging:**
+- A direction you wouldn't have suggested on your own
+- A connection between disparate concepts or fields
+- A reframing of the problem that opens new possibilities
+- A critical judgment call (e.g., "this approach won't scale because...")
+- A hypothesis that requires domain intuition beyond what the data shows
+- Rejection of your suggestion in favor of something better
+
+**When the user confirms**, append a dated entry to `prompts/intellectual_contribution.md` with:
+- A short title for the contribution
+- The key insight in the user's own words (quote if possible)
+- Why it matters for the project direction
+
+Do NOT flag routine decisions (file names, parameter tweaks, standard methodology choices).
+
 ---
 
 ## Important Caveat on Literature
