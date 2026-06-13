@@ -43,6 +43,12 @@ Scientific Method with AI Research Template - PAPER-DRIVEN MODE
 
 ## Step 2: Set Up Your Paper Outline
 
+There are two starting points for paper-driven mode:
+- **2A**: You're writing a new paper (start from an outline)
+- **2B**: You're revising a submitted paper based on reviewer feedback
+
+### Step 2A: Starting from a New Paper Outline
+
 Navigate to your project and edit `paper/outline.md`:
 
 ```markdown
@@ -69,6 +75,97 @@ Navigate to your project and edit `paper/outline.md`:
 ## 4. Discussion
 ## 5. Conclusion
 ```
+
+Then continue to Step 3.
+
+### Step 2B: Starting from Reviewer Feedback (Revision)
+
+If you've already submitted a paper and received reviewer comments, SMAIRT paper-driven mode is ideal for organizing your revision systematically. Place your materials in the project:
+
+1. **Put your submitted manuscript** in `paper/drafts/submitted_v1.md` (or `.pdf`)
+2. **Put reviewer feedback** in `paper/reviewer_feedback/`:
+   ```
+   paper/reviewer_feedback/
+   ├── reviewer_1.md
+   ├── reviewer_2.md
+   ├── reviewer_3.md
+   └── editor_decision.md
+   ```
+
+Then use this prompt to generate your revision plan:
+
+```
+Please read the following files:
+- paper/drafts/submitted_v1.md (our submitted manuscript)
+- paper/reviewer_feedback/ (all reviewer comments)
+- prompts/AI_CONTEXT.md
+- prompts/CODE_CONVENTIONS.md
+
+I need to revise this paper based on the reviewer feedback. Please help me:
+
+1. Summarize each reviewer's key concerns (categorize as: new analysis needed,
+   clarification/rewriting needed, or minor edits)
+
+2. For each concern requiring NEW ANALYSIS, create an entry in
+   analysis/ANALYSIS_PLAN.md with:
+   - Which reviewer comment it addresses
+   - What data/method is needed
+   - Expected output (figure, table, or text)
+
+3. Generate paper/outline.md that reflects the revised paper structure,
+   noting where new content will go
+
+4. Create a revision plan in plans/revision_plan.md with:
+   - Priority ordering (address most critical concerns first)
+   - Dependencies between analyses
+   - Estimated iterations per analysis
+   - A response-to-reviewers outline
+
+Please organize the new analyses as numbered sections in the analysis plan,
+so each reviewer concern maps to a trackable SMAIRT analysis with its own
+iterations and audit trail.
+```
+
+The AI will produce:
+- `paper/outline.md` — revised paper structure
+- `analysis/ANALYSIS_PLAN.md` — maps reviewer concerns to new analyses
+- `plans/revision_plan.md` — prioritized revision roadmap
+
+**Example output** in `plans/revision_plan.md`:
+
+```markdown
+# Revision Plan
+
+## Priority 1: New Analyses Required
+
+| # | Reviewer Comment | Analysis | Expected Output | Est. Iterations |
+|---|-----------------|----------|-----------------|-----------------|
+| 1 | R2.3: "Need statistical test for..." | 01_statistical_test | Table 2 (revised) | 1-2 |
+| 2 | R1.5: "Show results on additional dataset" | 02_additional_dataset | Fig 4 (new) | 2-3 |
+| 3 | R3.1: "Ablation study needed" | 03_ablation_study | Table 3 (new) | 2-3 |
+
+## Priority 2: Reanalysis / Revised Figures
+
+| # | Reviewer Comment | Analysis | Expected Output |
+|---|-----------------|----------|-----------------|
+| 4 | R1.2: "Error bars missing" | 04_error_bars | Fig 1-3 (revised) |
+
+## Priority 3: Writing / Clarification Only
+
+| # | Reviewer Comment | Section | Action |
+|---|-----------------|---------|--------|
+| 5 | R2.1: "Methods unclear" | Methods 2.3 | Rewrite paragraph |
+| 6 | R3.4: "Cite Smith et al." | Intro | Add citation |
+
+## Dependencies
+- Analysis 02 depends on data download (check data availability first)
+- Analysis 03 can run in parallel with 01
+
+## Response to Reviewers Template
+See paper/reviewer_feedback/response_draft.md
+```
+
+Then proceed with Step 3 (your data may already be in place from the original submission) and continue through the normal iteration workflow — each reviewer concern becomes a tracked analysis with its own hypothesis, scripts, logs, and interpretation.
 
 ---
 
