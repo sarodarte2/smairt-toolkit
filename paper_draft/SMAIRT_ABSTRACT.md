@@ -1,17 +1,35 @@
-# SMAIRT Project Abstract
+# SMAIRT Paper Abstract — PLoS Computational Biology
 
-## Scientific Method with AI Research Template: Accelerating Discovery for DOE Genesis Mission Applications
+## SMAIRT: A Structured Framework for AI-Assisted Scientific Discovery in Computational Research
 
-**Abstract**
+**Target journal**: PLoS Computational Biology  
+**Article type**: Software / Education  
+**Status**: Draft
 
-The Scientific Method with AI Research Template (SMAIRT) is a structured framework for AI-assisted computational research that systematically integrates large language models into the scientific discovery process. SMAIRT addresses a fundamental challenge in modern research: while AI excels at synthesizing existing knowledge and rapidly iterating through experimental designs, it cannot independently generate truly novel scientific insights. SMAIRT leverages this complementary relationship by providing researchers with tools to quickly reach the frontier of known science, where human creativity can identify genuine gaps and opportunities.
+---
 
-The framework's impact on Department of Energy Genesis mission applications is significant. Genesis missions require rapid hypothesis testing across complex parameter spaces, integration of diverse data modalities, and rigorous documentation for reproducibility—all areas where SMAIRT excels. By maintaining a comprehensive "breadcrumb trail" of prompts, code, results, and interpretations, SMAIRT enables seamless knowledge transfer between research sessions and team members, critical for multi-year DOE initiatives.
+### Abstract
 
-The proposed 6-month project will: (1) **Months 1-2**: Adapt SMAIRT's three-phase data progression (synthetic → benchmark → real) for Genesis-specific simulation workflows, establishing validation protocols using existing DOE datasets; (2) **Months 3-4**: Develop domain-specific priming prompts and code conventions optimized for Genesis computational requirements, including integration with DOE high-performance computing environments; (3) **Months 5-6**: Conduct pilot studies with two Genesis research teams, documenting intellectual contribution tracking and measuring acceleration in hypothesis-to-result cycle times.
+The integration of large language models (LLMs) into scientific research workflows presents both unprecedented opportunities for acceleration and significant challenges for reproducibility, attribution, and methodological rigor. We present SMAIRT (Scientific Method with AI Research Template), an open-source framework that structures AI-assisted computational research around the classical scientific method. Implemented as a cookiecutter template, SMAIRT generates standardized project structures with automated audit trails (linking hypotheses to scripts to logs to analyses), cross-session error prevention through accumulated known patterns, Model Context Protocol (MCP) skills for persistent AI context, configurable data progressions, and integrated HPC support. The framework's IDE-native workflow enables AI assistants to read files directly, execute code, and write documentation without manual context transfer—dramatically reducing the overhead of comprehensive documentation while maintaining it automatically.
 
-Key deliverables at 6 months include: (1) a Genesis-customized SMAIRT template package with HPC integration and domain-specific prompts, and (2) a pilot study report with quantitative metrics on hypothesis-to-result cycle time acceleration and best practices documentation for Genesis research teams.
+We demonstrate SMAIRT through three use cases: (1) a machine learning classifier developed through synthetic-to-real data progression, illustrating the framework's core iteration cycle and knowledge accumulation; (2) an Artemis II trajectory prediction project exercising collaborative workflows, HPC integration, and paper-driven mode; and (3) a metagenomic functional annotation problem where the 3-phase data progression was essential for disentangling methodological artifacts from biological signal, and where a documented dead-end led to the study's central finding. Across all cases, SMAIRT's KNOWN_PATTERNS.md mechanism prevented error recurrence across sessions, the audit trail provided complete reproducibility of both results and reasoning, and intellectual contribution tracking clearly delineated human versus AI contributions for publication attribution.
 
-SMAIRT transforms AI from a black-box assistant into a transparent research partner, ensuring that human researchers maintain clear ownership of scientific insights while dramatically accelerating the path from question to discovery.
+SMAIRT is freely available under the MIT License at https://github.com/biodataganache/smairt-cookiecutter.
 
-**Word count: 300**
+**Word count**: 262 (PLoS Comp Bio limit: 300)
+
+---
+
+### Keywords
+
+AI-assisted research, reproducibility, scientific method, research template, large language models, computational biology, project organization, intellectual contribution tracking
+
+---
+
+### Author Summary (required by PLoS Comp Bio)
+
+AI tools like ChatGPT and Claude can write code and suggest experiments far faster than humans working alone, but they cannot generate genuinely novel scientific ideas—they excel at reproducing what's already known. This creates a challenge: how do we benefit from AI's speed without losing track of our own intellectual contributions, and how do we maintain reproducibility when AI interactions are ephemeral?
+
+SMAIRT solves this by providing a project template that automatically documents everything: which hypotheses led to which experiments, what the code produced, how results were interpreted, and crucially, where the human researcher provided the key insights that AI could not. The framework also remembers what went wrong in previous sessions, preventing the frustrating cycle of rediscovering the same errors.
+
+We show SMAIRT working across three very different problems—a machine learning classifier, aerospace trajectory prediction, and a tricky metagenomics question—demonstrating that the same structured approach accelerates research regardless of domain. The framework is free, open-source, and works with any AI tool.
