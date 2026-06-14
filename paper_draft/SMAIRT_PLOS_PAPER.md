@@ -14,15 +14,15 @@ The Promise and Peril of AI in Scientific Research
 
 The emergence of large language models has fundamentally altered the landscape of computational research. Tools such as ChatGPT, Claude, and AI-integrated development environments (Cursor, Windsurf, VSCode with Roo/Zoo) can generate functional code, synthesize literature, suggest experimental designs, and iterate through analytical approaches at speeds impossible for human researchers working alone. For computational scientists across disciplines—bioinformatics, machine learning, physics, engineering—these capabilities promise dramatic acceleration of the research cycle.
 
-However, this promise comes with significant challenges. Large language models exhibit a fundamental characteristic that limits their scientific utility: they excel at regression toward the mean of their training data. This means AI assistants are remarkably effective at reproducing established approaches, suggesting methods that have worked in similar contexts, and synthesizing what is already known. They are far less capable—perhaps fundamentally incapable—of generating truly novel scientific insights, identifying genuine gaps in knowledge, or making the innovative conceptual leaps that drive scientific progress.
+However, this promise comes with significant challenges. Large language models work, fundamentally, by regression toward the mean—they do it in a very fancy way, but the result is the same: they can get you a long way toward what is already known or has already been tried. In practice, this means AI assistants are remarkably effective at probing the frontiers of established knowledge, moving a researcher rapidly from a place of relative ignorance to the boundary of what exists. They are far less capable—perhaps fundamentally incapable—of seeing beyond that boundary to identify genuine gaps, make innovative connections, or suggest truly novel directions.
 
-This limitation creates a paradox for researchers. AI can help navigate the vast landscape of existing knowledge with unprecedented speed, but it cannot tell you where the unexplored territories lie. The researcher who relies too heavily on AI suggestions risks being led in circles through well-trodden ground, never reaching the frontier where genuine discovery becomes possible.
+This creates a productive asymmetry rather than a paradox. AI will suggest approaches the researcher has never heard of—it knows vastly more about what has been tried—but it does not make the novel connections between disparate ideas that drive innovation. The researcher, however, can now do that connective thinking *so much faster* because AI has moved them from ignorance to the frontier. The work of genuine innovation becomes possible precisely because the preliminary survey of existing knowledge has been compressed from months to hours.
 
 The Hard Problem of Science
 
-One of the most challenging aspects of scientific research is identifying questions that are simultaneously novel, important, and tractable. Many apparent research questions fall into traps: they have already been answered (perhaps in different terminology), are hidden variants of solved problems, cannot be answered with available methods, or would not meaningfully advance understanding even if answered.
+The hardest thing to do in science—a problem that predates AI entirely—is identifying the questions that are genuinely relevant and useful. How do you find gaps that are real gaps? It is relatively easy to find questions that have been asked before. The truly tricky challenge is recognizing when you are asking a question that *sounds* novel but is actually a hidden variant of something already answered—perhaps in a different domain, perhaps with different language. Some apparent research questions simply do not need to be asked. Others have good answers elsewhere that are invisible because of disciplinary boundaries or terminological differences. These are the places where researchers must exercise judgment that AI cannot provide.
 
-Traditionally, researchers develop the judgment to navigate these traps through years of immersion in their field. AI assistants can dramatically accelerate the first part of this process—moving from relative ignorance to familiarity with what is known—but they cannot substitute for the human judgment required to recognize genuine novelty or importance.
+Traditionally, researchers develop this judgment through years of immersion in their field. AI assistants can dramatically accelerate the first part of the process—moving from relative ignorance to the frontier of what is known—but they cannot substitute for the human capacity to recognize genuine novelty or importance among the remaining open questions.
 
 The Need for Structured AI-Human Collaboration
 
@@ -77,13 +77,13 @@ SMAIRT is built on five foundational principles:
 
 **Principle 1: AI as vehicle to the frontier.** AI rapidly reaches the boundary of existing knowledge; human insight is essential for pushing beyond it. This framing prevents over-reliance on AI suggestions and maintains researcher agency.
 
-**Principle 2: Scientific method as organizing structure.** All work follows Background → Hypothesis → Methods → Results → Interpretation → Next Steps. This enforces disciplined thinking about what is being tested and why.
+**Principle 2: Scientific method as organizing structure.** All work follows a tightly integrated experiment-results-interpretation loop, very much using the scientific method. This structure emerged from practical experience—working through ideas with AI in this tight cycle enabled understanding of what was working and what wasn't with remarkable speed. Every iteration records four pieces of information, each in its own artifact: (1) **Background**—what is known about this question, including a summary of all previous results leading to this point; (2) **Hypothesis**—a specific, testable prediction; (3) **Methods**—the actual code and data required to test the hypothesis (the experiment script); and (4) **Results + Interpretation**—the log file output interpreted through the lens of the hypothesis (was it supported?), followed by future directions that feed directly back into the background for the next iteration. This creates a self-reinforcing loop: the future directions of iteration N become the background context for iteration N+1.
 
 **Principle 3: The audit trail.** Every experiment produces linked artifacts: hypothesis file → script → log file → analysis file. The AI reads these directly (IDE-native mode), enabling complete context restoration without manual intervention.
 
 **Principle 4: Error prevention through accumulated knowledge.** KNOWN_PATTERNS.md captures working code patterns, recurring errors with fixes, consistency rules, and pre-flight checklists. Each session can build on previous sessions' discoveries rather than rediscovering the same issues.
 
-**Principle 5: Explicit intellectual contribution tracking.** Dedicated mechanisms document where researchers provide critical insights—novel connections, creative pivots, domain expertise—versus where AI generates suggestions.
+**Principle 5: Explicit intellectual contribution tracking.** If AI is generating ideas, testing them, and moving things forward largely on its own, a researcher's intellectual contribution might reduce to pressing the button. But in practice, there are critical junctures—moments where the process hits a dead end or lacks good ideas—where the researcher provides the key insight that redirects the work. These moments might be suggesting a specific analysis approach, recognizing a connection between disparate results, or knowing when to abandon a failed direction entirely. Without explicit tracking, these contributions become invisible in the resulting code and publications. Dedicated mechanisms ensure that researchers know—and can demonstrate—precisely where they made those critical steps.
 
 Project Structure
 
@@ -139,14 +139,14 @@ Central to SMAIRT is an automated audit trail that links every experimental arti
 3. **TeeLogger** automatically captures all console output to a timestamped log file in `results/logs/`
 4. **Analysis files** (e.g., `analysis/ANALYSIS_01.md`) record interpretation and next steps
 
-The TeeLogger implementation (in `scripts/shared/logging.py`) provides dual output—console for immediate feedback, file for permanent record—with no manual intervention required:
+TeeLogger provides dual output—to the console for immediate feedback, and to a log file in `results/logs/` named to match the script that produced it. This simple convention—all log files in one place, each clearly associated with the script that generated it—creates the linked chain that makes the audit trail navigable. The researcher can look at any log and immediately find the script, or look at any script and immediately find its output:
 
 ```python
 from shared.logging import TeeLogger
 logger = TeeLogger("01_baseline")  # Creates results/logs/01_baseline_YYYYMMDD_HHMMSS.log
 ```
 
-In IDE-native mode, the AI reads log files directly after execution, writes analysis, and proposes the next hypothesis—creating a continuous loop without human copy-paste overhead. This represents a significant advance over earlier approaches that required manual output transfer between execution environments and AI sessions.
+The audit trail functions as a breadcrumb trail that allows the researcher—or a new AI session—to get right back to where they left off, even in a completely new thread, even with a different AI system entirely. By feeding the repository back in, any capable LLM can immediately reconstruct the thought process: here are all the things we tried, here are the datasets we ran them on, here are the algorithms we tested, here are the prompts that drove each iteration, and here are the results. The AI can recreate the entire trajectory and come out at the current frontier, ready to continue. This is not merely convenient—it is what makes AI-assisted research viable across sessions, tools, and collaborators.
 
 Known Patterns and Error Prevention
 
@@ -172,7 +172,11 @@ SMAIRT implements a configurable data progression that adapts to different resea
 | Downloaded | 02_downloaded → 03_real_data | Known benchmarks, existing methods |
 | Real | 03_real_data only | Domain-specific questions, proprietary data |
 
-The synthetic-first progression (when applicable) offers significant advantages: rapid iteration without data dependencies, precise control over ground truth, and principled validation of whether an approach works in principle before investing in real data acquisition. However, recognizing that many research questions begin with existing data, SMAIRT does not impose this progression when it would be inappropriate.
+The first phase uses synthetic data—not because synthetic data is representative of reality (it rarely is), but because it removes all external dependencies from the iteration cycle. The researcher can get an idea of what might work and what might not just from the code itself, without being dependent on outside sources, data access, or computational resources. This enables a tight iteration loop where the focus is on whether an approach works *in principle*. Synthetic data has obvious limitations and will not carry you far, but for taking that critical first step—establishing that the logic is sound, the pipeline works, and the metrics move in expected directions—it is enormously useful.
+
+The second phase downloads established benchmark datasets—and there is a really great library of these because people across many disciplines are doing similar work. This gives the researcher several things simultaneously: data that many others have examined (so at this validation stage, comparison is possible), and genuine diversity—easy data, hard data, messy experimental data, clean pedagogical datasets. For fundamental algorithm development, it can make a great deal of sense to test across datasets from entirely different disciplines. If an approach is robust over these varied datasets, that says something powerful about its generality. If it isn't—that is equally informative, revealing the boundaries of where the method works and where it breaks down.
+
+However, recognizing that many research questions begin with existing data, SMAIRT does not impose the full three-phase progression when it would be inappropriate.
 
 MCP Skills Integration
 
@@ -181,18 +185,20 @@ SMAIRT ships with two Model Context Protocol (MCP) skills that AI tool agents ca
 - **`smairt-research`**: The full standard-mode workflow, audit trail conventions, script patterns, and the 10 Steps methodology
 - **`smairt-paper-driven`**: Paper-driven iteration structure, analysis plans, and finalization steps
 
-Skills eliminate the need for manual prompt priming at session start. When an AI agent loads a SMAIRT skill, it immediately understands the project's conventions, expected file locations, and workflow patterns. This reduces friction in multi-session research and ensures consistent AI behavior across tools (VSCode Roo/Zoo, Cursor, Windsurf).
+SMAIRT also includes an input set of prompt files (in `prompts/`) designed to prime the AI thread at the start of each session. These prompts sit in the background and cause the AI to simply *do these things*—follow the conventions, check known patterns, produce properly formatted output—without the researcher needing to specify them each time. MCP skills take this further: when an AI agent loads a SMAIRT skill, it immediately understands the project's conventions, expected file locations, and workflow patterns without reading any project files first. This transforms every new session from a cold start into a continuation of an ongoing collaboration, reducing friction in multi-session research and ensuring consistent AI behavior across tools (VSCode Roo/Zoo, Cursor, Windsurf).
 
 HPC Integration
 
-For computationally intensive research, SMAIRT includes integrated HPC support:
+The data progression also addresses a practical constraint: computational cost. If every experimental iteration requires an HPC cluster submission and large data transfers, the tight iteration loop breaks down. The synthetic-first and benchmark-first phases explicitly solve this—researchers can test ideas on small, local data where turnaround is minutes, not hours. Once an approach is validated at small scale, the hypothesis naturally evolves: "this worked on subsets and benchmarks; will it work at full scale on real data?" That larger hypothesis takes longer to test—requiring HPC resources, full datasets, and extended runtime—but by that point the researcher has confidence that the investment is warranted.
+
+SMAIRT's HPC integration supports this transition:
 
 - **SLURM templates**: Customizable job submission scripts with proper log routing
 - **Cluster configuration**: `hpc/config.yaml` centralizes partition, account, module, and environment settings
 - **Job monitoring**: Template script for checking job status and parsing partial results
-- **Audit trail integration**: HPC logs can feed directly into the standard analysis workflow
+- **Audit trail integration**: HPC logs feed directly into the standard analysis workflow
 
-This integration ensures that moving from local development to cluster execution does not break the documentation chain—jobs run on remote systems still produce logs that connect hypotheses to analyses.
+This ensures that moving from local development to cluster execution does not break the documentation chain—jobs run on remote systems still produce logs that connect hypotheses to analyses.
 
 Git-First Collaboration
 
@@ -226,6 +232,8 @@ Each iteration follows a structured cycle:
 6. **Next Steps**: Identify what to test next; feeds back into Background
 
 In IDE-native mode, steps 1–2 and 4–6 happen within a single AI conversation. The researcher's role is providing critical direction, novel connections, and judgment about when approaches work or fail.
+
+In practice, experiments do not always progress linearly. A future direction from iteration 3 might spawn two parallel investigations, one of which later reconnects to findings from iteration 1. The experimental history forms not a chain but a directed acyclic graph (DAG) of experiments. SMAIRT's multi-track naming convention (Track A, Track B, Track X) and the BREADCRUMB_TRAIL capture this branching structure, allowing the full graph of what-led-to-what to be reconstructed even when the path was non-linear.
 
 The 10 Steps
 
@@ -360,7 +368,13 @@ Use Case 2's collaborative workflow demonstrates SMAIRT's team science features.
 
 Positioning AI Appropriately in Scientific Research
 
-SMAIRT embodies a specific philosophy: AI is a powerful tool for reaching the frontier of existing knowledge, but human insight remains essential for pushing beyond it. Use Case 3's dead-end at iteration 4 exemplifies this—AI suggested variations on failed approaches, but the fundamental reconceptualization (position-aware annotation) required human insight into the biology of protein function. The framework's explicit documentation of this pivot ensures both reproducibility and appropriate attribution.
+SMAIRT embodies a specific philosophy: AI is a powerful tool for reaching the frontier of existing knowledge, but human insight remains essential for pushing beyond it. The originating experience confirms this pattern: the places where human insight proved most valuable were precisely the dead ends—moments where the AI had no good suggestions and the researcher proposed a specific new direction (in that case, studying attention patterns and comparing attention across models). These were not incremental improvements suggested by the AI but qualitative redirections that only a researcher with domain understanding could provide. Use Case 3's dead-end at iteration 4 recapitulates this—AI suggested variations on failed approaches, but the fundamental reconceptualization (position-aware annotation) required human insight into the biology of protein function. SMAIRT's intellectual contribution tracking exists specifically to capture these moments, which are easy to overlook in the flow of AI-assisted iteration but represent the genuine intellectual core of the work.
+
+A practical caveat: current LLMs cannot reliably perform deep literature dives. Researchers should be suspicious of literature claims generated by AI assistants, which may conflate sources, hallucinate citations, or present outdated findings as current. SMAIRT addresses this by separating AI-assisted iteration (where AI excels) from literature grounding (where human verification remains essential). The background phase is where the researcher—not the AI—integrates genuine literature context.
+
+Implications for Research Proposals
+
+The SMAIRT workflow has a practical implication for research funding: it enables rapid generation of proof-of-concept results. The framework's originating experience involved taking a novel idea—one where the author had conceptual background but no hands-on expertise with the specific methods—and producing a working approach on real data within approximately 8 hours of focused work using only a laptop and an AI assistant. This compressed what might traditionally take weeks of literature review, code development, and debugging into a single focused session. For computational proposals, there is little reason to submit without solid proof of concept, and SMAIRT's structured iteration makes generating that proof of concept dramatically faster.
 
 Limitations and Future Directions
 
