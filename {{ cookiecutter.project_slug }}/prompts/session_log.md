@@ -6,7 +6,7 @@ Record prompts and key decisions here. This is primarily for the **browser-paste
 
 ## How to Use This File
 
-{% if cookiecutter.ai_workflow == 'ide_native' %}
+{% if cookiecutter.workflow_mode == 'ide_native' %}
 **IDE-Native Note:** With tools like Roo/Zoo, Cursor, or Windsurf, your AI can read project files directly. This session log is less critical for context continuity, but remains valuable for:
 - Recording key decisions and their reasoning
 - Documenting intellectual contributions
