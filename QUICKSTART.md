@@ -1,13 +1,13 @@
 # SMAIRT Quick Start Guide
 
-Get up and running with SMAIRT in 5 minutes.
+Get a SMAIRT project running in under 5 minutes.
 
 ---
 
 ## Prerequisites
 
-- Python 3.8 or higher
-- An AI assistant (Claude, ChatGPT, or similar)
+- Python 3.8+
+- An AI assistant (VSCode Roo/Zoo recommended, or Cursor, Windsurf, ChatGPT, Claude)
 
 ---
 
@@ -22,101 +22,116 @@ pip install cookiecutter
 ## Step 2: Generate Your Project
 
 ```bash
-cookiecutter gh:yourusername/smairt-cookiecutter
+cookiecutter gh:biodataganache/smairt-cookiecutter
 ```
 
 You'll be prompted for:
-- **Project name**: e.g., "My Classification Study"
-- **Author name**: Your name
-- **Research question**: e.g., "Can we classify X using Y?"
-- **Domain**: Select from computational_biology, machine_learning, etc.
-- **AI tool**: Claude, ChatGPT, etc.
-
-This creates a new directory with your project structure.
-
----
-
-## Step 3: Prime Your AI
-
-Open your AI assistant and paste the contents of these three files:
-
-1. `prompts/AI_CONTEXT.md` - Explains the SMAIRT framework to AI
-2. `prompts/CODE_CONVENTIONS.md` - How AI should format code
-3. `prompts/KNOWN_PATTERNS.md` - Reusable code patterns and errors to avoid
-
-Or use a ready-made prompt from `prompts/SESSION_START.md`.
+- **Project name** — Your research project name
+- **Project mode** — `standard` (exploration) or `paper_driven` (paper-first)
+- **Workflow mode** — `ide_native` (recommended for Roo/Cursor) or `browser_paste`
+- **AI tool** — Which AI tool you primarily use
+- **Research question** — What you're investigating
+- **Starting phase** — Where to begin: `synthetic`, `downloaded`, or `real`
 
 ---
 
-## Step 4: Run Your First Experiment
+## Step 3: Orient Your AI
 
-Ask your AI to create a synthetic data experiment:
+### IDE-Native (Roo/Zoo, Cursor, Windsurf)
+
+Open your project in VSCode and tell your AI:
 
 ```
-Please create a Python script called script_01_synthetic_baseline.py in 
-experiments/01_synthetic/ that:
-
-1. Generates simple synthetic data to test [your hypothesis]
-2. Runs a basic analysis
-3. Outputs results to both console and results/logs/
-4. Includes a comment block at the end for pasting output
-
-Follow the conventions in prompts/CODE_CONVENTIONS.md
+Please read prompts/AI_CONTEXT.md to understand this project.
+Then read prompts/CONTEXT_INDEX.md to know what files to reference.
 ```
 
-Run the script:
+That's it. Your AI now understands the workflow.
 
-```bash
-cd your_project
-python experiments/01_synthetic/script_01_synthetic_baseline.py
+### Browser-Paste (ChatGPT, Claude web)
+
+Give your AI these 3 files:
+1. `prompts/AI_CONTEXT.md` — Its role and workflow
+2. `prompts/CODE_CONVENTIONS.md` — How to write code
+3. `prompts/KNOWN_PATTERNS.md` — Patterns to reuse, errors to avoid
+
+Use prompts from `prompts/SESSION_START.md` to start sessions.
+
+---
+
+## Step 4: Write Your First Hypothesis
+
+Create `hypotheses/HYPOTHESIS_01.md` (use the template in `hypotheses/HYPOTHESIS_TEMPLATE.md`):
+
+```markdown
+# Hypothesis 01 — [Your prediction]
+
+## Status: PENDING
+
+## Hypothesis Statement
+**Prediction**: [What you expect to happen]
+**Rationale**: [Why you expect this]
+**Success criteria**: [How to tell if it worked]
 ```
 
 ---
 
-## Step 5: Record Your Results
+## Step 5: Run Your First Experiment
 
-1. **Paste output** into the comment block at the end of your script
-2. **Log the session** in `prompts/session_log.md`
-3. **Note your contributions** in `prompts/intellectual_contribution.md`
-4. **Update patterns/errors** in `prompts/KNOWN_PATTERNS.md` (if you solved a new error or wrote reusable code)
+Ask your AI to create a script that tests your hypothesis. It will:
+1. Follow naming conventions (`script_01_description.py`)
+2. Use `TeeLogger` for dual console/file output
+3. Place it in the appropriate phase directory
+4. Include the hypothesis reference in the docstring
+
+Run the script and let the AI interpret the results.
 
 ---
 
-## Step 6: Iterate
+## Step 6: Record Results
 
-Ask your AI to interpret results and suggest next experiments:
+After running an experiment:
+1. **AI reads the log file** and interprets results
+2. **AI writes analysis** to `analysis/ANALYSIS_01.md`
+3. **AI suggests next hypothesis** based on findings
+4. **You update** `prompts/intellectual_contribution.md` with your key decisions
+5. **Update** `prompts/KNOWN_PATTERNS.md` if new patterns or errors were discovered
+
+---
+
+## Step 7: Iterate
 
 ```
-Here are the results from script_01:
-
-[paste output]
-
-Does this support or refute the hypothesis?
-What should we try next?
+Hypothesis_01 → script_01 → ANALYSIS_01 → Hypothesis_02 → script_02 → ...
 ```
 
-Create the next script (`script_02_...`) and repeat.
+As the project grows:
+- Fork into tracks (A, B, C...) for parallel investigations
+- Create plans before complex multi-step work
+- Extract repeated code to `scripts/shared/`
+- Keep `KNOWN_PATTERNS.md` current
 
 ---
 
 ## What's Next?
 
-- Read the full [12 Steps Guide](docs/12_STEPS.md) for the complete methodology
-- See the [Complete Tutorial](TUTORIAL.md) for a worked example
-- Explore `scripts/README.md` for helper script templates
+- Read `docs/12_STEPS.md` for the full methodology
+- Read `docs/SMAIRT_PHILOSOPHY.md` for the "why"
+- Check `prompts/SESSION_START.md` for situation-specific prompts
+- See `TUTORIAL.md` for a complete walkthrough
 
 ---
 
 ## Quick Reference
 
-| Task | Location |
-|------|----------|
-| Prime your AI | `prompts/AI_CONTEXT.md`, `prompts/CODE_CONVENTIONS.md` |
-| Start a session | `prompts/SESSION_START.md` |
-| Log prompts | `prompts/session_log.md` |
-| Track your insights | `prompts/intellectual_contribution.md` |
-| Synthetic experiments | `experiments/01_synthetic/` |
-| Benchmark experiments | `experiments/02_downloaded/` |
-| Real data experiments | `experiments/03_real_data/` |
-| Output logs | `results/logs/` |
-| Compile for AI | `python scripts/compile_for_ai.py` |
+| Task | Action |
+|------|--------|
+| Start new project | `cookiecutter gh:biodataganache/smairt-cookiecutter` |
+| Orient AI | Point to `prompts/AI_CONTEXT.md` |
+| New hypothesis | Create `hypotheses/HYPOTHESIS_XX.md` |
+| New experiment | Ask AI to create script following conventions |
+| Record results | AI writes `analysis/ANALYSIS_XX.md` |
+| Track patterns | Update `prompts/KNOWN_PATTERNS.md` |
+| Plan complex work | Create `plans/PLAN_description.md` |
+| Cross-tool transfer | Run `python scripts/compile_for_ai.py` |
+| Track contributions | Update `prompts/intellectual_contribution.md` |

@@ -109,6 +109,7 @@ def print_pre_generation_summary():
     print(f"Author:            {{ cookiecutter.author_name }}")
     print(f"Project mode:      {{ cookiecutter.project_mode }}")
     print(f"Domain:            {{ cookiecutter.domain }}")
+    print(f"Starting phase:    {{ cookiecutter.starting_phase }}")
     print(f"AI tool:           {{ cookiecutter.ai_tool }}")
     print(f"Create git repo:   {{ cookiecutter.create_git_repo }}")
     print()
@@ -152,10 +153,19 @@ def main():
         print("The template follows the scientific method in an iterative loop:")
         print("  Background → Hypothesis → Methods → Results → Analysis → Future Directions")
         print()
-        print("Data progression:")
-        print("  1. Synthetic data   - Fast iteration, no dependencies")
-        print("  2. Downloaded data  - Benchmark validation, robustness")
-        print("  3. Real data        - Full test of approach")
+        starting_phase = "{{ cookiecutter.starting_phase }}"
+        if starting_phase == "synthetic":
+            print("Starting phase: synthetic (full data progression)")
+            print("  1. Synthetic data   → Fast iteration, no dependencies")
+            print("  2. Downloaded data  → Benchmark validation, robustness")
+            print("  3. Real data        → Full test of approach")
+        elif starting_phase == "downloaded":
+            print("Starting phase: downloaded")
+            print("  1. Downloaded data  → Benchmark validation, robustness")
+            print("  2. Real data        → Full test of approach")
+        else:
+            print("Starting phase: real")
+            print("  1. Real data        → Direct work on your target data")
         print()
 
 if __name__ == "__main__":

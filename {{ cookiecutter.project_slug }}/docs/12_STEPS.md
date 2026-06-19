@@ -1,231 +1,273 @@
-# The 12 Steps of SMAIRT
+# The SMAIRT 10 Steps
+
+A concise reference for the Scientific Method with AI Research Template workflow.
+
+---
 
 ## Overview
 
-These 12 steps outline a way that works pretty well for doing tightly integrated AI-assisted computational research. The goal is to follow the scientific method in an iterative process, recording everything so you can feed it back to AI and maintain context across sessions.
+These 10 steps define how to work with AI in a research context, maintaining
+scientific rigor while moving quickly. Adapted for IDE-native AI tools (VSCode
+Roo/Zoo, Cursor, Windsurf) where the AI has direct file access.
 
 ---
 
-## Step 1: Record All Your Prompts
+## Step 1: Record Your Intellectual Contributions
 
-Keep prompts in a separate file (`prompts/session_log.md`). This provides:
-- A track record of all the things you've asked AI
-- Keep the answers there as well
-- Documentation of your intellectual contribution to the effort
+Track where YOU make critical decisions vs. where AI generates ideas.
 
----
+Record in `prompts/intellectual_contribution.md`:
+- The initial framing of the question
+- Choices between options the AI presents
+- Novel directions YOU suggest
+- Interpretive insights that go beyond the AI's analysis
+- Decisions to pivot or abandon approaches
 
-## Step 2: Track Your Intellectual Contribution
-
-In `prompts/intellectual_contribution.md`, document where YOU made critical steps vs. where AI generated ideas.
-
-Know where you provided the key insights.
+**This is the most important documentation in the project.**
 
 ---
 
-## Step 3: Start with Synthetic Data
+## Step 2: Write Hypotheses Before Experiments
 
-Begin in `experiments/01_synthetic/`. Synthetic data allows:
-- Very easy iteration in this cycle
-- Not dependent on large datasets
-- Get an idea of what might work and what might not just from the code itself
-- Not dependent on outside sources
-- Iterate in a tight loop
+Before writing code, state what you expect to find and why.
 
-Synthetic data is often a good place to start for exploration of an idea
-but it is not likely to be a good test of the ideas since real data will
-have many more hidden patterns and pitfalls that synthetic data doesn't.
----
+Create `hypotheses/HYPOTHESIS_XX.md` with:
+- A specific, testable prediction
+- The rationale (based on prior evidence)
+- Success criteria (quantitative if possible)
+- Experimental design
 
-## Step 4: Progress to Downloaded Benchmark Data
-
-Move to `experiments/02_downloaded/`. Have Claude and the scripts download test data. This provides:
-- Data that many people have looked at before
-- Diversity: easy data, hard data, messy experimental data, cleaner data like the Iris dataset
-- A nice range of things to test on
-- Validation that your approach is robust across different datasets
-
-For those problems where it is possible, it is a good idea to test it on
-publicly available datasets that may have been used many times previously.
-This is nicely repeatable with the modern repositories for training data
-and will provide a diverse pool of datasets to look at. It's likely that
-many important questions won't have publicly available datasets that make sense
-for the problems however.
+This forces clarity and prevents post-hoc rationalization.
 
 ---
 
-## Step 5: Then Test on Real Data
-
-Finally use `experiments/03_real_data/`. Now you're testing:
-- The actual hypothesis with actual target data
-- Whether approaches that worked on benchmarks transfer
-- Internal checks become possible
-
----
-
-## Step 6: Number Your Scripts Sequentially
-
-Keep individual scripts numbered for each round:
+## Step 3: Follow the Data Progression
+{% if cookiecutter.starting_phase == 'synthetic' %}
+This project uses the full three-phase data progression:
 
 ```
-script_01_initial_test.py
-script_02_add_noise.py
-script_03_different_architecture.py
+Phase 1: Synthetic   → Fast feedback, verify code works
+Phase 2: Downloaded  → Diversity, robustness testing
+Phase 3: Real data   → Full validation
 ```
 
-This creates a clear timeline of what was tried and allows very rapid turnaround time.
+**Start with synthetic data.** Don't skip to real data prematurely. Synthetic data helps you:
+- Verify your code is correct
+- Understand algorithm behavior under controlled conditions
+- Iterate quickly (seconds vs. hours)
 
----
+**Progress to downloaded benchmarks** for diversity:
+- Test across different data characteristics
+- Compare against known results
+- Ensure approach isn't overfit to synthetic patterns
 
-## Step 7: Paste Output as Comments (The Breadcrumb Trail)
-
-At the bottom of each script, paste the output as comments:
-
-```python
-# === OUTPUT ===
-# Accuracy: 0.85
-# Loss: 0.23
-# Notes: Works well with synthetic, need to test noise
-```
-
-This provides a record for you to reference later. More importantly, it provides a record for AI to understand your experimental history.
-
-The point of this process is to provide the AI with a list of:
-- Here are all the things we tried
-- Here's the different datasets we ran it on
-- Here's the algorithms we tried
-- Here's the prompts that went into it
-- Here's what the output was
-
-Now it can recreate the thought process through this whole thing and come out on the other end basically starting right up where you were. **It's a breadcrumb trail that allows you to get right back to where you started from**—even if you start in a completely new thread, even if you give it to a new API.
-
-Use the scripts/compile_for_ai.py script to compile all results in to one
-single file for feeding a new AI thread.
-
----
-
-## Step 8: Name Log Files to Match Scripts
-
-Output should go to both the command line AND a log file. Save detailed output to `results/logs/` with matching names:
+**Then test on real data** — the ultimate validation:
+- Expect noise, messiness, and edge cases
+- Results that don't match synthetic performance reveal true boundaries
+{% elif cookiecutter.starting_phase == 'downloaded' %}
+This project starts with downloaded/benchmark data:
 
 ```
-results/logs/script_01_initial_test_output.log
+Phase 1: Downloaded  → Diversity, robustness testing
+Phase 2: Real data   → Full validation
 ```
 
-That way you have all the log files in one place and the scripts are closely associated with them. The log file can also output the name of the script.
+**Start with benchmark data.** These provide:
+- Diversity across different data characteristics
+- Validation against known results
+- Robustness testing before committing to your target data
+
+**Then test on real data** — the ultimate validation:
+- Expect noise, messiness, and edge cases
+- Results that don't match benchmark performance reveal true boundaries
+
+> **Tip**: You can always add a synthetic phase later (`experiments/01_synthetic/`) if you need to isolate and test specific components.
+{% elif cookiecutter.starting_phase == 'real' %}
+This project works directly with real data:
+
+```
+Phase 1: Real data → Your actual target data
+```
+
+You're bringing your own data and starting experiments directly. This is appropriate when:
+- Your data is already available and well-understood
+- The research question is specific to your dataset
+- Synthetic approximations wouldn't be meaningful
+
+Place scripts in `experiments/03_real_data/`.
+
+> **Tip**: You can always add earlier phases later if you need to isolate and test specific components in a controlled setting.
+{% endif %}
 
 ---
 
-## Step 9: Feed the Whole Repo Back to AI
+## Step 4: Number Your Scripts Sequentially
 
-When starting a new session, compile your repo state and feed it back. AI can then recreate the thought process and continue where you left off.
+Scripts are the atomic unit of experimentation:
 
-Use `scripts/compile_for_ai.py` to generate a summary.
+```
+script_01_initial_smoke_test.py
+script_02_add_noise_robustness.py
+script_B01_alternative_data_exploration.py  (track-based)
+script_D06_hpc.py                            (HPC variant)
+```
 
-You could also try feeding your repo to a different AI and see what kinds of insights you get out the other end.
-
----
-
-## Step 10: Use Priming Prompts
-
-Make things even better by developing an input set of prompts that will be in the background. It will prime your AI thread to just do these things:
-- Provide output on the command line
-- Provide an output log file named the same as the script
-- Follow the 4-part structure
-- Generate code that can be tested immediately
-- Check `prompts/KNOWN_PATTERNS.md` for reusable patterns and known errors
-
-See `prompts/00_priming_prompts.md` for templates.
-
-### 10b: Maintain Known Patterns & Errors
-
-Keep `prompts/KNOWN_PATTERNS.md` updated as a living reference. This file prevents the same mistakes from recurring across sessions and ensures code consistency as the project evolves.
-
-**After each iteration, ask yourself:**
-- Did I solve an error that took real time? → Add it to "Common Errors & Fixes"
-- Did I write code that will be reused? → Add it to "Reusable Code Patterns"
-- Did I discover an environment quirk? → Add it to "Environment & Configuration"
-- Did an approach fail fundamentally? → Add it to "Anti-Patterns"
-
-**At the start of each session:**
-- Feed `KNOWN_PATTERNS.md` to your AI alongside `AI_CONTEXT.md` and `CODE_CONVENTIONS.md`
-- This ensures the AI doesn't repeat solved problems or violate consistency rules
-
-This is especially valuable when:
-- Switching between AI tools or starting new threads
-- Coming back to a project after a break
-- Onboarding a collaborator
-- Working with APIs that have specific calling conventions
+Each script should:
+- Test one hypothesis (or a small set of related sub-hypotheses)
+- Be self-contained (runnable independently)
+- Use `TeeLogger` for dual console/file output
+- Reference its hypothesis file in the docstring
 
 ---
 
-## Step 11: Follow the 4-Part Scientific Method Structure
+## Step 5: Maintain the Audit Trail
 
-Record **4 pieces of information in separate files**:
+Every experiment produces a trail of evidence:
+
+| Artifact | File | Purpose |
+|----------|------|---------|
+| Hypothesis | `hypotheses/HYPOTHESIS_XX.md` | What we predicted |
+| Code | `experiments/XX_phase/script_XX.py` | What we ran |
+| Output | `results/logs/script_XX_*.log` | What happened |
+| Analysis | `analysis/ANALYSIS_XX.md` | What we learned |
+
+The AI reads these files directly — no need to manually copy anything.
+
+---
+
+## Step 6: Name Log Files to Match Scripts
+
+Log files should be clearly traceable to their source scripts:
+
+```
+results/logs/script_01_smoke_test_20240115_143022.log
+results/logs/script_B05_multi_source_20240220_091544.log
+```
+
+The `setup_logging()` function from `scripts/shared/` handles this automatically.
+
+---
+
+## Step 7: Use compile_for_ai.py for Cross-Tool Transfer
+
+`scripts/compile_for_ai.py` generates a single document containing the full
+project state. Use it when:
+
+- **Switching AI tools** — Moving from Roo to ChatGPT or vice versa
+- **Archival** — Creating a snapshot for future reference
+- **Onboarding** — Bringing a new team member's AI up to speed
+- **Context window limits** — When the project exceeds what the AI can read piecemeal
+
+In normal IDE-native workflow, the AI reads files directly and doesn't need this.
+
+---
+
+## Step 8: Use Priming Prompts
+
+See `prompts/SESSION_START.md` for context-setting prompts appropriate to different
+situations (onboarding, context refresh, planning, interpretation, etc.).
+
+### 8b: Maintain Known Patterns & Errors
+
+After each iteration, update `prompts/KNOWN_PATTERNS.md` with:
+- **Reusable patterns** — Code that works and should be reused
+- **Common errors** — Mistakes encountered and their fixes
+- **Consistency rules** — Standards for seeds, formats, etc.
+- **Pre-flight checklist** — Things to verify before running experiments
+
+---
+
+## Step 9: Follow the 4-Part Scientific Method Structure
+
+Every iteration follows this structure:
 
 ### Part 1: Background
-- The question that went into prompting it
-- What has been done on that area
-- What's known about that question from the literature dive
-- A summary of the previous results (the thread of results that have come up to this point)
+- What's the question?
+- What do we know from prior work?
+- What gap are we addressing?
 
 ### Part 2: Hypothesis
-- Could be in a separate file
-- Could be at the end of the background
-- What you're testing in this iteration
+- What do we predict will happen?
+- Why do we predict this? (rationale)
+- What are the success criteria?
 
 ### Part 3: Methods
-- The actual code
-- The data required to run and test the experiment
+- The actual code (script)
+- The data used
 - The experimental design
 
 ### Part 4: Results + Interpretation
-- The log file output
-- What did this tell us through the lens of the hypothesis?
-- Whether it supported the hypothesis or not
-- Secondary hypotheses and observations
-- Human interpretation additions
+- What actually happened (log file)
+- Does it support or refute the hypothesis?
+- Where does it work? Where does it break?
+- What are the next steps?
 
 ---
 
-## Step 12: Use Future Directions to Seed Next Iteration
+## Step 10: Use Future Directions to Seed Next Iteration
 
-The final part of the interpretation is the **future directions**—this leads right back into the background section for the next iteration.
+The "Next Steps" section of each analysis file seeds the next hypothesis.
 
-`analysis/future_directions.md` feeds back into `background/` for the next cycle.
+```
+ANALYSIS_XX.md → Next Steps → HYPOTHESIS_YY.md → script_YY.py → ANALYSIS_YY.md → ...
+```
 
-There's some selectivity here: future directions might have lots of options, but you want to select probably one or two main things to focus on for the next steps. The rest might come up in future iterations.
-
-Sometimes there are splits where you test this first thing first, and then the second thing actually harkens back to something previous. You might have complicated relationships between
-the different steps at the end.
+This creates a clear chain of reasoning across iterations.
 
 ---
 
 ## The Loop
 
 ```
-Background → Hypothesis → Methods → Results → Analysis → Future Directions
-     ↑                                                          │
-     └──────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│  Hypothesis → Script → Run → Log → Analysis → Next  ──→│
+│                                                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-This is an iterative process. The SMAIRT process structures things
-following the scientific method, and records all the relevant information.
+Each cycle through this loop:
+1. Tests a specific prediction
+2. Produces machine-readable evidence
+3. Generates interpretation and next steps
+4. Updates shared knowledge (patterns, errors, contributions)
 
 ---
 
 ## A Note on Literature
 
-- **Literature limitations:** LLMs can't do a deep dive on the literature. Be suspicious about what they bring from the literature—verify important claims independently.
-
-Use AI to explore quickly, but verify important literature claims independently.
+AI can help you quickly survey what's known, but:
+- **Be suspicious** of AI-generated literature claims
+- **Verify independently** any important references
+- **The human decides** what's truly novel vs. well-known
 
 ---
 
 ## What AI Does Well
 
-AI allows you to move very quickly to the frontier. It's easier to find the questions that have been asked than to find places where you're asking a question that sounds novel but actually:
-- Doesn't need to be asked
-- Is a hidden variant of a question already answered (perhaps in another domain or with different language)
+- Getting to the frontier of existing knowledge quickly
+- Generating and testing code rapidly
+- Systematic comparison of approaches
+- Maintaining consistency across many experiments
+- Identifying patterns in results
 
-Those are the really tricky places to find. AI lets you get there faster so you can see where the real gaps are.
+## What AI Does NOT Do Well
+
+- Genuine innovation (the human's job)
+- Literature accuracy (verify claims)
+- Knowing when to abandon an approach (the human decides)
+- Understanding the deeper significance of results (the human interprets)
+
+---
+
+## Plan-Driven Development
+
+For complex multi-step work, create planning documents FIRST:
+
+```
+plans/PLAN_TRACK_B_FITNESS_DATA.md
+plans/PLAN_D06_RAY_TUNE_IMPLEMENTATION.md
+```
+
+Plans prevent scope creep and ensure alignment between human intent and AI execution.
+See `plans/README.md` for the plan template.

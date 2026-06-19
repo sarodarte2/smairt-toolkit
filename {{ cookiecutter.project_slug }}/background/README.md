@@ -4,8 +4,7 @@ This folder contains the research question, literature context, and prior result
 
 ## The 4-Part Structure
 
-Background should include the question that went into this iteration, the background of what has been done on the area, what's known about the question. This should also include the hypothesis,
-what question is being asked by this round of the
+Background should include the question being tested at this iteration, what has been done in the area, and what's known about the question from the literature. This provides the context needed for forming the hypothesis.
 
 ## Files
 

@@ -19,9 +19,8 @@ main
 ### File Ownership & Conventions
 
 **Shared Files (merge carefully):**
-- `hypotheses/hypothesis_log.md` - Append only, use clear headers
-- `analysis/iteration_log.md` - Append only, attribute entries
-- `analysis/future_directions.md` - Can be edited by anyone
+- `hypotheses/` - Each user creates their own H*_*.md files; avoid numbering conflicts
+- `prompts/KNOWN_PATTERNS.md` - Append only, attribute entries with name/date
 - `background/` files - Additions welcome, edits need discussion
 
 **User-Specific Files:**
@@ -51,19 +50,12 @@ script_50_different_approach.py # Bob
 **Structure entries for easy merging:**
 
 ```markdown
-<!-- In hypothesis_log.md -->
-## Iteration 5 (Alice, 2024-01-15)
-- **Hypothesis:** ...
-- **Result:** ...
-
----
-
-## Iteration 6 (Bob, 2024-01-16)
-- **Hypothesis:** ...
-- **Result:** ...
+<!-- In hypotheses/ directory, use separate files per hypothesis -->
+hypotheses/H1_alice_noise_threshold.md
+hypotheses/H2_bob_alternative_algorithm.md
 ```
 
-**Use append-only pattern for logs:**
+**Use append-only pattern for shared logs:**
 ```markdown
 <!-- In session_log.md -->
 # Session Log
@@ -107,9 +99,9 @@ git tag -a "collab-v1.0" -m "Team consensus: [finding]. Contributors: Alice, Bob
 
 **Required Updates for Each Merge to Main:**
 
-1. **Hypothesis log entry** with your name and date
-2. **Iteration log entry** with interpretation
-3. **Future directions update** if you identified new paths
+1. **Hypothesis file** with your name and date in `hypotheses/`
+2. **Results log** auto-captured in `results/logs/` by TeeLogger
+3. **KNOWN_PATTERNS.md update** if you discovered patterns or errors
 4. **Brief summary in commit message** so others can scan git log
 
 **Async Communication File (optional):**
@@ -158,8 +150,8 @@ This becomes especially important with multiple contributors:
 | Commit frequency | Per iteration | Per iteration, coordinate merges |
 | Session logs | Single file | Per-user files + shared summary |
 | Script numbering | Sequential | Prefixed or range-based |
-| Hypothesis log | Simple append | Attributed, dated append |
+| Hypotheses | Sequential H*_*.md files | Attributed, user-prefixed files |
 | Intellectual contribution | Track yours vs AI | Track yours vs AI vs collaborators |
 | Tags | Phase milestones | Phase + team consensus points |
 
-The key principle for both cases: **the breadcrumb trail should be clear enough that anyone (including a new AI session) can reconstruct the full thought process and continue from where you left off.**
+The key principle for both cases: **the audit trail should be clear enough that anyone (including a new AI session) can reconstruct the full thought process and continue from where you left off.**

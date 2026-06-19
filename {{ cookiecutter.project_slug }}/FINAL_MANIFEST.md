@@ -58,8 +58,9 @@ python scripts/finalize_iteration.py --analysis 01_section/01_analysis --iterati
 {% else %}
 This file is only used in paper-driven mode.
 
-For standard SMAIRT mode, results are tracked in:
-- `results/logs/` - Output logs
+For standard SMAIRT mode, results are tracked through the audit trail:
+- `hypotheses/` - Hypothesis documentation (H1_*.md, H2_*.md, ...)
+- `results/logs/` - Auto-captured output logs (via TeeLogger)
 - `results/figures/` - Generated figures
-- `analysis/iteration_log.md` - Iteration tracking
+- `prompts/intellectual_contribution.md` - Your contributions
 {% endif %}

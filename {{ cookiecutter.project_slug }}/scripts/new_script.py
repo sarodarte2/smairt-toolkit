@@ -103,49 +103,27 @@ Iteration: {iteration}
 Created: {datetime.now().isoformat()}
 """
 
-import os
 import sys
 from pathlib import Path
-from datetime import datetime
+
+# === PATH SETUP ===
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.shared.logging import TeeLogger
 
 # === CONFIGURATION ===
 SCRIPT_NAME = "{script_name}"
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-LOG_DIR = PROJECT_ROOT / "results" / "logs"
-
-# === LOGGING SETUP ===
-class Logger:
-    """Log to both console and file."""
-
-    def __init__(self, log_path):
-        self.terminal = sys.stdout
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.log_file = open(log_path, "w")
-
-    def write(self, message):
-        self.terminal.write(message)
-        self.log_file.write(message)
-
-    def flush(self):
-        self.terminal.flush()
-        self.log_file.flush()
-
-    def close(self):
-        self.log_file.close()
-        sys.stdout = self.terminal
-
 
 # === MAIN CODE ===
 def main():
-    # Setup logging
-    log_path = LOG_DIR / f"{{SCRIPT_NAME}}_output.log"
-    logger = Logger(log_path)
-    sys.stdout = logger
+    # TeeLogger automatically saves all output to results/logs/
+    logger = TeeLogger(log_dir=PROJECT_ROOT / "results" / "logs", script_name=SCRIPT_NAME)
 
     print("=" * 60)
     print(f"Script: {{SCRIPT_NAME}}")
-    print(f"Timestamp: {{datetime.now().isoformat()}}")
     print(f"Hypothesis: {hypothesis}")
+    print(f"Phase: {phase_dir.name} | Iteration: {iteration}")
     print("=" * 60)
     print()
 
@@ -167,34 +145,14 @@ def main():
     print()
     print("=" * 60)
     print("=== COMPLETE ===")
-    print(f"Log saved to: {{log_path}}")
+    print(f"Log saved to: {{logger.log_path}}")
     print("=" * 60)
 
-    # Close logger
     logger.close()
 
 
 if __name__ == "__main__":
     main()
-
-
-# === PASTE OUTPUT HERE ===
-"""
-[After running, paste the console output here as a comment]
-[This creates a breadcrumb trail for future AI sessions]
-
-=== OUTPUT ===
-
-
-=== INTERPRETATION ===
-[Did this support or refute the hypothesis?]
-[Where did the approach work "within certain boundaries"?]
-[Where did it break down?]
-
-=== NEXT STEPS ===
-[What should we try next based on these results?]
-
-"""
 '''
 
     script_path.write_text(template)
@@ -237,10 +195,10 @@ def main():
     print()
     print("Next steps:")
     print(f"  1. Edit {script_path.name} to implement your experiment")
-    print(f"  2. Run the script")
-    print(f"  3. Paste the output in the comment block at the end")
-    print(f"  4. Update prompts/session_log.md with this experiment")
-    print(f"  5. Log your intellectual contributions in prompts/intellectual_contribution.md")
+    print(f"  2. Run the script (output auto-saved to results/logs/)")
+    print(f"  3. Review the log and document interpretation")
+    print(f"  4. Log your intellectual contributions in prompts/intellectual_contribution.md")
+    print(f"  5. Update prompts/KNOWN_PATTERNS.md if you discovered patterns or errors")
     print()
 
 if __name__ == "__main__":

@@ -44,8 +44,21 @@ python scripts/new_script.py
 
 **Creates:**
 - A new script in the appropriate `experiments/` subfolder
-- With logging setup already configured
-- With the results comment block for pasting output
+- With TeeLogger setup for automatic output capture to `results/logs/`
+- With the standard path setup, configuration, and main code sections
+
+---
+
+### shared/logging.py (TeeLogger)
+
+Provides automatic output capture. Import in any experiment script:
+
+```python
+from scripts.shared.logging import TeeLogger
+logger = TeeLogger(log_dir="results/logs", script_name=__file__)
+```
+
+All `print()` output is simultaneously displayed and saved to a timestamped log file.
 
 ---
 
@@ -65,10 +78,9 @@ Please create a Python script called generate_summary.py that:
 
 1. Scans through all scripts in experiments/01_synthetic/, experiments/02_downloaded/, and experiments/03_real_data/
 2. Extracts the docstrings (hypothesis, phase, iteration) from each script
-3. Extracts the pasted output comment blocks from each script
-4. Reads hypotheses/hypothesis_log.md for hypothesis status (supported/not supported)
-5. Reads analysis/iteration_log.md for limitations identified
-6. Compiles everything into a summary document
+3. Reads results/logs/ for output from each script (matched by script name)
+4. Reads hypotheses/ for hypothesis status (supported/not supported)
+5. Compiles everything into a summary document
 
 Output should include:
 - List of all experiments run with their hypotheses and results
@@ -96,13 +108,10 @@ Please create a Python script called validate_structure.py that checks SMAIRT pr
 3. Check that required files exist:
    - prompts/AI_CONTEXT.md
    - prompts/CODE_CONVENTIONS.md
-   - prompts/session_log.md
+   - prompts/KNOWN_PATTERNS.md
    - prompts/intellectual_contribution.md
-   - background/01_initial_question.md
-   - hypotheses/hypothesis_log.md
-   - analysis/iteration_log.md
-   - analysis/future_directions.md
-4. Check that scripts have the pasted output comment block at the end
+   - hypotheses/HYPOTHESIS_TEMPLATE.md
+4. Check that scripts import TeeLogger from scripts.shared.logging
 5. Report any issues found
 
 Output a validation report to console showing:
@@ -116,26 +125,24 @@ Follow the SMAIRT code conventions in prompts/CODE_CONVENTIONS.md
 
 ### extract_results.py
 
-Parses through all scripts and extracts the pasted output comment blocks, compiling them into a single results document.
+Parses through all log files and compiles results into a single document organized by phase and iteration.
 
 **Prompt to generate this script:**
 ```
 Please create a Python script called extract_results.py that:
 
-1. Scans all scripts in experiments/01_synthetic/, experiments/02_downloaded/, experiments/03_real_data/
-2. Extracts the pasted output comment blocks from each script (the section after "# === PASTE OUTPUT HERE ===")
-3. For each script, captures:
-   - Script name and path
-   - Phase (synthetic/downloaded/real)
-   - Hypothesis (from docstring)
-   - The OUTPUT section
-   - The INTERPRETATION section
-   - The NEXT STEPS section
+1. Scans all log files in results/logs/
+2. For each log file, captures:
+   - Script name (derived from log filename)
+   - Phase (synthetic/downloaded/real, from parent directory of matching script)
+   - Timestamp
+   - Full output content
+3. Reads hypotheses/ for the hypothesis associated with each script
 4. Compiles into a single markdown document organized by phase and iteration
 
 Save output to analysis/extracted_results.md
 
-This creates a single document showing all results without needing to open each script.
+This creates a single document showing all results without needing to open each log file individually.
 
 Follow the SMAIRT code conventions in prompts/CODE_CONVENTIONS.md
 ```
@@ -195,13 +202,13 @@ Follow the SMAIRT code conventions in prompts/CODE_CONVENTIONS.md
 
 ---
 
-### update_hypothesis_log.py
+### update_hypotheses.py
 
-Interactive script to add a new hypothesis entry to the hypothesis log.
+Interactive script to add a new hypothesis entry to the hypotheses directory.
 
 **Prompt to generate this script:**
 ```
-Please create a Python script called update_hypothesis_log.py that:
+Please create a Python script called update_hypotheses.py that:
 
 1. Prompts for:
    - Hypothesis statement
@@ -212,8 +219,9 @@ Please create a Python script called update_hypothesis_log.py that:
    - Interpretation
    - What hypothesis this leads to next
 
-2. Appends a properly formatted entry to hypotheses/hypothesis_log.md
-3. Maintains consistent formatting with existing entries
+2. Creates a new hypothesis file in hypotheses/ using HYPOTHESIS_TEMPLATE.md as the base
+3. Names it sequentially (H1_*, H2_*, etc.)
+4. Maintains consistent formatting with existing entries
 
 Follow the SMAIRT code conventions in prompts/CODE_CONVENTIONS.md
 ```
@@ -258,11 +266,11 @@ Please create a Python script called export_for_paper.py that:
 1. Prompts user to select which experiments/results to include
 2. Gathers from the project:
    - Background/research question from background/01_initial_question.md
-   - Key hypotheses and their outcomes from hypotheses/hypothesis_log.md
-   - Selected results and interpretations
+   - Key hypotheses and their outcomes from hypotheses/
+   - Selected results from results/logs/
    - Figures from results/figures/
    - Methods descriptions from scripts
-   - Future directions from analysis/future_directions.md
+   - Known patterns and limitations from prompts/KNOWN_PATTERNS.md
 
 3. Compiles into paper_draft/export/ with:
    - introduction_draft.md
@@ -290,9 +298,8 @@ Please create a Python script called archive_iteration.py that:
 2. Creates an archive folder: archives/iteration_XX_YYYY-MM-DD/
 3. Copies relevant files:
    - All scripts from that iteration
-   - Corresponding log files
-   - Relevant hypothesis log entries
-   - Session log entries for that iteration
+   - Corresponding log files from results/logs/
+   - Relevant hypothesis files
    - Intellectual contribution entries
    - Any figures generated
 4. Creates a summary README in the archive folder
@@ -312,6 +319,7 @@ an overall driving question with a series of iterations that are all based
 on the scientific method. It is set up for rapidly exploring the feasibility
 of an idea, to test the straightforward ideas and capture results to understand
 where the real frontiers are and identify gaps that require innovation.
+
 ---
 
 ## The 4 Pieces of Information
@@ -320,11 +328,11 @@ The SMAIRT system records 4 different pieces of information in separate files:
 
 1. **Background** - The question that went into prompting it, what has been done on that area, what's known about that question from literature, and a summary of the previous results
 
-2. **Hypothesis** - Could be in a separate file or at the end of the background
+2. **Hypothesis** - Documented in `hypotheses/` using `HYPOTHESIS_TEMPLATE.md`
 
 3. **Methods** - The actual code and the data required to run the experiment
 
-4. **Results + Interpretation** - The log file output plus interpretation through the lens of the hypothesis
+4. **Results + Interpretation** - The log file output (auto-captured by TeeLogger to `results/logs/`) plus interpretation through the lens of the hypothesis
 
 ---
 

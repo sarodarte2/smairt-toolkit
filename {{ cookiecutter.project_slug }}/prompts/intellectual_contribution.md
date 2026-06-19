@@ -99,6 +99,19 @@ For each iteration, document:
 
 ---
 
+## AI-Detected Contributions
+
+_The AI will append entries here when you confirm a novel contribution during a session._
+
+<!-- Example entry (AI will follow this format):
+### [DATE] — [Short Title]
+**Insight:** "[User's words or paraphrase]"
+**Why it matters:** [Brief explanation of impact on project direction]
+**Context:** During [what you were working on]
+-->
+
+---
+
 ## Summary Table
 
 | Iteration | Date | Key Human Contribution | Impact on Project |

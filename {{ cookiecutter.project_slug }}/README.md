@@ -28,7 +28,7 @@ AI excels at regression toward the mean—it can get you quickly to the frontier
 ### The Loop
 
 ```
-Background → Hypothesis → Methods/Code → Results → Analysis → Future Directions → (repeat)
+Background → Hypothesis → Methods/Code → Results → Analysis → Next Steps → (repeat)
 ```
 
 ### The 4-Part Structure
@@ -36,11 +36,11 @@ Background → Hypothesis → Methods/Code → Results → Analysis → Future D
 The template records **4 pieces of information in separate files**:
 
 1. **Background** - The question that went into prompting it, what has been done on that area, what's known about that question from the literature, and a summary of the previous results that have come up to this point
-2. **Hypothesis** - Could be in a separate file or at the end of the background
+2. **Hypothesis** - Documented in `hypotheses/` using `HYPOTHESIS_TEMPLATE.md`
 3. **Methods** - The actual code and data required to test the hypothesis
-4. **Results + Interpretation** - The output logs plus analysis through the lens of the hypothesis
+4. **Results + Interpretation** - Output logs (auto-captured by TeeLogger to `results/logs/`) plus analysis through the lens of the hypothesis
 
-The **future directions** from your analysis feed right back into the background for the next iteration.
+The **next steps** from your analysis feed right back into the background for the next iteration.
 
 ### Data Progression
 
@@ -53,7 +53,7 @@ The **future directions** from your analysis feed right back into the background
 ## Quick Start
 
 1. Review the philosophy: `docs/SMAIRT_PHILOSOPHY.md`
-2. Review the 12 steps: `docs/12_STEPS.md`
+2. Review the 10 steps: `docs/12_STEPS.md`
 3. Define your question: `background/01_initial_question.md`
 4. Set up your AI session: `prompts/00_priming_prompts.md`
 5. Start experimenting: `experiments/01_synthetic/`
@@ -64,18 +64,22 @@ The **future directions** from your analysis feed right back into the background
 ## Project Structure
 
 ```
-├── docs/              # SMAIRT philosophy and 12-step guide
-├── prompts/           # AI prompts, session logs, intellectual contribution tracking
+├── docs/              # SMAIRT philosophy and 10-step guide
+├── prompts/           # AI context, known patterns, code conventions
+├── plans/             # AI-generated plans (git-tracked for review)
 ├── background/        # Research question, literature, prior results
-├── hypotheses/        # Hypothesis tracking
+├── hypotheses/        # Hypothesis tracking (HYPOTHESIS_TEMPLATE.md)
 ├── experiments/       # Scripts organized by data phase
 │   ├── 01_synthetic/
 │   ├── 02_downloaded/
 │   └── 03_real_data/
-├── results/           # Logs (named to match scripts) and figures
-├── analysis/          # Interpretation, future directions
+├── results/           # Auto-captured logs and figures
+│   ├── logs/          # TeeLogger output (named to match scripts)
+│   └── figures/       # Generated visualizations
+├── analysis/          # Interpretation and analysis documentation
 ├── data/              # Data files by phase
-├── scripts/           # Helper scripts (new_iteration.py, compile_for_ai.py)
+├── scripts/           # Helper scripts (new_script.py, compile_for_ai.py)
+│   └── shared/        # TeeLogger and shared utilities
 └── paper_draft/       # Parallel narrative and figure generation
 ```
 
@@ -90,25 +94,24 @@ script_02_another_test.py
 script_03_noise_robustness.py
 ```
 
-### Log Files
-Save to `results/logs/` with names matching scripts:
+### The Audit Trail
+
+Every experiment connects through the audit trail:
 ```
-results/logs/script_01_description_output.log
+hypotheses/H1_*.md → experiments/script_XX_*.py → results/logs/script_XX_*.log → analysis/
 ```
 
-### Output as Comments (Breadcrumb Trail)
-Paste output at the bottom of each script as comments:
-```python
-# === OUTPUT ===
-# Accuracy: 0.85
-# Loss: 0.23
-# Notes: Works on synthetic, need to test with noise
-```
+TeeLogger automatically captures all script output to `results/logs/`, creating the permanent record without manual copy-paste.
 
-This creates a breadcrumb trail so when you feed the repo back to AI, it can immediately see what was tried and what the results were.
+### Known Patterns & Error Prevention
+
+Track reusable patterns and recurring errors in `prompts/KNOWN_PATTERNS.md`. This prevents repeating the same mistakes and preserves working solutions across sessions.
 
 ### Feeding Back to AI
-Use `scripts/compile_for_ai.py` to generate a summary of the entire project state that you can paste into a new AI session to pick up where you left off.
+
+For **IDE-native** workflows (Roo/Zoo, Cursor, Windsurf): AI reads project files directly—use `prompts/AI_CONTEXT.md` and `prompts/KNOWN_PATTERNS.md` as context.
+
+For **browser-paste** workflows (ChatGPT, Claude web): Use `scripts/compile_for_ai.py` to generate a summary of the entire project state that you can paste into a new session.
 
 ---
 

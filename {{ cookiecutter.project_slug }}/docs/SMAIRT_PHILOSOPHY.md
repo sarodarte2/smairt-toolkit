@@ -32,20 +32,26 @@ thing to be tracking and can include the initial questions, choosing options for
 further iteration, suggestions of things to try, questions about results that
 yield new insights, and any guidance that provides new directions.
 
-Recording your prompts:
-- Provides a track record of everything you asked
+Recording your contributions:
+- Provides a track record of key decisions you made
 - Documents where YOU made the critical insights
 - Shows the evolution of your thinking
-- Enables feeding everything back to AI to recreate context
+- Ensures your genuine intellectual contribution is clear
 
 ## The Breadcrumb Trail
 
-When you paste output at the bottom of scripts as comments, you create a breadcrumb trail. You can feed your entire repo back to AI, and it can immediately say:
+The SMAIRT audit trail automatically captures a breadcrumb trail through your research:
+
+- **Hypotheses** document what you intended to test
+- **TeeLogger** auto-captures all script output to `results/logs/`
+- **KNOWN_PATTERNS.md** accumulates reusable patterns and error solutions
+- **Intellectual contribution log** records your key decisions
+
+You can feed your entire repo back to AI, and it can immediately see:
 
 - Here are all the things we tried
 - Here are the different datasets we ran it on
 - Here are the algorithms we tried
-- Here are the prompts that went into it
 - Here's what the output was
 
 This lets you recreate the thought process and pick up right where you left off—even in a completely new thread or with a different AI.
@@ -59,4 +65,4 @@ We structure everything exactly like the scientific method, recording **4 pieces
 3. **Methods** - The actual code and data to test the hypothesis
 4. **Results + Interpretation** - What happened, what it means through the lens of the hypothesis
 
-The **future directions** from interpretation feed right back into the background for the next iteration.
+The **next steps** from interpretation feed right back into the background for the next iteration.
