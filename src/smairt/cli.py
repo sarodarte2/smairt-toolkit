@@ -100,9 +100,10 @@ def _new_project(
     git: bool,
     environment_mode: EnvironmentMode,
     environment_name: str | None,
+    allow_existing: bool = False,
 ) -> None:
     if not name or not author:
-        created = run_new_project(destination)
+        created = run_new_project(destination, allow_existing=allow_existing)
         if created:
             console.print(f"[bold #f28c28]Created SMAIRT project:[/] {created}")
         return
@@ -118,6 +119,7 @@ def _new_project(
         environment_mode=environment_mode,
         environment_name=environment_name,
         create_environment=environment_mode is EnvironmentMode.NEW_CONDA,
+        allow_existing=allow_existing,
     )
     console.print(f"[bold #f28c28]Created {config.project.name}[/] at {destination}")
 
@@ -145,6 +147,7 @@ def new_command(
         git,
         environment,
         environment_name,
+        False,
     )
 
 
@@ -163,6 +166,7 @@ def start_project(
         True,
         EnvironmentMode.NONE,
         None,
+        False,
     )
 
 
@@ -183,6 +187,7 @@ def init_command(
         True,
         EnvironmentMode.NONE,
         None,
+        True,
     )
 
 

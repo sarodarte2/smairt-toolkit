@@ -12,6 +12,7 @@ from smairt.research import (
     create_proposal_set,
     new_iteration,
     record_decision,
+    validate_hypothesis,
     validate_proposal_set,
 )
 from smairt.runner import run_experiment
@@ -60,6 +61,15 @@ def test_full_research_and_paper_provenance(tmp_path: Path) -> None:
         rationale="Most feasible option.",
     )
     assert hypothesis.exists()
+    hypothesis.write_text(
+        hypothesis.read_text()
+        .replace("[Complete from the selected proposal and human edits.]", "Selected rationale.")
+        .replace(
+            "[Complete before running the linked experiment.]",
+            "A measurable held-out observation.",
+        )
+    )
+    assert validate_hypothesis(hypothesis) == []
     experiment = create_experiment(root, title="Baseline", hypothesis_id="HYPOTHESIS_001")
     assert experiment.name.startswith("EXPERIMENT_001")
     record = run_experiment(
@@ -83,3 +93,58 @@ def test_full_research_and_paper_provenance(tmp_path: Path) -> None:
     )
     assert validate_paper(root) == []
     assert new_iteration(root, "EXPERIMENT_001", "ITERATION_001").name == "ITERATION_002"
+
+
+def test_research_links_and_decisions_must_reference_real_records(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    try:
+        create_experiment(root, title="Missing", hypothesis_id="HYPOTHESIS_404")
+    except FileNotFoundError as exc:
+        assert "HYPOTHESIS_404" in str(exc)
+    else:
+        raise AssertionError("missing hypothesis link was accepted")
+
+    create_experiment(root, title="Exploration", purpose="Check pipeline wiring")
+    try:
+        record_decision(
+            root,
+            experiment_id="EXPERIMENT_001",
+            iteration_id="ITERATION_001",
+            run_id="RUN_MISSING",
+            decision=Decision.ACCEPT,
+            rationale="Should fail.",
+            decided_by="Researcher",
+        )
+    except FileNotFoundError as exc:
+        assert "RUN_MISSING" in str(exc)
+    else:
+        raise AssertionError("decision without a run record was accepted")
+
+
+def test_incomplete_hypothesis_blocks_execution(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    create_background(root)
+    proposals = create_proposal_set(root)
+    complete_proposals(proposals)
+    hypothesis = activate_hypothesis(
+        root,
+        proposals,
+        "A",
+        title="Incomplete hypothesis",
+        statement="A measurable prediction.",
+        selected_by="Researcher",
+        rationale="Candidate direction.",
+    )
+    assert validate_hypothesis(hypothesis)
+    create_experiment(root, title="Blocked experiment", hypothesis_id="HYPOTHESIS_001")
+    try:
+        run_experiment(
+            root,
+            experiment_id="EXPERIMENT_001",
+            iteration_id="ITERATION_001",
+            command=[sys.executable, "run.py"],
+        )
+    except ValueError as exc:
+        assert "incomplete" in str(exc)
+    else:
+        raise AssertionError("incomplete hypothesis was allowed to run")

@@ -9,7 +9,10 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
+
 from smairt.models import EnvironmentMode, RunRecord, SmairtConfig, utc_now
+from smairt.research import find_hypothesis, validate_hypothesis
 from smairt.utils import sha256_file, write_json
 
 
@@ -43,6 +46,14 @@ def run_experiment(
         raise ValueError("command is required after --")
     config = SmairtConfig.load(root / "smairt.yaml")
     experiment = _experiment_path(root, experiment_id)
+    metadata = yaml.safe_load((experiment / "experiment.yaml").read_text()) or {}
+    hypothesis_id = metadata.get("hypothesis")
+    if hypothesis_id:
+        hypothesis_errors = validate_hypothesis(find_hypothesis(root, str(hypothesis_id)))
+        if hypothesis_errors:
+            raise ValueError(
+                "Linked hypothesis is incomplete: " + "; ".join(hypothesis_errors)
+            )
     iteration = experiment / "iterations" / iteration_id
     if not iteration.exists():
         raise FileNotFoundError(iteration)

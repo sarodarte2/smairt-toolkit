@@ -103,6 +103,34 @@ def validate_proposal_set(path: Path) -> list[str]:
     return errors
 
 
+def find_hypothesis(root: Path, hypothesis_id: str) -> Path:
+    matches = list((root / "hypotheses").glob(f"{hypothesis_id}_*.md"))
+    if len(matches) != 1:
+        raise FileNotFoundError(f"Hypothesis {hypothesis_id} not found")
+    return matches[0]
+
+
+def validate_hypothesis(path: Path) -> list[str]:
+    content = path.read_text(encoding="utf-8")
+    errors: list[str] = []
+    required_sections = (
+        "## Statement",
+        "## Rationale",
+        "## Falsifiable Prediction",
+        "## Null or Competing Explanation",
+        "## Required Data and Controls",
+        "## Success and Failure Criteria",
+        "## Known Confounders",
+        "## Human Selection Rationale",
+    )
+    for section in required_sections:
+        if section not in content:
+            errors.append(f"missing section: {section.removeprefix('## ')}")
+    if "[Complete" in content:
+        errors.append("hypothesis still contains required completion placeholders")
+    return errors
+
+
 def activate_hypothesis(
     root: Path,
     proposal_set: Path,
@@ -182,6 +210,8 @@ def create_experiment(
 ) -> Path:
     if not hypothesis_id and not purpose:
         raise ValueError("link a hypothesis or provide an exploratory purpose")
+    if hypothesis_id:
+        find_hypothesis(root, hypothesis_id)
     experiment_id = next_numeric_id(
         list((root / "experiments").glob("EXPERIMENT_*")), "EXPERIMENT_"
     )
@@ -268,6 +298,9 @@ def record_decision(
     rationale: str,
     decided_by: str,
 ) -> Path:
+    run_path = root / "results" / experiment_id / iteration_id / run_id / "run.json"
+    if not run_path.exists():
+        raise FileNotFoundError(f"Run record not found: {run_path.relative_to(root)}")
     analysis_dir = root / "analysis" / experiment_id
     analysis_dir.mkdir(parents=True, exist_ok=True)
     path = analysis_dir / "decisions.yaml"

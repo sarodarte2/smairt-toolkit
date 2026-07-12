@@ -29,9 +29,10 @@ class NewProjectApp(App[Path | None]):
     #message {{ color: {ORANGE}; margin-top: 1; }}
     """
 
-    def __init__(self, destination: Path | None = None):
+    def __init__(self, destination: Path | None = None, *, allow_existing: bool = False):
         super().__init__()
         self.destination = destination
+        self.allow_existing = allow_existing
         self.previewing = False
         environments = conda_environments()
         self.environment_options = [
@@ -107,6 +108,7 @@ class NewProjectApp(App[Path | None]):
             "environment_name": environment_name,
             "environment_prefix": environment_prefix,
             "create_environment": create_environment,
+            "allow_existing": self.allow_existing,
         }
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -198,8 +200,10 @@ class ProjectMenuApp(App[None]):
             self.refresh_status()
 
 
-def run_new_project(destination: Path | None = None) -> Path | None:
-    return NewProjectApp(destination).run()
+def run_new_project(
+    destination: Path | None = None, *, allow_existing: bool = False
+) -> Path | None:
+    return NewProjectApp(destination, allow_existing=allow_existing).run()
 
 
 def run_project_menu(root: Path) -> None:

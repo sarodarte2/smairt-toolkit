@@ -326,12 +326,13 @@ def create_project(
     environment_name: str | None = None,
     environment_prefix: str | None = None,
     create_environment: bool = False,
+    allow_existing: bool = False,
 ) -> SmairtConfig:
     destination = destination.expanduser().resolve()
     if (destination / "smairt.yaml").exists():
         raise FileExistsError(f"{destination} is already a SMAIRT project")
     destination.mkdir(parents=True, exist_ok=True)
-    if any(destination.iterdir()) and not (destination / ".git").exists():
+    if any(destination.iterdir()) and not (destination / ".git").exists() and not allow_existing:
         raise FileExistsError("destination is not empty; use 'smairt init' after reviewing it")
 
     for directory in DIRECTORIES:

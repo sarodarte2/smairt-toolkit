@@ -50,3 +50,20 @@ def test_protected_paths_are_recognized() -> None:
         "alignment.bam",
     ):
         assert is_prohibited(path)
+
+
+def test_init_can_add_smairt_to_reviewed_nonempty_directory(tmp_path: Path) -> None:
+    root = tmp_path / "existing"
+    root.mkdir()
+    existing = root / "research-notes.md"
+    existing.write_text("Keep this work.\n")
+    create_project(
+        root,
+        name="Existing Research",
+        author="Manual Author",
+        classification=DataClassification.UNPUBLISHED,
+        initialize_git=False,
+        allow_existing=True,
+    )
+    assert existing.read_text() == "Keep this work.\n"
+    assert (root / "smairt.yaml").exists()
