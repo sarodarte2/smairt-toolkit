@@ -34,6 +34,7 @@ class NewProjectApp(App[Path | None]):
         self.destination = destination
         self.allow_existing = allow_existing
         self.previewing = False
+        self.creating = False
         environments = conda_environments()
         self.environment_options = [
             ("Create a new project Conda environment", EnvironmentMode.NEW_CONDA.value),
@@ -115,11 +116,28 @@ class NewProjectApp(App[Path | None]):
         if event.button.id == "cancel":
             self.exit(None)
             return
+        if self.creating:
+            return
         try:
             values = self._values()
             if not values["name"] or not values["author"]:
                 raise ValueError("Project name and manually entered author are required")
             if not self.previewing:
+                destination = Path(values["destination"]).expanduser().resolve()
+                if (destination / "smairt.yaml").exists():
+                    raise FileExistsError(
+                        "destination is already a SMAIRT project; use 'smairt menu' there"
+                    )
+                if (
+                    destination.exists()
+                    and any(destination.iterdir())
+                    and not (destination / ".git").exists()
+                    and not self.allow_existing
+                ):
+                    raise FileExistsError(
+                        "destination contains files. Choose a new empty folder, or run "
+                        "'smairt init' to adopt existing work"
+                    )
                 summary = (
                     f"Create {values['name']!r} at {values['destination']}\n"
                     f"Data: {values['classification'].value}; Environment: "
@@ -130,9 +148,14 @@ class NewProjectApp(App[Path | None]):
                 self.query_one("#submit", Button).label = "Create"
                 self.previewing = True
                 return
+            self.creating = True
+            self.query_one("#submit", Button).disabled = True
+            self.query_one("#message", Static).update("Creating project…")
             create_project(**values)
             self.exit(Path(values["destination"]).resolve())
         except Exception as exc:
+            self.creating = False
+            self.query_one("#submit", Button).disabled = False
             self.query_one("#message", Static).update(f"Cannot create project: {exc}")
 
 

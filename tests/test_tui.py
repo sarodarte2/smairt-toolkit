@@ -1,6 +1,8 @@
 import asyncio
 from pathlib import Path
 
+from textual.widgets import Button, Input, Static
+
 from smairt.tui import NewProjectApp, ProjectMenuApp
 
 
@@ -13,6 +15,26 @@ def test_new_project_tui_mounts(tmp_path: Path) -> None:
             assert app.query_one("#author")
             assert app.query_one("#classification")
             assert app.query_one("#environment")
+
+    asyncio.run(exercise())
+
+
+def test_new_project_preflights_nonempty_destination(tmp_path: Path) -> None:
+    destination = tmp_path / "partial"
+    destination.mkdir()
+    (destination / "leftover").mkdir()
+
+    async def exercise() -> None:
+        app = NewProjectApp(destination)
+        async with app.run_test(size=(100, 50)) as pilot:
+            app.query_one("#name", Input).value = "Test Project"
+            app.query_one("#author", Input).value = "Manual Researcher"
+            app.query_one("#submit", Button).press()
+            await pilot.pause()
+            message = str(app.query_one("#message", Static).render())
+            assert "Choose a new empty folder" in message
+            assert not app.previewing
+            assert not (destination / "smairt.yaml").exists()
 
     asyncio.run(exercise())
 
