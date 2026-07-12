@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+title: "SMAIRT: Scientific Method with AI Research Toolkit"
+message: "Please cite the SMAIRT repository and the release used in your research."
+type: software
+version: 0.1.0
+repository-code: "https://github.com/PNNL-CompBio/smairt-template"
+license: MIT
+authors:
+  - name: "PNNL Computational Biology contributors"

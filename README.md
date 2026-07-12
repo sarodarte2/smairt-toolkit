@@ -1,290 +1,301 @@
-# SMAIRT: Scientific Method with AI Research Template
+# SMAIRT
 
-A [cookiecutter](https://cookiecutter.readthedocs.io/) template for AI-accelerated scientific research. SMAIRT provides a structured framework for conducting iterative, hypothesis-driven research with AI assistants.
+**Scientific Method with AI Research Toolkit**
 
----
+SMAIRT is a local-first research framework for scientists working with coding agents such as
+Codex. It gives the researcher and the AI a shared, inspectable project structure so that ideas,
+evidence, code, experiment runs, corrections, and decisions remain connected.
 
-## The Hard Problem of Science
+The aim is not to automate scientific judgment. It is to make AI-assisted research easier to
+conduct without losing provenance, reproducibility, data safeguards, or the researcher's own
+intellectual contribution.
 
-> AI excels at regression toward the mean — it can't innovate in a meaningful way. But it CAN help you get quickly to the frontier of what's already known.
+> AI can help a researcher reach the frontier of what is known more quickly. The researcher is
+> still responsible for deciding which questions matter, judging evidence, and making the novel
+> connections that move the frontier.
 
-SMAIRT helps you move quickly from not knowing much to being at the frontier of an area, where you can see the gaps and make genuine contributions.
+SMAIRT originated with the Pacific Northwest National Laboratory computational biology team and
+is evolving here into an installable, harness-aware research tool.
 
----
+## What SMAIRT changes
 
-## Overview
+A normal AI coding conversation is flexible, but its conventions can disappear between sessions.
+Important outputs may land in arbitrary folders, failed experiments may be overwritten, and a
+paper may slowly become disconnected from the runs that support it.
 
-SMAIRT is designed for researchers who use AI tools (VSCode Roo/Zoo, Cursor, Windsurf, ChatGPT, Claude) to accelerate their research. It provides:
+SMAIRT makes those expectations part of the project itself:
 
-- **Structure** — A proven directory layout for experiments, hypotheses, analysis, and results
-- **Workflow** — The scientific method in an iterative loop with clear documentation
-- **AI Integration** — Prompt files and conventions that make AI assistants effective collaborators
-- **Reproducibility** — Audit trails, log files, and systematic documentation
+- `smairt.yaml` is the machine-readable project contract.
+- A small `AGENTS.md` and project skill teach Codex how to work in the repository.
+- Task-specific context is loaded progressively instead of reading every prompt every time.
+- Research artifacts are created with stable IDs and linked in a traceable chain.
+- Experiment commands, configurations, logs, environment details, Git state, and outputs are
+  recorded together.
+- Human selections and scientific decisions remain explicit.
+- Corrections append or supersede evidence rather than silently rewriting history.
+- Git protections keep common secrets, local references, and raw scientific data out of commits.
 
----
+The framework lives in the research folder. After setup, a researcher can open that folder in the
+Codex app or Codex CLI and begin working normally—there is no separate SMAIRT service to start.
 
-## Project Modes
+## Research workflow
 
-### Standard Mode (default)
+```text
+initial question + local references
+              |
+              v
+      initial background
+              |
+              v
+  three distinct hypothesis options
+              |
+       human selection/edit
+              |
+              v
+ hypothesis -> experiment -> iteration -> run -> analysis -> decision
+                                                        |
+                                      accept / revise / abandon / block
+                                                        |
+                                              supported paper elements
+```
 
-Hypothesis-driven exploration with a configurable starting phase. Choose where to begin based on your data situation:
+A project does not need a hypothesis at creation time. It can begin with an uncertain question,
+a short description, and a folder of reference PDFs. Codex can help synthesize an initial
+background and propose exactly three scientifically distinct hypotheses. A hypothesis becomes
+active only after a researcher selects or edits it.
 
-- **Synthetic** — Full 3-phase progression (synthetic → downloaded → real). Best for algorithm development and new methods where you want fast iteration without data dependencies.
-- **Downloaded** — Start with established benchmarks. Best when validated datasets already exist for your problem.
-- **Real** — Start directly with your own data. Best when you're bringing your own dataset or synthetic data doesn't apply.
+Exploratory, quality-control, infrastructure, and reproduction work can instead be created with a
+clearly recorded purpose.
 
-### Paper-Driven Mode
+## Install
 
-For research that starts with a paper outline and real datasets. Perfect for more mature ideas, paper revisions, or when you already know the structure of the story you're telling.
+SMAIRT supports macOS and Linux and requires Python 3.11 or newer.
 
----
-
-## Workflow Modes
-
-### IDE-Native (default)
-For AI-integrated IDEs where the AI has direct file access:
-- **VSCode with Roo/Zoo** (recommended)
-- **Cursor**
-- **Windsurf**
-
-The AI reads files directly, writes code, executes commands, and updates documentation without any copy-pasting.
-
-### Browser-Paste
-For browser-based AI tools (ChatGPT web, Claude web) where context must be manually transferred via copy/paste.
-
----
-
-## Quick Start
+For an isolated command-line installation, use either `pipx` or `uv`:
 
 ```bash
-# Install cookiecutter
-pip install cookiecutter
-
-# Create a new SMAIRT project
-cookiecutter gh:biodataganache/smairt-cookiecutter
+pipx install smairt
 ```
 
-See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
-
----
-
-## Tutorials
-
-- **[QUICKSTART.md](QUICKSTART.md)** — Get started in 5 minutes
-- **[TUTORIAL.md](TUTORIAL.md)** — Full standard mode walkthrough
-- **[TUTORIAL_PAPER_DRIVEN.md](TUTORIAL_PAPER_DRIVEN.md)** — Paper-driven mode guide
-- **[TUTORIAL_HPC.md](TUTORIAL_HPC.md)** — HPC/SLURM submission guide
-
----
-
-## Philosophy
-
-### AI's Role
-- Getting quickly to the frontier of existing knowledge
-- Iterating through hypothesis-experiment-results loops
-- Generating code that can be tested immediately
-- Maintaining consistency across experiments
-
-### Your Role
-- Making truly innovative connections
-- Identifying novel gaps and directions
-- Critical interpretation of results
-- Deciding when to pivot or abandon approaches
-
----
-
-## The Workflow
-
-```
-Background → Hypothesis → Methods/Code → Results → Analysis → Future Directions → (repeat)
+```bash
+uv tool install smairt
 ```
 
-### The 4-Part Structure
+During development, install from a clone:
 
-Every iteration produces:
-1. **Background** — Context, prior work, motivation
-2. **Hypothesis** — Specific, testable prediction with success criteria
-3. **Methods** — The experiment script and data
-4. **Results** — Output logs + interpretation in analysis files
-
-### Data Progression
-
-Choose your starting phase when creating a project:
-
-| Starting Phase | Directories Created | Best For |
-|----------------|--------------------|----|
-| `synthetic` (default) | 01_synthetic → 02_downloaded → 03_real_data | Algorithm development, new methods |
-| `downloaded` | 02_downloaded → 03_real_data | Known benchmarks, existing methods |
-| `real` | 03_real_data only | Bringing your own data, domain-specific questions |
-
----
-
-## Generated Project Structure
-
-```
-my_smairt_project/
-├── prompts/                    # AI context and conventions
-│   ├── AI_CONTEXT.md           # AI role and workflow description
-│   ├── CODE_CONVENTIONS.md     # Coding standards
-│   ├── KNOWN_PATTERNS.md       # Reusable patterns & known errors
-│   ├── CONTEXT_INDEX.md        # What to read for different tasks
-│   ├── SESSION_START.md        # Context-setting prompts
-│   └── intellectual_contribution.md  # Human contribution tracking
-├── plans/                      # Planning documents
-├── hypotheses/                 # Per-iteration hypothesis files
-│   └── HYPOTHESIS_TEMPLATE.md
-├── analysis/                   # Per-iteration analysis files
-│   └── ANALYSIS_TEMPLATE.md
-├── experiments/                # Scripts organized by phase
-│   ├── 01_synthetic/
-│   ├── 02_downloaded/
-│   └── 03_real_data/
-├── scripts/                    # Helper scripts
-│   ├── shared/                 # Reusable library (logging, metrics)
-│   ├── compile_for_ai.py       # Cross-tool context transfer
-│   ├── new_script.py           # Script generator
-│   └── monitor_template.py    # HPC job monitor template
-├── results/
-│   ├── logs/                   # Script output logs
-│   └── figures/                # Generated visualizations
-├── data/
-│   ├── synthetic/
-│   ├── downloaded/
-│   └── real/
-├── background/                 # Research context
-├── docs/                       # Framework documentation
-├── hpc/                        # HPC job scripts
-└── paper_draft/                # Parallel narrative
+```bash
+git clone https://github.com/PNNL-CompBio/smairt-template.git
+cd smairt-template
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
 ```
 
----
+The `smairt` package is not yet published to PyPI. The `pipx` and `uv` commands above describe the
+intended installation once the first release is published; use the development installation for
+now.
 
-## Key Features
+## Create a project
 
-### The Audit Trail
-Every experiment produces linked artifacts:
-- Hypothesis file → Script → Log file → Analysis file
+Launch the interactive wizard:
 
-The AI reads these directly (no copy-pasting needed in IDE-native mode).
-
-### Known Patterns & Error Prevention
-`prompts/KNOWN_PATTERNS.md` accumulates:
-- Reusable code patterns
-- Common errors and their fixes
-- Consistency rules (seeds, DPI, formats)
-- Pre-flight checklist
-
-### Intellectual Contribution Tracking
-Track where YOU make critical decisions in `prompts/intellectual_contribution.md`. The AI actively watches for novel contributions — unexpected connections, creative pivots, or domain insights — and asks whether to log them. This ensures your genuine innovations don't get lost in the flow of AI-assisted work.
-
-### Multi-Track Experimentation
-As projects grow, fork into parallel tracks:
-```
-script_A01_...  — Track A
-script_B01_...  — Track B
-script_X1_...   — Track X (interpretation)
+```bash
+smairt start project
 ```
 
-### Shared Library
-`scripts/shared/` provides reusable utilities:
-- `TeeLogger` — Dual console/file logging
-- Custom metrics, data loading, model architectures
+or:
 
-### Plans Directory
-`plans/` holds planning documents created before complex work begins.
+```bash
+smairt new my-research-project
+```
 
-### Git Repository & Collaboration
-Projects are initialized as git repositories by default (`create_git_repo: yes`). SMAIRT includes best-practice guides for both solo and collaborative workflows:
-- **Single-user** — Commit discipline, phase tagging, atomic commits per iteration
-- **Collaborative** — Branch strategy, file ownership conventions, merge conflict prevention, intellectual contribution tracking per team member
+The wizard asks only for information needed at setup:
 
-See `docs/BEST_PRACTICE_SINGLE.md` and `docs/BEST_PRACTICE_COLLABORATIVE.md` in generated projects.
+- Project name
+- Author, entered manually and never inferred
+- Optional initial question and description
+- Data classification: public, unpublished, private, or controlled
+- Optional Git initialization
+- Environment: a new project Conda environment, an existing Conda environment, or no managed
+  environment
 
-### MCP Skills Integration
-SMAIRT ships with two [MCP skills](skills/) that AI tool agents can load for structured guidance:
-- **`smairt-research`** — The full standard-mode workflow, audit trail conventions, and script patterns
-- **`smairt-paper-driven`** — Paper-driven iteration structure, analysis plans, and finalization steps
+It previews the project before writing anything. Git initialization does not create an automatic
+commit.
 
-Skills give AI assistants persistent context about SMAIRT conventions without requiring manual prompt priming each session.
+To add SMAIRT to the current repository, run:
 
-### HPC Support
-Generated projects include an `hpc/` directory with SLURM templates, a cluster configuration file, and a job-monitoring script. See [TUTORIAL_HPC.md](TUTORIAL_HPC.md) for a walkthrough covering:
-- Adapting the SLURM template to your cluster (partitions, accounts, modules)
-- Submitting experiment scripts as batch jobs
-- Monitoring jobs and integrating HPC logs with the audit trail
+```bash
+smairt init
+```
 
----
+## Work in Codex
 
-## AI Context Files
+Open the generated project folder in the Codex app or start Codex CLI from that folder. Codex will
+discover the repository instructions and use the included SMAIRT skill when the task involves
+research planning, execution, interpretation, or documentation.
 
-| File | Purpose |
-|------|---------|
-| `prompts/AI_CONTEXT.md` | AI's role, workflow, project structure |
-| `prompts/CODE_CONVENTIONS.md` | Script template, naming, logging |
-| `prompts/KNOWN_PATTERNS.md` | Reusable code, known errors, standards |
-| `prompts/CONTEXT_INDEX.md` | What files to read for different tasks |
-| `prompts/SESSION_START.md` | Context-setting prompts for different situations |
+Useful commands remain available when you want an explicit project action:
 
----
+```bash
+smairt menu
+smairt status
+smairt validate
+smairt context --task code
+```
 
-## Requirements
+`smairt menu` reopens the project interface so the manually maintained project details can be
+reviewed or edited later.
 
-- Python 3.8+
-- [cookiecutter](https://cookiecutter.readthedocs.io/) (`pip install cookiecutter`)
-- An AI assistant (VSCode Roo/Zoo, Cursor, Windsurf, ChatGPT, Claude, etc.)
+## References, background, and hypotheses
 
----
+Add local reference PDFs and build their index:
 
-## Usage
+```bash
+smairt reference add paper.pdf
+smairt reference scan
+smairt reference list
+```
 
-### Starting a Session (IDE-Native)
+SMAIRT stores source metadata, file checksums, and extracted PDF metadata in
+`references/index.yaml`. Reference PDFs are local by default and excluded from Git.
 
-Point your AI to `prompts/AI_CONTEXT.md`. It will understand the workflow and conventions. Use prompts from `prompts/SESSION_START.md` for different situations (onboarding, context refresh, planning, interpretation).
+Then create the research artifacts that Codex will complete with you:
 
-### Starting a Session (Browser-Paste)
+```bash
+smairt background create
+smairt hypothesis proposals new
+smairt hypothesis proposals validate hypotheses/proposals/PROPOSAL_SET_001.md
+smairt hypothesis activate \
+  --proposal-set hypotheses/proposals/PROPOSAL_SET_001.md \
+  --option A \
+  --title "Selected direction" \
+  --statement "A specific and falsifiable statement" \
+  --selected-by "Researcher Name" \
+  --rationale "Why this direction was selected"
+```
 
-Run `python scripts/compile_for_ai.py` and paste the output into your AI session.
+The proposal format requires three options, each with its reasoning, falsifiable prediction,
+competing explanation, data and test requirements, feasibility, confounders, and meaningful
+difference from the alternatives.
 
-### Creating New Experiments
+## Experiments and reproducible runs
 
-Ask your AI to create a hypothesis file and experiment script following the conventions in `prompts/CODE_CONVENTIONS.md`.
+Create an experiment and execute its first iteration:
 
-### Recording Results
+```bash
+smairt experiment new --title "Test selected mechanism" --hypothesis HYPOTHESIS_001
+smairt run --experiment EXPERIMENT_001 --iteration ITERATION_001 -- python run.py
+```
 
-After running experiments:
-1. AI reads the log file directly
-2. AI writes analysis to `analysis/ANALYSIS_XX.md`
-3. AI suggests updates to `prompts/KNOWN_PATTERNS.md` if new patterns/errors discovered
-4. AI proposes next hypothesis
+Every recorded run receives an immutable run directory containing:
 
----
+- The original command and exit status
+- Standard output and error log
+- Iteration configuration snapshot and checksum
+- Entrypoint snapshot when identifiable
+- Python and managed-environment information
+- Git commit and working-tree state
+- Figures and result artifacts produced through SMAIRT output paths
 
-## Template Options
+After interpretation, record the human decision:
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `project_name` | Human-readable project name | My SMAIRT Project |
-| `project_mode` | Standard or paper-driven | standard |
-| `workflow_mode` | IDE-native or browser-paste | ide_native |
-| `ai_tool` | Primary AI tool used | roo_zoo |
-| `domain` | Research domain | machine_learning |
-| `starting_phase` | Where to begin experiments | synthetic |
-| `create_git_repo` | Initialize git on creation | yes |
+```bash
+smairt decision record \
+  --experiment EXPERIMENT_001 \
+  --iteration ITERATION_001 \
+  --run RUN_20260101T120000000000Z \
+  --decision ACCEPT \
+  --decided-by "Researcher Name" \
+  --rationale "The controls passed and the result supports the stated criterion"
+```
 
----
+Method, data, split, code-logic, or parameter changes create a new iteration. A failed identical
+execution creates another run in the same iteration.
 
-## Contributing
+## Corrections without erasing history
 
-Contributions welcome! See the issues page for current needs.
+SMAIRT treats corrections as part of the scientific record:
 
----
+```bash
+smairt amend \
+  --record results/EXPERIMENT_001/ITERATION_001/RUN_ID/run.json \
+  --field "sample_count" --previous "10" --corrected "12" \
+  --reason "Corrected metadata"
+smairt retract --experiment EXPERIMENT_001 --reason "Invalid input data"
+smairt supersede --experiment EXPERIMENT_001 --reason "Replaced by corrected analysis"
+```
 
-## License
+Amendments append context. Retractions preserve the invalidated record. Supersession marks the
+previously accepted experiment selection as replaced so a corrected selection can be recorded.
+The paper validator rejects links to evidence that is not accepted and current.
 
-MIT
+## Generated project structure
 
----
+```text
+project/
+├── smairt.yaml                 # Authoritative project contract
+├── AGENTS.md                   # Short cross-harness instructions
+├── .agents/skills/             # Progressive SMAIRT research guidance
+├── .codex/                     # Codex project configuration and hooks
+├── prompts/                    # Coding, research, interpretation, and paper conventions
+├── references/
+│   ├── index.yaml              # Machine-readable source index
+│   └── pdfs/                   # Local, Git-ignored source documents
+├── background/                 # Initial question, description, and synthesis
+├── plans/                      # Research and implementation plans
+├── hypotheses/                 # Proposal sets and selected hypotheses
+├── experiments/                # Experiment definitions and versioned iterations
+├── scripts/shared/             # Reusable project code
+├── results/                    # Immutable recorded runs and artifacts
+├── analysis/                   # Interpretation separated from raw results
+└── paper/                      # Working prose, drafts, figures, tables, and provenance
+```
 
-## Acknowledgments
+## Safety and responsibility
 
-SMAIRT was developed through iterative use of AI-assisted research workflows, refined by observing what actually works in practice (see `docs/MODERNIZATION_PROPOSAL.md`).
+SMAIRT provides safeguards, not institutional compliance certification. Researchers remain
+responsible for their applicable policies, data-use agreements, security controls, ethics review,
+and publication requirements.
+
+The selected data classification is visible to the harness and validator. Generated Git rules
+exclude common credential files, private reference PDFs, raw sequencing formats, and local data
+directories. Controlled-data projects receive additional warnings. Secrets should still be kept
+in environment variables or an approved secret manager—not entered into prompts or committed.
+
+## Current v1 scope
+
+Version 1 focuses on:
+
+- Local macOS and Linux projects
+- Codex app and Codex CLI workflows
+- A portable on-disk contract usable by other harnesses in the future
+- Conda or externally managed execution environments
+- Research provenance and paper-evidence validation
+
+Direct model API calls, automatic manuscript generation, browser-only workflows, hosted project
+services, OpenCode-specific integration, institutional policy engines, and domain profiles are
+intentionally deferred. The core is generic so those capabilities can be added without changing
+the research record.
+
+## Development
+
+```bash
+python -m pytest
+ruff check src tests
+python -m pip wheel . --no-deps --wheel-dir dist
+```
+
+The detailed design and roadmap live in:
+
+- [`docs/specs/SMAIRT_V1_SPEC.md`](docs/specs/SMAIRT_V1_SPEC.md)
+- [`docs/plans/SMAIRT_V1_IMPLEMENTATION.md`](docs/plans/SMAIRT_V1_IMPLEMENTATION.md)
+
+## License and acknowledgment
+
+SMAIRT is distributed under the MIT License. See [`LICENSE`](LICENSE) and
+[`CITATION.cff`](CITATION.cff).
+
+This evolution acknowledges the original SMAIRT work and conventions developed by the Pacific
+Northwest National Laboratory computational biology team. Subsequent contributors are building on
+that foundation to make careful, reproducible AI-assisted research easier to practice across
+tools.
