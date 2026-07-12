@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from smairt.models import DataClassification, EnvironmentMode, SmairtConfig
@@ -67,3 +70,31 @@ def test_init_can_add_smairt_to_reviewed_nonempty_directory(tmp_path: Path) -> N
     )
     assert existing.read_text() == "Keep this work.\n"
     assert (root / "smairt.yaml").exists()
+
+
+def test_staged_protected_file_fails_validation(tmp_path: Path) -> None:
+    root = tmp_path / "git-project"
+    create_project(
+        root,
+        name="Protected Research",
+        author="Manual Author",
+        classification=DataClassification.PRIVATE,
+        initialize_git=True,
+    )
+    secret = root / ".env"
+    secret.write_text("API_KEY=do-not-commit\n")
+    subprocess.run(["git", "add", "-f", ".env"], cwd=root, check=True)
+    report = validate_project(root, staged=True)
+    assert not report.ok
+    assert report.checks["git_safety"] is False
+    assert any(".env" in error for error in report.errors)
+    hook = subprocess.run(
+        [str(root / ".githooks/pre-commit")],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": f"{Path(sys.executable).parent}:{os.environ['PATH']}"},
+    )
+    assert hook.returncode == 1
+    assert "Protected files" in hook.stdout
