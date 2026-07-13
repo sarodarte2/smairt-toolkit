@@ -25,6 +25,10 @@ DIRECTORIES = (
     ".codex",
     ".githooks",
     ".smairt/backups",
+    ".smairt/events",
+    ".smairt/contracts",
+    ".smairt/corrections",
+    ".smairt/local/summaries",
     "docs",
     "prompts",
     "environment",
@@ -42,6 +46,10 @@ DIRECTORIES = (
     "paper/tables",
     "paper/reviewer_feedback",
     "paper/permissions",
+    "paper/evidence",
+    "paper/claims",
+    "paper/builds",
+    "summaries/canonical",
 )
 
 
@@ -82,6 +90,7 @@ __pycache__/
 .ruff_cache/
 .DS_Store
 .smairt/backups/
+.smairt/local/
 """
 
 

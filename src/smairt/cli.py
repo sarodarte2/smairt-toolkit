@@ -15,16 +15,39 @@ from rich.prompt import Confirm, IntPrompt, Prompt
 
 from smairt import __version__
 from smairt.code_quality import build_code_index, validate_code
+from smairt.contracts import check_contracts, export_contracts
+from smairt.corrections import amend_artifact, correct_run
 from smairt.guidance import next_guidance
+from smairt.harnesses import harness_status, install_harness, list_harnesses
+from smairt.integrity import verify_run
+from smairt.migrations import apply_migration, detect_scaffold, migration_plan, rollback_migration
 from smairt.models import DataClassification, Decision, EnvironmentMode, SmairtConfig
-from smairt.paper import validate_paper
+from smairt.paper import (
+    begin_paper,
+    build_paper,
+    create_claim,
+    create_evidence_card,
+    review_claim,
+    review_section,
+    validate_paper,
+)
 from smairt.project import context as build_context
 from smairt.project import find_project, validate_project
 from smairt.project import status as project_status
-from smairt.references import add_reference, inspect_pdf, load_index, unindexed_pdfs
+from smairt.provenance import add_contributor, generate_history, load_events, use_contributor
+from smairt.references import (
+    add_reference,
+    edit_reference,
+    enrich_reference,
+    export_references,
+    get_reference,
+    inspect_pdf,
+    load_index,
+    unindexed_pdfs,
+    verify_reference,
+)
 from smairt.research import (
     activate_hypothesis,
-    amend_record,
     create_background,
     create_experiment,
     create_proposal_set,
@@ -34,7 +57,9 @@ from smairt.research import (
     validate_proposal_set,
 )
 from smairt.runner import run_experiment
+from smairt.safety import release_check, safety_status, set_safety_mode
 from smairt.scaffold import conda_environments, create_project
+from smairt.summaries import create_summary, list_summaries, promote_summary
 from smairt.tui import run_new_project, run_project_menu
 from smairt.upgrade import upgrade_project
 
@@ -55,6 +80,15 @@ decision_app = typer.Typer(help="Record human research decisions")
 paper_app = typer.Typer(help="Manage paper evidence provenance")
 env_app = typer.Typer(help="Inspect and enter the project environment")
 code_app = typer.Typer(help="Index and validate readable research code")
+contributor_app = typer.Typer(help="Manage confirmed project contributors")
+safety_app = typer.Typer(help="Inspect and change project safety policy")
+contract_app = typer.Typer(help="Export and check portable harness contracts")
+harness_app = typer.Typer(help="Install and inspect coding-harness adapters")
+migrate_app = typer.Typer(help="Plan, apply, and roll back schema migrations")
+summary_app = typer.Typer(help="Manage contributor-scoped source summaries")
+paper_section_app = typer.Typer(help="Draft and review manuscript sections")
+paper_evidence_app = typer.Typer(help="Manage immutable paper evidence cards")
+paper_claim_app = typer.Typer(help="Manage human-reviewed manuscript claims")
 
 app.add_typer(start_app, name="start")
 app.add_typer(reference_app, name="reference")
@@ -67,6 +101,177 @@ app.add_typer(decision_app, name="decision")
 app.add_typer(paper_app, name="paper")
 app.add_typer(env_app, name="env")
 app.add_typer(code_app, name="code")
+app.add_typer(contributor_app, name="contributor")
+app.add_typer(safety_app, name="safety")
+app.add_typer(contract_app, name="contract")
+app.add_typer(harness_app, name="harness")
+app.add_typer(migrate_app, name="migrate")
+app.add_typer(summary_app, name="summary")
+paper_app.add_typer(paper_evidence_app, name="evidence")
+paper_app.add_typer(paper_claim_app, name="claim")
+paper_app.add_typer(paper_section_app, name="section")
+
+
+@contributor_app.command("add")
+def contributor_add(
+    name: Annotated[str, typer.Option()], email: Annotated[str | None, typer.Option()] = None
+) -> None:
+    """Register a contributor from explicitly supplied identity fields."""
+    _emit(add_contributor(_root(), name, email).model_dump(mode="json", exclude_none=True), False)
+
+
+@contributor_app.command("list")
+def contributor_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    config = SmairtConfig.load(_root() / "smairt.yaml")
+    _emit(
+        {
+            "active": config.active_contributor,
+            "contributors": [
+                c.model_dump(mode="json", exclude_none=True) for c in config.contributors
+            ],
+        },
+        as_json,
+    )
+
+
+@contributor_app.command("use")
+def contributor_use(identifier: Annotated[str, typer.Argument()]) -> None:
+    _emit(use_contributor(_root(), identifier).model_dump(mode="json", exclude_none=True), False)
+
+
+@contributor_app.command("confirm-git")
+def contributor_confirm_git(yes: Annotated[bool, typer.Option("--yes")] = False) -> None:
+    """Suggest Git identity but store it only after explicit confirmation."""
+    root = _root()
+    name = subprocess.run(
+        ["git", "config", "user.name"], cwd=root, capture_output=True, text=True
+    ).stdout.strip()
+    email = subprocess.run(
+        ["git", "config", "user.email"], cwd=root, capture_output=True, text=True
+    ).stdout.strip()
+    if not name:
+        raise typer.BadParameter("Git user.name is not configured")
+    if not yes and not Confirm.ask(f"Register Git identity {name} <{email}>?", default=False):
+        raise typer.Exit()
+    contributor = add_contributor(root, name, email or None, source="confirmed_git")
+    use_contributor(root, contributor.id)
+    _emit(contributor.model_dump(mode="json", exclude_none=True), False)
+
+
+@app.command("history")
+def history_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    root = _root()
+    generate_history(root)
+    _emit(load_events(root), as_json)
+
+
+@app.command("doctor")
+def doctor_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Diagnose scaffold, Git, contract, and adapter health without writing files."""
+    root = _root()
+    validation = validate_project(root).as_dict()
+    payload = {
+        "ok": validation["ok"] and detect_scaffold(root) == "v2",
+        "scaffold": detect_scaffold(root),
+        "git_repository": (root / ".git").exists(),
+        "validation": validation,
+        "harnesses": list_harnesses(root),
+        "migration": migration_plan(root),
+    }
+    _emit(payload, as_json)
+    if not payload["ok"]:
+        raise typer.Exit(1)
+
+
+@safety_app.command("status")
+def safety_status_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _emit(safety_status(_root()), as_json)
+
+
+@safety_app.command("set")
+def safety_set(
+    mode: Annotated[str, typer.Argument()], yes: Annotated[bool, typer.Option("--yes")] = False
+) -> None:
+    if not yes and not Confirm.ask(f"Change safety mode to {mode}?", default=False):
+        raise typer.Exit()
+    _emit(set_safety_mode(_root(), mode), False)
+
+
+@safety_app.command("release-check")
+def safety_release_check(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    payload = release_check(_root())
+    _emit(payload, as_json)
+    if not payload["ok"]:
+        raise typer.Exit(1)
+
+
+@app.command("verify")
+def verify_command(
+    run: Annotated[str | None, typer.Option()] = None,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    payload = verify_run(_root(), run)
+    _emit(payload, as_json)
+    if not payload["ok"]:
+        raise typer.Exit(1)
+
+
+@contract_app.command("export")
+def contract_export(destination: Annotated[Path | None, typer.Option()] = None) -> None:
+    root = _root()
+    _emit(export_contracts(destination or root / ".smairt/contracts/v1"), False)
+
+
+@contract_app.command("check")
+def contract_check(destination: Annotated[Path | None, typer.Option()] = None) -> None:
+    root = _root()
+    payload = check_contracts(destination or root / ".smairt/contracts/v1")
+    _emit(payload, False)
+    if not payload["ok"]:
+        raise typer.Exit(1)
+
+
+@harness_app.command("list")
+def harness_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _emit(list_harnesses(_root()), as_json)
+
+
+@harness_app.command("status")
+def harness_status_command(
+    harness: Annotated[str, typer.Argument()],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    _emit(harness_status(_root(), harness), as_json)
+
+
+@harness_app.command("install")
+def harness_install(harness: Annotated[str, typer.Argument()]) -> None:
+    _emit(install_harness(_root(), harness), False)
+
+
+@harness_app.command("upgrade")
+def harness_upgrade(harness: Annotated[str, typer.Argument()]) -> None:
+    _emit(install_harness(_root(), harness, upgrade=True), False)
+
+
+@migrate_app.command("plan")
+def migrate_plan_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _emit(migration_plan(_root()), as_json)
+
+
+@migrate_app.command("apply")
+def migrate_apply(
+    contributor: Annotated[str | None, typer.Option()] = None,
+    allow_dirty: Annotated[bool, typer.Option("--allow-dirty")] = False,
+) -> None:
+    _emit(apply_migration(_root(), contributor, allow_dirty=allow_dirty), False)
+
+
+@migrate_app.command("rollback")
+def migrate_rollback(yes: Annotated[bool, typer.Option("--yes")] = False) -> None:
+    if not yes and not Confirm.ask("Roll back the last migration?", default=False):
+        raise typer.Exit()
+    _emit(rollback_migration(_root()), False)
 
 
 def _root() -> Path:
@@ -278,10 +483,11 @@ def validate_command(
 @app.command("context")
 def context_command(
     task: Annotated[str, typer.Option(help="planning, code, run, interpretation, or paper")],
+    token_budget: Annotated[int, typer.Option("--token-budget", min=1)] = 8000,
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Return only the initial files relevant to the requested research task."""
-    payload = build_context(_root(), task)
+    payload = build_context(_root(), task, token_budget)
     _emit(payload, as_json)
 
 
@@ -340,6 +546,60 @@ def reference_scan(as_json: Annotated[bool, typer.Option("--json")] = False) -> 
     """Report local PDFs that have not yet been indexed by checksum."""
     paths = [str(path) for path in unindexed_pdfs(_root())]
     _emit({"unindexed": paths}, as_json)
+
+
+@reference_app.command("inspect")
+def reference_inspect(identifier: Annotated[str, typer.Argument()]) -> None:
+    _emit(get_reference(_root(), identifier).model_dump(mode="json", exclude_none=True), False)
+
+
+@reference_app.command("enrich")
+def reference_enrich(identifier: Annotated[str, typer.Argument()]) -> None:
+    _emit(enrich_reference(_root(), identifier).model_dump(mode="json", exclude_none=True), False)
+
+
+@reference_app.command("edit")
+def reference_edit(
+    identifier: Annotated[str, typer.Argument()],
+    field: Annotated[str, typer.Option()],
+    value: Annotated[str, typer.Option()],
+) -> None:
+    contributor = SmairtConfig.load(_root() / "smairt.yaml").active_contributor
+    if not contributor:
+        raise typer.BadParameter("select an active contributor first")
+    _emit(
+        edit_reference(_root(), identifier, field, value, contributor).model_dump(
+            mode="json", exclude_none=True
+        ),
+        False,
+    )
+
+
+@reference_app.command("verify")
+def reference_verify(identifier: Annotated[str, typer.Argument()]) -> None:
+    contributor = SmairtConfig.load(_root() / "smairt.yaml").active_contributor
+    if not contributor:
+        raise typer.BadParameter("select an active contributor first")
+    _emit(
+        verify_reference(_root(), identifier, contributor).model_dump(
+            mode="json", exclude_none=True
+        ),
+        False,
+    )
+
+
+@reference_app.command("export")
+def reference_export(
+    format_name: Annotated[str, typer.Option("--format")],
+    output: Annotated[Path | None, typer.Option()] = None,
+) -> None:
+    """Export the reference index as BibTeX or CSL JSON."""
+    content = export_references(_root(), format_name)
+    if output:
+        output.write_text(content, encoding="utf-8")
+        console.print(output)
+    else:
+        console.print(content, markup=False)
 
 
 @reference_app.command("add")
@@ -516,8 +776,9 @@ def amend_command(
     corrected: Annotated[str, typer.Option()],
     reason: Annotated[str, typer.Option()],
 ) -> None:
-    """Append a field correction beside an immutable record."""
-    amend_record(record, field=field, previous=previous, corrected=corrected, reason=reason)
+    """Append a contributor-attributed correction without changing its target."""
+    root = _root()
+    console.print(amend_artifact(root, record, field, previous, corrected, reason))
 
 
 def _change_selection_status(experiment: str, status: str, reason: str) -> None:
@@ -533,20 +794,21 @@ def _change_selection_status(experiment: str, status: str, reason: str) -> None:
 
 @app.command("retract")
 def retract_command(
-    experiment: Annotated[str, typer.Option()],
+    run: Annotated[str, typer.Option()],
     reason: Annotated[str, typer.Option()],
 ) -> None:
-    """Mark accepted experiment evidence as invalid and retain the reason."""
-    _change_selection_status(experiment, "RETRACTED", reason)
+    """Retract accepted evidence and invalidate dependent records."""
+    console.print(correct_run(_root(), "retract", run, reason))
 
 
 @app.command("supersede")
 def supersede_command(
-    experiment: Annotated[str, typer.Option()],
+    run: Annotated[str, typer.Option()],
+    replacement_run: Annotated[str, typer.Option("--replacement-run")],
     reason: Annotated[str, typer.Option()],
 ) -> None:
-    """Mark accepted evidence as replaced so corrected evidence can follow."""
-    _change_selection_status(experiment, "SUPERSEDED", reason)
+    """Link old evidence to a verified replacement and invalidate dependents."""
+    console.print(correct_run(_root(), "supersede", run, reason, replacement_run))
 
 
 @paper_app.command("validate")
@@ -556,6 +818,139 @@ def paper_validate() -> None:
     _emit({"ok": not errors, "errors": errors}, False)
     if errors:
         raise typer.Exit(1)
+
+
+@paper_app.command("status")
+def paper_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    root = _root()
+    claims = [
+        json.loads(path.read_text()) for path in sorted((root / "paper/claims").glob("*.json"))
+    ]
+    payload = {
+        "evidence_cards": len(list((root / "paper/evidence").glob("*.json"))),
+        "claims": {
+            state: sum(c.get("status") == state for c in claims)
+            for state in ("proposed", "approved", "rejected", "superseded", "retracted")
+        },
+        "manuscript_started": (root / "paper/manuscript.md").exists(),
+    }
+    _emit(payload, as_json)
+
+
+@paper_evidence_app.command("list")
+def paper_evidence_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    root = _root()
+    items = [
+        json.loads(path.read_text()) for path in sorted((root / "paper/evidence").glob("*.json"))
+    ]
+    _emit(items, as_json)
+
+
+@paper_evidence_app.command("review")
+def paper_evidence_review(
+    run: Annotated[str, typer.Option()],
+    purpose: Annotated[str, typer.Option()],
+    observed_result: Annotated[str, typer.Option()],
+    limitations: Annotated[str, typer.Option()],
+    decision: Annotated[str, typer.Option()],
+    relevance: Annotated[str, typer.Option()] = "",
+) -> None:
+    console.print(
+        create_evidence_card(
+            _root(),
+            run,
+            purpose=purpose,
+            observed_result=observed_result,
+            limitations=limitations,
+            decision=decision,
+            relevance=relevance,
+        )
+    )
+
+
+@paper_claim_app.command("propose")
+def paper_claim_propose(
+    statement: Annotated[str, typer.Option()],
+    evidence: Annotated[list[str], typer.Option()],
+    reference: Annotated[list[str] | None, typer.Option()] = None,
+) -> None:
+    console.print(create_claim(_root(), statement, evidence, reference))
+
+
+def _claim_review_command(identifier: str, status: str, yes: bool) -> None:
+    if not yes and not Confirm.ask(f"Mark {identifier} {status}?", default=False):
+        raise typer.Exit()
+    _emit(review_claim(_root(), identifier, status), False)
+
+
+@paper_claim_app.command("approve")
+def paper_claim_approve(
+    identifier: Annotated[str, typer.Argument()],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    _claim_review_command(identifier, "approved", yes)
+
+
+@paper_claim_app.command("reject")
+def paper_claim_reject(
+    identifier: Annotated[str, typer.Argument()],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    _claim_review_command(identifier, "rejected", yes)
+
+
+@paper_app.command("begin")
+def paper_begin(title: Annotated[str, typer.Option()]) -> None:
+    console.print(begin_paper(_root(), title))
+
+
+@paper_section_app.command("review")
+def paper_section_review(
+    section: Annotated[str, typer.Argument()],
+    claim: Annotated[list[str], typer.Option()],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    if not yes and not Confirm.ask(f"Mark {section} reviewed?", default=False):
+        raise typer.Exit()
+    _emit(review_section(_root(), section, claim), False)
+
+
+@paper_app.command("build")
+def paper_build(format_name: Annotated[str, typer.Option("--format")]) -> None:
+    console.print(build_paper(_root(), format_name))
+
+
+@summary_app.command("create")
+def summary_create(
+    source: Annotated[Path, typer.Argument()],
+    content: Annotated[str, typer.Option()],
+    shareable: Annotated[bool, typer.Option("--shareable")] = False,
+    redaction_confirmed: Annotated[bool, typer.Option("--redaction-confirmed")] = False,
+) -> None:
+    console.print(
+        create_summary(
+            _root(),
+            source,
+            content,
+            shareable=shareable,
+            redaction_confirmed=redaction_confirmed,
+        )
+    )
+
+
+@summary_app.command("list")
+def summary_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    _emit(list_summaries(_root()), as_json)
+
+
+@summary_app.command("compare")
+def summary_compare(source_id: Annotated[str, typer.Argument()]) -> None:
+    _emit([item for item in list_summaries(_root()) if item["source_id"] == source_id], False)
+
+
+@summary_app.command("promote")
+def summary_promote(identifier: Annotated[str, typer.Argument()]) -> None:
+    console.print(promote_summary(_root(), identifier))
 
 
 @env_app.command("status")

@@ -12,6 +12,7 @@ import yaml
 
 from smairt.code_quality import validate_code
 from smairt.models import Decision, RunRecord, SmairtConfig
+from smairt.utils import sha256_file
 
 PROHIBITED_SUFFIXES = {
     ".fast5",
@@ -206,6 +207,18 @@ def validate_project(
                     relative,
                     f"Recorded {field_name} path does not exist: {recorded_path}",
                 )
+
+    from smairt.integrity import verify_run
+
+    integrity = verify_run(root)
+    report.checks["run_integrity"] = bool(integrity["ok"])
+    for finding in integrity["findings"]:
+        report.add(
+            "error",
+            "run.artifact_mutated",
+            str(finding["run_id"]),
+            str(finding["message"]),
+        )
     # Decisions are human gates. A dangling decision would make the audit trail
     # appear stronger than the evidence, so broken links are hard errors.
     for decisions_path in sorted((root / "analysis").glob("EXPERIMENT_*/decisions.yaml")):
@@ -315,6 +328,9 @@ def status(root: Path) -> dict[str, object]:
         "project": config.project.model_dump(mode="json"),
         "data_classification": config.data.classification.value,
         "environment": config.environment.model_dump(mode="json", exclude_none=True),
+        "schema_version": config.schema_version,
+        "safety_mode": config.safety_mode,
+        "active_contributor": config.active_contributor,
         "active": config.active.model_dump(mode="json", exclude_none=True),
         "counts": {
             "proposal_sets": len(proposals),
@@ -354,14 +370,38 @@ CONTEXT_MAP = {
 }
 
 
-def context(root: Path, task: str) -> dict[str, object]:
+def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object]:
     """Select the smallest initial file set needed for a particular research task."""
     if task not in CONTEXT_MAP:
         raise ValueError(f"Unknown task {task!r}; choose {', '.join(CONTEXT_MAP)}")
     current = status(root)
+    included = []
+    deferred = []
+    used = 0
+    for relative in CONTEXT_MAP[task]:
+        path = root / relative
+        if not path.exists():
+            continue
+        estimated = max(1, len(path.read_text(encoding="utf-8", errors="replace")) // 4)
+        item = {
+            "path": relative,
+            "estimated_tokens": estimated,
+            "reason": f"default {task} context",
+            "sha256": sha256_file(path),
+        }
+        if used + estimated <= token_budget:
+            included.append(item)
+            used += estimated
+        else:
+            deferred.append({**item, "reason": "token budget exceeded"})
     return {
         "task": task,
         "status": current,
-        "read": [path for path in CONTEXT_MAP[task] if (root / path).exists()],
+        "token_budget": token_budget,
+        "estimated_tokens": used,
+        "estimated_cost": None,
+        "read": [item["path"] for item in included],
+        "included": included,
+        "deferred": deferred,
         "rule": "Read only these files initially; load logs, PDFs, and older iterations on demand.",
     }

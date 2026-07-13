@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from smairt.integrity import build_manifest
 from smairt.models import EnvironmentMode, RunRecord, SmairtConfig, utc_now
 from smairt.research import find_hypothesis, validate_hypothesis
 from smairt.utils import sha256_file, write_json
@@ -142,6 +143,7 @@ def run_experiment(
         git_commit=commit,
         git_dirty=dirty,
         environment=environment_info,
+        manifest_path=str((run_dir / "manifest.json").relative_to(root)),
     )
     write_json(run_dir / "run.json", record.model_dump(mode="json", exclude_none=True))
     if dirty and (root / ".git").exists():
@@ -154,4 +156,5 @@ def run_experiment(
     entrypoint = iteration / command[-1] if len(command) >= 2 else None
     if entrypoint and entrypoint.exists() and entrypoint.is_file():
         shutil.copy2(entrypoint, run_dir / f"entrypoint.snapshot{entrypoint.suffix}")
+    build_manifest(root, run_dir)
     return record
