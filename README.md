@@ -26,11 +26,12 @@ Need the prerequisites? Follow [Installation](docs/INSTALL.md),
 
 The hard problem of science is not producing more text or code. It is keeping a trustworthy line
 from a question, through sources and experiments, to the judgment a researcher is prepared to
-defend. AI can help search, summarize, propose, and implement; it must not quietly become the
+defend. AI can help bring researchers quickly to the frontier of science; helping them search, 
+summarize, propose, and implement; but the overatching consensus is that it must not quietly become the
 author of scientific decisions.
 
-SMAIRT (Scientific Method with AI Research Toolkit) is a local-first workspace for that division
-of labor. It keeps research state in readable YAML, JSON, and Markdown, asks humans to approve the
+SMAIRT (Scientific Method with AI Research Toolkit, previously Scientific Method with AI Research Template) (at least in this branch) is a local-first 
+workspace for that division of labor. It keeps research state in readable YAML, JSON, and Markdown, asks humans to approve the
 consequential steps, and gives coding agents a bounded, inspectable place to work.
 
 ## Start working
@@ -40,13 +41,13 @@ Run the command with no arguments:
 ```bash
 smairt
 ```
-
+## For Beginners:
 The workflow hub stays in your terminal scrollback. Use Up/Down to move, Enter to open or accept,
 Escape to go back one level, and Ctrl-C to stop. Outside a project it helps create or initialize
 one. Inside a project it opens research guidance, references, settings, people, environments,
-safety, and validation.
+safety, and validation scaffolds.
 
-For scripts or experienced users, every important setup action also has an explicit command:
+For scripts or experienced terminal local users, every important setup action also has an explicit command:
 
 ```bash
 smairt new my-study --name "My Study" --author "Researcher Name" \
@@ -59,9 +60,9 @@ smairt next --json
 ## Human and AI roles
 
 SMAIRT lets an AI assistant propose hypotheses, organize references, draft experiment code, and
-assemble review artifacts. The researcher confirms identity, chooses hypotheses or exploratory
-purposes, decides whether runs support a claim, approves corrections, and reviews manuscript
-claims. Those choices are recorded as provenance rather than hidden in chat history.
+assemble review artifacts. The researcher confirms identity, chooses, edits and guides hypotheses 
+as well as exploratory purposes, decides whether runs support a claim, approves corrections, and 
+reviews manuscript claims. Those choices are recorded as provenance rather than hidden in chat history.
 
 ```text
 question + references -> grounded background -> proposals -> human selection
@@ -103,8 +104,8 @@ export-control, clinical, or human-subject compliance. Controlled data is not su
 compliance claim. Native Windows is not supported; use WSL.
 
 Continue with the [User Guide](docs/USER_GUIDE.md), [CLI Reference](docs/CLI_REFERENCE.md),
-[Safety contract](docs/SAFETY.md), or [Architecture](docs/ARCHITECTURE.md). Developers can use the
-[Developer Guide](docs/DEVELOPER_GUIDE.md) and [Release Guide](docs/RELEASE.md).
+[Safety contract](docs/SAFETY.md), or [Architecture](docs/ARCHITECTURE.md). 
+Developers can use the [Developer Guide](docs/DEVELOPER_GUIDE.md) and [Release Guide](docs/RELEASE.md).
 Literature setup and its privacy boundaries are in [Integrations](docs/INTEGRATIONS.md).
 
 SMAIRT itself is distributed under the [MIT License](LICENSE).
