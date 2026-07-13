@@ -15,17 +15,13 @@ from rich.prompt import Confirm, IntPrompt, Prompt
 from typer.core import _click as click
 
 from smairt import __version__
+from smairt.cli_harness import harness_app
+from smairt.cli_safety import safety_app
 from smairt.code_quality import build_code_index, validate_code
 from smairt.contracts import check_contracts, export_contracts
 from smairt.corrections import amend_artifact, correct_run
 from smairt.guidance import next_guidance
-from smairt.harnesses import (
-    harness_status,
-    install_harness,
-    list_harnesses,
-    select_harness,
-    switch_plan,
-)
+from smairt.harnesses import list_harnesses
 from smairt.integrity import verify_run
 from smairt.migrations import apply_migration, detect_scaffold, migration_plan, rollback_migration
 from smairt.model_policy import recommend_model
@@ -68,7 +64,6 @@ from smairt.research import (
     validate_proposal_set,
 )
 from smairt.runner import run_experiment
-from smairt.safety import attest_repository, release_check, safety_status, set_safety_mode
 from smairt.scaffold import conda_environments, create_project
 from smairt.summaries import create_summary, list_summaries, promote_summary, supersede_summary
 from smairt.tui import run_new_project, run_project_menu
@@ -112,9 +107,7 @@ paper_app = typer.Typer(help="Manage paper evidence provenance")
 env_app = typer.Typer(help="Inspect and enter the project environment")
 code_app = typer.Typer(help="Index and validate readable research code")
 contributor_app = typer.Typer(help="Manage confirmed project contributors")
-safety_app = typer.Typer(help="Inspect and change project safety policy")
 contract_app = typer.Typer(help="Export and check portable harness contracts")
-harness_app = typer.Typer(help="Install and inspect coding-harness adapters")
 migrate_app = typer.Typer(help="Plan, apply, and roll back schema migrations")
 summary_app = typer.Typer(help="Manage contributor-scoped source summaries")
 model_app = typer.Typer(help="Recommend economical model capability tiers")
@@ -216,40 +209,6 @@ def doctor_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> 
         raise typer.Exit(1)
 
 
-@safety_app.command("status")
-def safety_status_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    _emit(safety_status(_root()), as_json)
-
-
-@safety_app.command("set")
-def safety_set(
-    mode: Annotated[str, typer.Argument()], yes: Annotated[bool, typer.Option("--yes")] = False
-) -> None:
-    if not yes and not Confirm.ask(f"Change safety mode to {mode}?", default=False):
-        raise typer.Exit()
-    _emit(set_safety_mode(_root(), mode), False)
-
-
-@safety_app.command("release-check")
-def safety_release_check(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    payload = release_check(_root())
-    _emit(payload, as_json)
-    if not payload["ok"]:
-        raise typer.Exit(1)
-
-
-@safety_app.command("attest")
-def safety_attest(
-    visibility: Annotated[str, typer.Option()],
-    yes: Annotated[bool, typer.Option("--yes")] = False,
-) -> None:
-    if not yes and not Confirm.ask(
-        f"Confirm repository visibility is {visibility}?", default=False
-    ):
-        raise typer.Exit()
-    _emit(attest_repository(_root(), visibility), False)
-
-
 @app.command("verify")
 def verify_command(
     run: Annotated[str | None, typer.Option()] = None,
@@ -274,44 +233,6 @@ def contract_check(destination: Annotated[Path | None, typer.Option()] = None) -
     _emit(payload, False)
     if not payload["ok"]:
         raise typer.Exit(1)
-
-
-@harness_app.command("list")
-def harness_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    _emit(list_harnesses(_root()), as_json)
-
-
-@harness_app.command("status")
-def harness_status_command(
-    harness: Annotated[str | None, typer.Argument()] = None,
-    as_json: Annotated[bool, typer.Option("--json")] = False,
-) -> None:
-    _emit(harness_status(_root(), harness), as_json)
-
-
-@harness_app.command("install")
-def harness_install(harness: Annotated[str, typer.Argument()]) -> None:
-    _emit(install_harness(_root(), harness), False)
-
-
-@harness_app.command("upgrade")
-def harness_upgrade(harness: Annotated[str, typer.Argument()]) -> None:
-    _emit(install_harness(_root(), harness, upgrade=True), False)
-
-
-@harness_app.command("select")
-def harness_select(
-    harness: Annotated[str, typer.Argument()],
-    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    backup_and_switch: Annotated[bool, typer.Option("--backup-and-switch")] = False,
-) -> None:
-    """Preview or apply an authoritative, conflict-aware harness switch."""
-    payload = (
-        switch_plan(_root(), harness)
-        if dry_run
-        else select_harness(_root(), harness, backup_and_switch=backup_and_switch)
-    )
-    _emit(payload, False)
 
 
 @migrate_app.command("plan")
