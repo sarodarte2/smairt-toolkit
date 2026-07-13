@@ -12,11 +12,13 @@ from typing import Any
 
 
 def slugify(value: str) -> str:
+    """Convert user text into a stable, filesystem-safe lowercase slug."""
     normalized = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     return normalized or "smairt-project"
 
 
 def sha256_file(path: Path) -> str:
+    """Stream a file into SHA-256 without loading large research files into memory."""
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -25,10 +27,12 @@ def sha256_file(path: Path) -> str:
 
 
 def sha256_text(value: str) -> str:
+    """Return the SHA-256 digest of UTF-8 text for managed-file tracking."""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def atomic_write(path: Path, content: str) -> None:
+    """Replace a text file atomically so interrupted writes cannot corrupt state."""
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
@@ -41,10 +45,12 @@ def atomic_write(path: Path, content: str) -> None:
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
+    """Write deterministic, human-readable JSON through the atomic writer."""
     atomic_write(path, json.dumps(data, indent=2, sort_keys=True) + "\n")
 
 
 def next_numeric_id(paths: list[Path], prefix: str, width: int = 3) -> str:
+    """Return the next zero-padded ID after scanning existing artifact names."""
     pattern = re.compile(rf"^{re.escape(prefix)}(\d+)")
     values: list[int] = []
     for path in paths:

@@ -1,3 +1,5 @@
+"""Project scaffold, progressive context, and Git safety integration tests."""
+
 import os
 import subprocess
 import sys
@@ -9,6 +11,7 @@ from smairt.scaffold import create_project
 
 
 def make_project(tmp_path: Path) -> Path:
+    """Create a representative unpublished project for scaffold checks."""
     root = tmp_path / "project"
     create_project(
         root,
@@ -24,6 +27,7 @@ def make_project(tmp_path: Path) -> Path:
 
 
 def test_scaffold_is_safe_and_complete(tmp_path: Path) -> None:
+    """Verify required files, manual author identity, and local-data safeguards."""
     root = make_project(tmp_path)
     config = SmairtConfig.load(root / "smairt.yaml")
     assert config.project.author == "Manual Author"
@@ -35,6 +39,7 @@ def test_scaffold_is_safe_and_complete(tmp_path: Path) -> None:
 
 
 def test_status_and_context_are_compact(tmp_path: Path) -> None:
+    """Ensure progressive context does not load PDFs or unrelated project state."""
     root = make_project(tmp_path)
     payload = status(root)
     assert payload["counts"]["hypotheses"] == 0
@@ -44,6 +49,7 @@ def test_status_and_context_are_compact(tmp_path: Path) -> None:
 
 
 def test_protected_paths_are_recognized() -> None:
+    """Recognize representative secrets, raw data, and local reference paths."""
     for path in (
         ".env",
         "credentials.json",
@@ -56,6 +62,7 @@ def test_protected_paths_are_recognized() -> None:
 
 
 def test_init_can_add_smairt_to_reviewed_nonempty_directory(tmp_path: Path) -> None:
+    """Ensure explicit initialization preserves existing non-Git research work."""
     root = tmp_path / "existing"
     root.mkdir()
     existing = root / "research-notes.md"
@@ -73,6 +80,7 @@ def test_init_can_add_smairt_to_reviewed_nonempty_directory(tmp_path: Path) -> N
 
 
 def test_staged_protected_file_fails_validation(tmp_path: Path) -> None:
+    """Ensure force-staged secrets are rejected by validation and the Git hook."""
     root = tmp_path / "git-project"
     create_project(
         root,

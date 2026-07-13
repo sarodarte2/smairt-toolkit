@@ -1,3 +1,5 @@
+"""End-to-end tests for hypothesis, experiment, run, decision, and paper links."""
+
 import sys
 from pathlib import Path
 
@@ -20,6 +22,7 @@ from smairt.scaffold import create_project
 
 
 def project(tmp_path: Path) -> Path:
+    """Create a valid project fixture for full research-lifecycle tests."""
     root = tmp_path / "research"
     create_project(
         root,
@@ -34,16 +37,34 @@ def project(tmp_path: Path) -> Path:
 
 
 def complete_proposals(path: Path) -> None:
+    """Replace every proposal placeholder with distinct test content."""
     content = path.read_text()
+    for label, title in zip(
+        ("A", "B", "C"), ("Direct fit", "Robust fit", "Design study"), strict=True
+    ):
+        content = content.replace(
+            f"## Option {label}: [Distinct title]", f"## Option {label}: {title}"
+        )
     content = content.replace("[Specific, falsifiable statement]", "A measurable prediction")
     content = content.replace(
         "[Reference indexed sources and distinguish inference]", "Reasoning from reference_001"
     )
     content = content.replace("[Expected observation]", "A held-out difference")
+    content = content.replace("[Alternative explanation]", "A competing mechanism")
+    content = content.replace(
+        "[Data, controls, unit of analysis, and test]", "Replicated data with controls"
+    )
+    content = content.replace(
+        "[Practical feasibility and likely failure modes]", "Feasible with known confounders"
+    )
+    content = content.replace(
+        "[Why this is scientifically distinct]", "Tests a distinct scientific mechanism"
+    )
     path.write_text(content)
 
 
 def test_full_research_and_paper_provenance(tmp_path: Path) -> None:
+    """Exercise the complete hypothesis-to-accepted-paper-evidence chain."""
     root = project(tmp_path)
     create_background(root)
     background = root / "background/initial_background.md"
@@ -68,6 +89,18 @@ def test_full_research_and_paper_provenance(tmp_path: Path) -> None:
             "[Complete before running the linked experiment.]",
             "A measurable held-out observation.",
         )
+        .replace(
+            "## Required Data and Controls\n\n",
+            "## Required Data and Controls\nReplicated held-out measurements.\n\n",
+        )
+        .replace(
+            "## Success and Failure Criteria\n\n",
+            "## Success and Failure Criteria\nPredefined recovery error threshold.\n\n",
+        )
+        .replace(
+            "## Known Confounders\n\n",
+            "## Known Confounders\nMeasurement noise and split leakage.\n\n",
+        )
     )
     assert validate_hypothesis(hypothesis) == []
     experiment = create_experiment(root, title="Baseline", hypothesis_id="HYPOTHESIS_001")
@@ -76,9 +109,9 @@ def test_full_research_and_paper_provenance(tmp_path: Path) -> None:
         root,
         experiment_id="EXPERIMENT_001",
         iteration_id="ITERATION_001",
-        command=[sys.executable, "run.py"],
     )
     assert record.exit_code == 0
+    assert record.command[-1] == "script_001_baseline.py"
     record_decision(
         root,
         experiment_id="EXPERIMENT_001",
@@ -96,6 +129,7 @@ def test_full_research_and_paper_provenance(tmp_path: Path) -> None:
 
 
 def test_research_links_and_decisions_must_reference_real_records(tmp_path: Path) -> None:
+    """Reject experiments and decisions whose durable source records are missing."""
     root = project(tmp_path)
     try:
         create_experiment(root, title="Missing", hypothesis_id="HYPOTHESIS_404")
@@ -122,6 +156,7 @@ def test_research_links_and_decisions_must_reference_real_records(tmp_path: Path
 
 
 def test_incomplete_hypothesis_blocks_execution(tmp_path: Path) -> None:
+    """Keep the human-selected hypothesis completeness gate before execution."""
     root = project(tmp_path)
     create_background(root)
     proposals = create_proposal_set(root)

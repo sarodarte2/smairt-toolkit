@@ -16,15 +16,15 @@ DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 
 
 def load_index(root: Path) -> list[ReferenceRecord]:
+    """Load and validate all reference records from the project index."""
     payload = yaml.safe_load((root / "references/index.yaml").read_text(encoding="utf-8")) or {}
     return [ReferenceRecord.model_validate(item) for item in payload.get("references", [])]
 
 
 def save_index(root: Path, records: list[ReferenceRecord]) -> None:
+    """Persist validated reference records in a stable YAML representation."""
     payload = {
-        "references": [
-            record.model_dump(mode="json", exclude_none=True) for record in records
-        ]
+        "references": [record.model_dump(mode="json", exclude_none=True) for record in records]
     }
     (root / "references/index.yaml").write_text(
         yaml.safe_dump(payload, sort_keys=False), encoding="utf-8"
@@ -32,6 +32,7 @@ def save_index(root: Path, records: list[ReferenceRecord]) -> None:
 
 
 def inspect_pdf(source: Path) -> dict[str, object]:
+    """Extract best-effort PDF metadata for explicit researcher confirmation."""
     reader = PdfReader(str(source))
     metadata = reader.metadata or {}
     title = str(metadata.get("/Title") or source.stem).strip()
@@ -57,6 +58,7 @@ def add_reference(
     verified: bool = False,
     link: bool = False,
 ) -> ReferenceRecord:
+    """Copy or link a PDF locally and append its verified metadata to the index."""
     source = source.expanduser().resolve()
     if source.suffix.lower() != ".pdf" or not source.exists():
         raise ValueError("reference must be an existing PDF")
@@ -86,6 +88,7 @@ def add_reference(
 
 
 def unindexed_pdfs(root: Path) -> list[Path]:
+    """List local reference PDFs whose checksums are absent from the index."""
     records = load_index(root)
     known = {record.sha256 for record in records}
     return [

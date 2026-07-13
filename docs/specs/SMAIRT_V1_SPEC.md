@@ -29,6 +29,14 @@ required before creation.
 `smairt menu` opens the project dashboard and permits later edits. Codex uses equivalent JSON
 commands and never drives the TUI.
 
+`smairt next --json` is the state-aware handoff contract. Codex runs routine commands, summarizes
+the completed step, and offers adaptive next actions while pausing at explicit human scientific
+gates.
+
+Research entrypoints use numbered, descriptive filenames tied to experiment IDs and a
+novice-readable skeleton. `smairt code validate` reports readability and traceability warnings;
+`smairt code index` creates an AST-derived map without importing research code.
+
 ## Artifact Chain
 
 ```text

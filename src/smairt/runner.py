@@ -17,6 +17,7 @@ from smairt.utils import sha256_file, write_json
 
 
 def _git_state(root: Path) -> tuple[str | None, bool]:
+    """Capture the current commit and dirty state without requiring Git history."""
     if not (root / ".git").exists():
         return None, False
     commit = subprocess.run(
@@ -29,6 +30,7 @@ def _git_state(root: Path) -> tuple[str | None, bool]:
 
 
 def _experiment_path(root: Path, experiment_id: str) -> Path:
+    """Resolve an experiment ID to its uniquely named project directory."""
     path = next((root / "experiments").glob(f"{experiment_id}_*"), None)
     if path is None:
         raise FileNotFoundError(f"Experiment {experiment_id} not found")
@@ -40,24 +42,27 @@ def run_experiment(
     *,
     experiment_id: str,
     iteration_id: str,
-    command: list[str],
+    command: list[str] | None = None,
 ) -> RunRecord:
-    if not command:
-        raise ValueError("command is required after --")
+    """Execute an iteration and capture its command, logs, code, config, and Git state."""
     config = SmairtConfig.load(root / "smairt.yaml")
     experiment = _experiment_path(root, experiment_id)
     metadata = yaml.safe_load((experiment / "experiment.yaml").read_text()) or {}
+    command = list(command or [])
+    if not command:
+        entrypoint = str(metadata.get("entrypoint", "run.py"))
+        command = [sys.executable, entrypoint]
     hypothesis_id = metadata.get("hypothesis")
     if hypothesis_id:
         hypothesis_errors = validate_hypothesis(find_hypothesis(root, str(hypothesis_id)))
         if hypothesis_errors:
-            raise ValueError(
-                "Linked hypothesis is incomplete: " + "; ".join(hypothesis_errors)
-            )
+            raise ValueError("Linked hypothesis is incomplete: " + "; ".join(hypothesis_errors))
     iteration = experiment / "iterations" / iteration_id
     if not iteration.exists():
         raise FileNotFoundError(iteration)
     iteration_config = iteration / "config.yaml"
+    # A high-resolution UTC ID makes every attempt immutable, including retries
+    # of the same method and configuration.
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     run_id = f"RUN_{timestamp}"
     run_dir = root / "results" / experiment_id / iteration_id / run_id
@@ -87,6 +92,8 @@ def run_experiment(
             effective_command = ["conda", "run", "-n", config.environment.name, *command]
             environment_info["conda_name"] = config.environment.name
 
+    # Research scripts discover all project-controlled paths through environment
+    # variables, avoiding machine-specific paths in committed source code.
     env = os.environ.copy()
     env.update(
         {
@@ -100,6 +107,8 @@ def run_experiment(
         }
     )
     started_at = utc_now()
+    # Stream output to both the researcher and the durable run log. This replaces
+    # the original separate TeeLogger and keeps one authoritative evidence bundle.
     with log_path.open("w", encoding="utf-8") as log:
         log.write(f"SMAIRT run {run_id}\nCommand: {' '.join(effective_command)}\n\n")
         process = subprocess.Popen(

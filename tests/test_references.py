@@ -1,3 +1,5 @@
+"""Reference indexing tests using small locally generated PDF fixtures."""
+
 from pathlib import Path
 
 from pypdf import PdfWriter
@@ -8,6 +10,7 @@ from smairt.scaffold import create_project
 
 
 def test_local_pdf_is_copied_ignored_and_indexed(tmp_path: Path) -> None:
+    """Verify local PDFs receive checksums and remain outside Git by default."""
     root = tmp_path / "project"
     create_project(
         root,

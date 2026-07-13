@@ -7,6 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import yaml
+
 from smairt.models import (
     DataClassification,
     DataPolicy,
@@ -16,12 +18,13 @@ from smairt.models import (
     ProjectInfo,
     SmairtConfig,
 )
-from smairt.utils import atomic_write, slugify
+from smairt.utils import atomic_write, sha256_text, slugify
 
 DIRECTORIES = (
     ".agents/skills/smairt-research/references",
     ".codex",
     ".githooks",
+    ".smairt/backups",
     "docs",
     "prompts",
     "environment",
@@ -78,6 +81,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .DS_Store
+.smairt/backups/
 """
 
 
@@ -86,12 +90,19 @@ AGENTS = """# SMAIRT Project Guidance
 This repository uses SMAIRT. The authoritative project contract is `smairt.yaml`.
 
 Before research work:
-1. Run `smairt status --json`.
+1. Run `smairt status --json` and `smairt next --json`.
 2. Use the repository skill in `.agents/skills/smairt-research/`.
 3. Load only the convention relevant to the current task.
 4. Create research artifacts through SMAIRT commands.
 5. Execute experiments through `smairt run`.
 6. Run `smairt validate` before reporting completion.
+7. End each research step with: what completed, the recommended next action, and up to
+   three relevant alternatives from `smairt next --json`.
+
+Run safe routine SMAIRT commands directly. Pause for explicit human input before selecting or
+editing a hypothesis, choosing an experimental route, recording a scientific decision, or
+retracting/superseding evidence. Use interactive choices when available and a numbered list
+otherwise. Always offer to open the relevant artifact before a human decision.
 
 Never place secrets or raw research data in Git. Never rewrite an immutable run record.
 Do not activate or finalize a hypothesis without an explicit human decision.
@@ -108,16 +119,22 @@ description: >
 # SMAIRT Research Workflow
 
 1. Run `smairt status --json` and identify the current task.
-2. Run `smairt context --task <planning|code|run|interpretation|paper>`.
-3. Read only the returned files.
-4. Use SMAIRT commands to create hypotheses, experiments, iterations, runs, and decisions.
-5. For an initial background, use indexed local references first. Ask before academic web
+2. Run `smairt next --json`; treat its state and artifact paths as authoritative.
+3. Run `smairt context --task <planning|code|run|interpretation|paper>`.
+4. Read only the returned files.
+5. Use SMAIRT commands to create hypotheses, experiments, iterations, runs, and decisions.
+6. For an initial background, use indexed local references first. Ask before academic web
    research and index every added source.
-6. When asked for hypotheses, create exactly three meaningfully distinct options in a proposal
+7. When asked for hypotheses, create exactly three meaningfully distinct options in a proposal
    set. Explain rationale, falsifiable prediction, competing explanation, required data,
    feasibility, confounders, and differences. Never activate one without human selection.
-7. Record human choices in `prompts/intellectual_contribution.md`.
-8. Validate before claiming an artifact is complete or accepted.
+8. At human gates, use interactive choices when supported; otherwise show concise numbered
+   choices, including an option to read the artifact or provide a custom response.
+9. Before experiment creation, offer three distinct experimental routes grounded in the active
+   hypothesis, with tradeoffs, required data, controls, and expected evidence.
+10. Record human choices in `prompts/intellectual_contribution.md`.
+11. Validate before claiming an artifact is complete or accepted.
+12. Finish with a compact Completed / Recommended next / Alternatives section from `smairt next`.
 
 See `references/workflow.md` for the artifact chain and correction rules.
 """
@@ -141,15 +158,40 @@ question + references -> initial background -> three proposal options
 
 CODE_CONVENTIONS = """# Code Conventions
 
-- Use numbered experiment and iteration IDs created by SMAIRT.
-- Keep parameters in the iteration `config.yaml`, not embedded in code.
-- Read output locations from `SMAIRT_RESULTS_DIR`, `SMAIRT_FIGURES_DIR`, and
-  `SMAIRT_CONFIG_PATH`.
-- Validate inputs explicitly and fail loudly on malformed data.
-- Record deterministic seeds when randomness is used.
-- Put reusable project code in `scripts/shared/`.
-- Keep scripts independently runnable and include hypothesis/purpose references in docstrings.
-- Do not hardcode machine-specific absolute paths in committed code.
+Research code must be easy for a novice programmer to trace and easy for tools to index.
+
+## Required experiment structure
+
+- Name new entrypoints `script_XXX_descriptive_name.py`, using the `EXPERIMENT_XXX` number.
+- Begin with a module docstring containing experiment, iteration, hypothesis or purpose,
+  dependencies, inputs, outputs, and scientific intent.
+- Organize code into imports, SMAIRT paths/configuration, input loading and validation, analysis,
+  outputs, and `main()`.
+- Keep parameters in iteration `config.yaml`; do not hide scientific choices in code.
+- Read paths from `SMAIRT_CONFIG_PATH`, `SMAIRT_RESULTS_DIR`, and `SMAIRT_FIGURES_DIR`.
+- Use descriptive variable names. Include units in names when values would otherwise be ambiguous.
+- Domain-standard names such as `Km` and `Vmax` are acceptable when defined clearly.
+- Add type hints to functions and docstrings to public or reusable functions.
+- Validate inputs explicitly and fail with messages that tell the researcher what is wrong.
+- Record deterministic seeds whenever randomness is used.
+- Print concise stage, input shape/count, configuration, output-path, and completion summaries;
+  `smairt run` captures this output in the immutable run bundle.
+- Put reusable code in `scripts/shared/` after a pattern genuinely repeats.
+- Never hardcode machine-specific absolute paths or credentials.
+
+## Comments and readability
+
+- Comments explain scientific intent, assumptions, units, transformations, and why a choice was
+  made. Do not merely translate syntax into English.
+- Prefer small, purpose-named functions and straightforward control flow over clever compression.
+- Avoid unexplained abbreviations, variable shadowing, and unnecessary reassignment.
+- Keep data transformations explicit enough that a reader can track where each important value
+  came from and where it is used.
+- Update `scripts/CODE_INDEX.yaml` with `smairt code index` after structural code changes.
+- Run `smairt code validate` before executing or reporting an experiment.
+
+SMAIRT's runner is the logging authority. Do not add a second timestamped TeeLogger or paste raw
+output into source comments.
 """
 
 
@@ -292,6 +334,7 @@ CODEX_HOOKS = {
 
 
 def conda_environments() -> list[dict[str, str]]:
+    """Discover available Conda environments without failing when Conda is absent."""
     if not shutil.which("conda"):
         return []
     result = subprocess.run(
@@ -304,12 +347,14 @@ def conda_environments() -> list[dict[str, str]]:
 
 
 def create_conda_environment(name: str) -> None:
+    """Create one Python 3.11 Conda environment owned by the research project."""
     if not shutil.which("conda"):
         raise RuntimeError("Conda is not installed; choose an existing/no-managed environment")
     subprocess.run(["conda", "create", "-y", "-n", name, "python=3.11"], check=True)
 
 
 def _write(path: Path, relative: str, content: str) -> None:
+    """Write a normalized generated file through the atomic filesystem helper."""
     atomic_write(path / relative, content.rstrip() + "\n")
 
 
@@ -328,6 +373,7 @@ def create_project(
     create_environment: bool = False,
     allow_existing: bool = False,
 ) -> SmairtConfig:
+    """Create a safe project scaffold while preserving reviewed existing work."""
     destination = destination.expanduser().resolve()
     if (destination / "smairt.yaml").exists():
         raise FileExistsError(f"{destination} is already a SMAIRT project")
@@ -383,8 +429,7 @@ def create_project(
         "prompts/RESEARCH_CONVENTIONS.md": RESEARCH_CONVENTIONS,
         "prompts/INTERPRETATION_CONVENTIONS.md": INTERPRETATION_CONVENTIONS,
         "prompts/KNOWN_PATTERNS.md": (
-            "# Known Patterns and Errors\n\n"
-            "Record reusable solutions and costly mistakes here.\n"
+            "# Known Patterns and Errors\n\nRecord reusable solutions and costly mistakes here.\n"
         ),
         "prompts/intellectual_contribution.md": (
             "# Intellectual Contribution Log\n\n"
@@ -398,17 +443,14 @@ def create_project(
         ),
         "background/initial_background.md": "# Initial Background\n\nStatus: DRAFT\n",
         "plans/README.md": (
-            "# Plans\n\n"
-            "Create a plan before multi-step work, pivots, or architecture changes.\n"
+            "# Plans\n\nCreate a plan before multi-step work, pivots, or architecture changes.\n"
         ),
         "hypotheses/README.md": (
-            "# Hypotheses\n\n"
-            "Proposal sets preserve AI options; only a human can activate one.\n"
+            "# Hypotheses\n\nProposal sets preserve AI options; only a human can activate one.\n"
         ),
         "hypotheses/HYPOTHESIS_TEMPLATE.md": HYPOTHESIS_TEMPLATE,
         "experiments/README.md": (
-            "# Experiments\n\n"
-            "Experiment and iteration directories are created by SMAIRT.\n"
+            "# Experiments\n\nExperiment and iteration directories are created by SMAIRT.\n"
         ),
         "scripts/README.md": (
             "# Scripts\n\nUse scripts/shared for reusable project-specific code.\n"
@@ -416,6 +458,7 @@ def create_project(
         "scripts/shared/README.md": (
             "# Shared Code\n\nExtract patterns reused across project experiments.\n"
         ),
+        "scripts/CODE_INDEX.yaml": "schema_version: 1\nmodules: []\n",
         "analysis/README.md": (
             "# Analysis\n\nInterpret results against their linked hypothesis or purpose.\n"
         ),
@@ -438,6 +481,28 @@ def create_project(
         )
     for relative, content in files.items():
         _write(destination, relative, content)
+
+    # Managed-file hashes let later upgrades distinguish framework guidance
+    # from researcher-authored scientific artifacts, which are never replaced.
+    managed = {
+        "AGENTS.md": AGENTS,
+        ".agents/skills/smairt-research/SKILL.md": SKILL,
+        ".agents/skills/smairt-research/references/workflow.md": SKILL_REFERENCE,
+        ".codex/config.toml": files[".codex/config.toml"],
+        ".codex/hooks.json": files[".codex/hooks.json"],
+        "prompts/CODE_CONVENTIONS.md": CODE_CONVENTIONS,
+    }
+    framework_manifest = {
+        "framework_version": "0.1.0",
+        "managed_files": {
+            relative: sha256_text(content.rstrip() + "\n") for relative, content in managed.items()
+        },
+    }
+    _write(
+        destination,
+        ".smairt/framework.yaml",
+        yaml.safe_dump(framework_manifest, sort_keys=False),
+    )
 
     hook = destination / ".githooks/pre-commit"
     hook.chmod(0o755)

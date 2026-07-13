@@ -14,6 +14,8 @@ from rich.console import Console
 from rich.prompt import Confirm, IntPrompt, Prompt
 
 from smairt import __version__
+from smairt.code_quality import build_code_index, validate_code
+from smairt.guidance import next_guidance
 from smairt.models import DataClassification, Decision, EnvironmentMode, SmairtConfig
 from smairt.paper import validate_paper
 from smairt.project import context as build_context
@@ -28,11 +30,13 @@ from smairt.research import (
     create_proposal_set,
     new_iteration,
     record_decision,
+    validate_background,
     validate_proposal_set,
 )
 from smairt.runner import run_experiment
 from smairt.scaffold import conda_environments, create_project
 from smairt.tui import run_new_project, run_project_menu
+from smairt.upgrade import upgrade_project
 
 console = Console()
 app = typer.Typer(
@@ -50,6 +54,7 @@ iteration_app = typer.Typer(help="Manage immutable research iterations")
 decision_app = typer.Typer(help="Record human research decisions")
 paper_app = typer.Typer(help="Manage paper evidence provenance")
 env_app = typer.Typer(help="Inspect and enter the project environment")
+code_app = typer.Typer(help="Index and validate readable research code")
 
 app.add_typer(start_app, name="start")
 app.add_typer(reference_app, name="reference")
@@ -61,9 +66,11 @@ app.add_typer(iteration_app, name="iteration")
 app.add_typer(decision_app, name="decision")
 app.add_typer(paper_app, name="paper")
 app.add_typer(env_app, name="env")
+app.add_typer(code_app, name="code")
 
 
 def _root() -> Path:
+    """Resolve the current project or terminate a command with a clear error."""
     try:
         return find_project()
     except FileNotFoundError as exc:
@@ -72,10 +79,23 @@ def _root() -> Path:
 
 
 def _emit(payload: object, as_json: bool) -> None:
+    """Render payloads either as stable JSON or readable Rich output."""
     if as_json:
         console.print_json(json.dumps(payload, default=str))
     else:
         console.print(payload)
+
+
+def _show_guidance(root: Path) -> None:
+    """Print the compact completed/recommended/alternatives handoff footer."""
+    guidance = next_guidance(root)
+    console.print(f"\n[bold #f28c28]Completed:[/] {guidance['completed']}")
+    recommended = guidance.get("recommended")
+    if recommended:
+        console.print(f"[bold]Recommended next:[/] {recommended['label']}")
+    alternatives = [item["label"] for item in guidance["actions"] if item is not recommended]
+    if alternatives:
+        console.print("[dim]Other options: " + " · ".join(alternatives) + "[/dim]")
 
 
 @app.callback()
@@ -83,6 +103,7 @@ def main(
     ctx: typer.Context,
     version: Annotated[bool, typer.Option("--version", help="Show the installed version.")] = False,
 ) -> None:
+    """Handle global version output and show help when no command is selected."""
     if version:
         console.print(__version__)
         raise typer.Exit()
@@ -102,6 +123,7 @@ def _new_project(
     environment_name: str | None,
     allow_existing: bool = False,
 ) -> None:
+    """Share interactive and non-interactive creation behavior across aliases."""
     if not name or not author:
         created = run_new_project(destination, allow_existing=allow_existing)
         if created:
@@ -122,6 +144,7 @@ def _new_project(
         allow_existing=allow_existing,
     )
     console.print(f"[bold #f28c28]Created {config.project.name}[/] at {destination}")
+    _show_guidance(destination)
 
 
 @app.command("new")
@@ -197,11 +220,25 @@ def menu_command() -> None:
     run_project_menu(_root())
 
 
+@app.command("upgrade")
+def upgrade_command(
+    apply: Annotated[bool, typer.Option("--apply")] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Preview or apply safe framework-managed guidance updates."""
+    root = _root()
+    payload = upgrade_project(root, apply=apply)
+    _emit(payload, as_json)
+    if apply:
+        _show_guidance(root)
+
+
 @app.command("status")
 def status_command(
     as_json: Annotated[bool, typer.Option("--json")] = False,
     compact: Annotated[bool, typer.Option("--compact")] = False,
 ) -> None:
+    """Show project identity, active artifacts, health, and optionally full JSON."""
     payload = project_status(_root())
     if as_json:
         _emit(payload, True)
@@ -224,6 +261,7 @@ def validate_command(
     staged: Annotated[bool, typer.Option("--staged")] = False,
     tool_input: Annotated[bool, typer.Option("--tool-input", hidden=True)] = False,
 ) -> None:
+    """Run structural, safety, code, provenance, and readiness validation."""
     report = validate_project(_root(), staged=staged, tool_input=tool_input)
     if as_json:
         _emit(report.as_dict(), True)
@@ -242,18 +280,64 @@ def context_command(
     task: Annotated[str, typer.Option(help="planning, code, run, interpretation, or paper")],
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
+    """Return only the initial files relevant to the requested research task."""
     payload = build_context(_root(), task)
     _emit(payload, as_json)
 
 
+@app.command("next")
+def next_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Show the state-aware next actions for this research project."""
+    payload = next_guidance(_root())
+    if as_json:
+        _emit(payload, True)
+    else:
+        _show_guidance(_root())
+
+
+@code_app.command("index")
+def code_index(
+    check: Annotated[bool, typer.Option("--check")] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Build the AST-derived code index, or check whether it is current."""
+    root = _root()
+    payload = build_code_index(root, write=not check)
+    if check:
+        path = root / "scripts/CODE_INDEX.yaml"
+        current = yaml.safe_load(path.read_text()) if path.exists() else None
+        payload = {"current": current == payload, "index": payload}
+        if not payload["current"]:
+            _emit(payload, as_json)
+            raise typer.Exit(1)
+    _emit(payload, as_json)
+
+
+@code_app.command("validate")
+def code_validate(
+    path: Annotated[Path | None, typer.Argument()] = None,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Report human-readability and traceability findings without blocking research."""
+    root = _root()
+    target = (root / path).resolve() if path and not path.is_absolute() else path
+    findings = validate_code(root, target)
+    _emit(
+        {"ok": not any(item["severity"] == "error" for item in findings), "findings": findings},
+        as_json,
+    )
+
+
 @reference_app.command("list")
 def reference_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """List indexed references without loading their full PDF content."""
     records = [record.model_dump(mode="json", exclude_none=True) for record in load_index(_root())]
     _emit(records, as_json)
 
 
 @reference_app.command("scan")
 def reference_scan(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Report local PDFs that have not yet been indexed by checksum."""
     paths = [str(path) for path in unindexed_pdfs(_root())]
     _emit({"unindexed": paths}, as_json)
 
@@ -269,6 +353,7 @@ def reference_add(
     link: Annotated[bool, typer.Option("--link")] = False,
     yes: Annotated[bool, typer.Option("--yes")] = False,
 ) -> None:
+    """Inspect, confirm, and index one local scholarly PDF."""
     proposed = inspect_pdf(source)
     title = title or str(proposed["title"])
     authors = authors or list(proposed["authors"])
@@ -297,18 +382,16 @@ def reference_add(
 
 @background_app.command("create")
 def background_create() -> None:
-    console.print(create_background(_root()))
+    """Create the initial-background synthesis workspace and show what follows."""
+    root = _root()
+    console.print(create_background(root))
+    _show_guidance(root)
 
 
 @background_app.command("validate")
 def background_validate() -> None:
-    path = _root() / "background/initial_background.md"
-    content = path.read_text()
-    errors = []
-    if "[Codex:" in content:
-        errors.append("background still contains synthesis placeholder")
-    if "## References Used" not in content:
-        errors.append("background lacks References Used section")
+    """Check background structure and grounding against indexed references."""
+    errors = validate_background(_root())
     _emit({"ok": not errors, "errors": errors}, False)
     if errors:
         raise typer.Exit(1)
@@ -316,11 +399,15 @@ def background_validate() -> None:
 
 @proposal_app.command("new")
 def proposal_new() -> None:
-    console.print(create_proposal_set(_root()))
+    """Create a retained three-option hypothesis proposal set."""
+    root = _root()
+    console.print(create_proposal_set(root))
+    _show_guidance(root)
 
 
 @proposal_app.command("validate")
 def proposal_validate(path: Annotated[Path, typer.Argument()]) -> None:
+    """Validate proposal completeness before a researcher chooses an option."""
     errors = validate_proposal_set(path)
     _emit({"ok": not errors, "errors": errors}, False)
     if errors:
@@ -336,9 +423,11 @@ def hypothesis_activate(
     selected_by: Annotated[str, typer.Option()],
     rationale: Annotated[str, typer.Option()],
 ) -> None:
+    """Record the researcher's explicit hypothesis selection and rationale."""
+    root = _root()
     console.print(
         activate_hypothesis(
-            _root(),
+            root,
             proposal_set,
             option,
             title=title,
@@ -347,6 +436,7 @@ def hypothesis_activate(
             rationale=rationale,
         )
     )
+    _show_guidance(root)
 
 
 @experiment_app.command("new")
@@ -355,9 +445,11 @@ def experiment_new(
     hypothesis: Annotated[str | None, typer.Option()] = None,
     purpose: Annotated[str | None, typer.Option()] = None,
 ) -> None:
-    console.print(
-        create_experiment(_root(), title=title, hypothesis_id=hypothesis, purpose=purpose)
-    )
+    """Create a linked or exploratory experiment with a readable entrypoint."""
+    root = _root()
+    console.print(create_experiment(root, title=title, hypothesis_id=hypothesis, purpose=purpose))
+    build_code_index(root)
+    _show_guidance(root)
 
 
 @iteration_app.command("new")
@@ -365,7 +457,11 @@ def iteration_new(
     experiment: Annotated[str, typer.Option()],
     from_iteration: Annotated[str, typer.Option("--from")],
 ) -> None:
-    console.print(new_iteration(_root(), experiment, from_iteration))
+    """Fork a method into a new immutable iteration for a meaningful change."""
+    root = _root()
+    console.print(new_iteration(root, experiment, from_iteration))
+    build_code_index(root)
+    _show_guidance(root)
 
 
 @app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -374,6 +470,7 @@ def run_command(
     experiment: Annotated[str, typer.Option()],
     iteration: Annotated[str, typer.Option()],
 ) -> None:
+    """Execute an iteration through SMAIRT's provenance-capturing runner."""
     command = list(ctx.args)
     if command and command[0] == "--":
         command = command[1:]
@@ -383,6 +480,7 @@ def run_command(
     _emit(record.model_dump(mode="json", exclude_none=True), False)
     if record.exit_code:
         raise typer.Exit(record.exit_code)
+    _show_guidance(_root())
 
 
 @decision_app.command("record")
@@ -394,9 +492,11 @@ def decision_record(
     rationale: Annotated[str, typer.Option()],
     decided_by: Annotated[str, typer.Option()],
 ) -> None:
+    """Append an explicit human interpretation decision for one run."""
+    root = _root()
     console.print(
         record_decision(
-            _root(),
+            root,
             experiment_id=experiment,
             iteration_id=iteration,
             run_id=run,
@@ -405,6 +505,7 @@ def decision_record(
             decided_by=decided_by,
         )
     )
+    _show_guidance(root)
 
 
 @app.command("amend")
@@ -415,10 +516,12 @@ def amend_command(
     corrected: Annotated[str, typer.Option()],
     reason: Annotated[str, typer.Option()],
 ) -> None:
+    """Append a field correction beside an immutable record."""
     amend_record(record, field=field, previous=previous, corrected=corrected, reason=reason)
 
 
 def _change_selection_status(experiment: str, status: str, reason: str) -> None:
+    """Invalidate a current accepted selection while preserving its history."""
     path = _root() / "analysis" / experiment / "selection.yaml"
     if not path.exists():
         raise typer.BadParameter("experiment has no accepted selection")
@@ -433,6 +536,7 @@ def retract_command(
     experiment: Annotated[str, typer.Option()],
     reason: Annotated[str, typer.Option()],
 ) -> None:
+    """Mark accepted experiment evidence as invalid and retain the reason."""
     _change_selection_status(experiment, "RETRACTED", reason)
 
 
@@ -441,11 +545,13 @@ def supersede_command(
     experiment: Annotated[str, typer.Option()],
     reason: Annotated[str, typer.Option()],
 ) -> None:
+    """Mark accepted evidence as replaced so corrected evidence can follow."""
     _change_selection_status(experiment, "SUPERSEDED", reason)
 
 
 @paper_app.command("validate")
 def paper_validate() -> None:
+    """Reject paper elements not backed by current accepted run evidence."""
     errors = validate_paper(_root())
     _emit({"ok": not errors, "errors": errors}, False)
     if errors:
@@ -454,6 +560,7 @@ def paper_validate() -> None:
 
 @env_app.command("status")
 def env_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Show the configured environment and locally discoverable Conda options."""
     config = SmairtConfig.load(_root() / "smairt.yaml")
     payload = {
         "configured": config.environment.model_dump(mode="json", exclude_none=True),
@@ -464,6 +571,7 @@ def env_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None
 
 @env_app.command("shell")
 def env_shell() -> None:
+    """Open a shell inside the configured environment when one is managed."""
     config = SmairtConfig.load(_root() / "smairt.yaml")
     shell = os.environ.get("SHELL", "/bin/sh")
     if config.environment.mode is EnvironmentMode.NEW_CONDA and config.environment.name:

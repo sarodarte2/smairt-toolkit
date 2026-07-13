@@ -8,6 +8,7 @@ import yaml
 
 
 def accepted_runs(root: Path) -> dict[str, dict[str, object]]:
+    """Return accepted, current run selections keyed by immutable run ID."""
     accepted: dict[str, dict[str, object]] = {}
     for selection in (root / "analysis").glob("*/selection.yaml"):
         payload = yaml.safe_load(selection.read_text()) or {}
@@ -17,6 +18,7 @@ def accepted_runs(root: Path) -> dict[str, dict[str, object]]:
 
 
 def validate_paper(root: Path) -> list[str]:
+    """Ensure every paper element points to unique, currently accepted evidence."""
     manifest = root / "paper/manifest.yaml"
     payload = yaml.safe_load(manifest.read_text()) or {}
     elements = payload.get("elements", [])

@@ -17,6 +17,8 @@ ORANGE = "#f28c28"
 
 
 class NewProjectApp(App[Path | None]):
+    """Keyboard-accessible wizard for previewing and creating one SMAIRT project."""
+
     TITLE = "SMAIRT · New Project"
     CSS = f"""
     Screen {{ align: center middle; background: #101820; color: #f4f4f4; }}
@@ -30,6 +32,7 @@ class NewProjectApp(App[Path | None]):
     """
 
     def __init__(self, destination: Path | None = None, *, allow_existing: bool = False):
+        """Initialize wizard state and discover selectable Conda environments."""
         super().__init__()
         self.destination = destination
         self.allow_existing = allow_existing
@@ -46,6 +49,7 @@ class NewProjectApp(App[Path | None]):
         ]
 
     def compose(self) -> ComposeResult:
+        """Build the project form, preview message, and guarded action buttons."""
         yield Header()
         with VerticalScroll(id="card"):
             yield Static("SMAIRT", classes="title")
@@ -82,6 +86,7 @@ class NewProjectApp(App[Path | None]):
         yield Footer()
 
     def _values(self) -> dict[str, object]:
+        """Translate visible form values into validated scaffold arguments."""
         environment_value = str(self.query_one("#environment", Select).value)
         environment_mode = EnvironmentMode.NONE
         environment_prefix = None
@@ -113,6 +118,7 @@ class NewProjectApp(App[Path | None]):
         }
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Preview once, prevent duplicate creation, and surface actionable errors."""
         if event.button.id == "cancel":
             self.exit(None)
             return
@@ -148,6 +154,8 @@ class NewProjectApp(App[Path | None]):
                 self.query_one("#submit", Button).label = "Create"
                 self.previewing = True
                 return
+            # Disable the button before filesystem work so a repeated keypress
+            # cannot start two scaffolds and leave a misleading partial project.
             self.creating = True
             self.query_one("#submit", Button).disabled = True
             self.query_one("#message", Static).update("Creating project…")
@@ -160,6 +168,8 @@ class NewProjectApp(App[Path | None]):
 
 
 class ProjectMenuApp(App[None]):
+    """Editable dashboard for manually maintained project identity and health."""
+
     TITLE = "SMAIRT · Project"
     CSS = f"""
     Screen {{ background: #101820; color: #f4f4f4; }}
@@ -171,11 +181,13 @@ class ProjectMenuApp(App[None]):
     """
 
     def __init__(self, root: Path):
+        """Load the authoritative project contract for display and editing."""
         super().__init__()
         self.root = root
         self.config = SmairtConfig.load(root / "smairt.yaml")
 
     def compose(self) -> ComposeResult:
+        """Build editable identity fields and the compact health summary."""
         yield Header()
         with VerticalScroll(id="body"):
             yield Static(self.config.project.name, classes="title")
@@ -196,9 +208,11 @@ class ProjectMenuApp(App[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        """Populate validation and artifact counts after widgets are available."""
         self.refresh_status()
 
     def refresh_status(self) -> None:
+        """Refresh health without reopening or recreating the project."""
         current = status(self.root)
         validation = current["validation"]
         counts = current["counts"]
@@ -209,6 +223,7 @@ class ProjectMenuApp(App[None]):
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle refresh, manual detail persistence, and clean application exit."""
         if event.button.id == "exit":
             self.exit()
         elif event.button.id == "refresh":
@@ -226,8 +241,10 @@ class ProjectMenuApp(App[None]):
 def run_new_project(
     destination: Path | None = None, *, allow_existing: bool = False
 ) -> Path | None:
+    """Run the creation wizard and return the new project path or cancellation."""
     return NewProjectApp(destination, allow_existing=allow_existing).run()
 
 
 def run_project_menu(root: Path) -> None:
+    """Open the editable dashboard for an existing project root."""
     ProjectMenuApp(root).run()
