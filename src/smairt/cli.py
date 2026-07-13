@@ -11,11 +11,12 @@ from typing import Annotated
 import typer
 import yaml
 from rich.console import Console
-from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.prompt import Confirm
 from typer.core import _click as click
 
 from smairt import __version__
 from smairt.cli_harness import harness_app
+from smairt.cli_references import reference_app
 from smairt.cli_safety import safety_app
 from smairt.code_quality import build_code_index, validate_code
 from smairt.contracts import check_contracts, export_contracts
@@ -41,18 +42,6 @@ from smairt.project import context as build_context
 from smairt.project import find_project, save_context_capsule, validate_project
 from smairt.project import status as project_status
 from smairt.provenance import add_contributor, generate_history, load_events, use_contributor
-from smairt.references import (
-    add_reference,
-    edit_reference,
-    enrich_openalex,
-    enrich_reference,
-    export_references,
-    get_reference,
-    inspect_pdf,
-    load_index,
-    unindexed_pdfs,
-    verify_reference,
-)
 from smairt.research import (
     activate_hypothesis,
     create_background,
@@ -96,7 +85,6 @@ app = typer.Typer(
     cls=FriendlyGroup,
 )
 start_app = typer.Typer(help="Friendly project-start aliases")
-reference_app = typer.Typer(help="Manage local scholarly references")
 background_app = typer.Typer(help="Manage source-grounded project background")
 hypothesis_app = typer.Typer(help="Manage proposal sets and human-selected hypotheses")
 proposal_app = typer.Typer(help="Create and validate three-option proposal sets")
@@ -148,6 +136,7 @@ def contributor_add(
 
 @contributor_app.command("list")
 def contributor_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """List contributors and identify the active contributor."""
     config = SmairtConfig.load(_root() / "smairt.yaml")
     _emit(
         {
@@ -162,6 +151,7 @@ def contributor_list(as_json: Annotated[bool, typer.Option("--json")] = False) -
 
 @contributor_app.command("use")
 def contributor_use(identifier: Annotated[str, typer.Argument()]) -> None:
+    """Select the contributor attributed to subsequent project actions."""
     _emit(use_contributor(_root(), identifier).model_dump(mode="json", exclude_none=True), False)
 
 
@@ -186,6 +176,7 @@ def contributor_confirm_git(yes: Annotated[bool, typer.Option("--yes")] = False)
 
 @app.command("history")
 def history_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Regenerate and display the human-readable project history."""
     root = _root()
     generate_history(root)
     _emit(load_events(root), as_json)
@@ -214,6 +205,7 @@ def verify_command(
     run: Annotated[str | None, typer.Option()] = None,
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
+    """Verify immutable hashes for one run or all recorded runs."""
     payload = verify_run(_root(), run)
     _emit(payload, as_json)
     if not payload["ok"]:
@@ -222,12 +214,14 @@ def verify_command(
 
 @contract_app.command("export")
 def contract_export(destination: Annotated[Path | None, typer.Option()] = None) -> None:
+    """Export portable harness contract fixtures."""
     root = _root()
     _emit(export_contracts(destination or root / ".smairt/contracts/v1"), False)
 
 
 @contract_app.command("check")
 def contract_check(destination: Annotated[Path | None, typer.Option()] = None) -> None:
+    """Validate portable harness contract fixtures."""
     root = _root()
     payload = check_contracts(destination or root / ".smairt/contracts/v1")
     _emit(payload, False)
@@ -237,6 +231,7 @@ def contract_check(destination: Annotated[Path | None, typer.Option()] = None) -
 
 @migrate_app.command("plan")
 def migrate_plan_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Show the applicable migration and its preconditions."""
     _emit(migration_plan(_root()), as_json)
 
 
@@ -245,11 +240,13 @@ def migrate_apply(
     contributor: Annotated[str | None, typer.Option()] = None,
     allow_dirty: Annotated[bool, typer.Option("--allow-dirty")] = False,
 ) -> None:
+    """Apply the supported migration through a validated staged replacement."""
     _emit(apply_migration(_root(), contributor, allow_dirty=allow_dirty), False)
 
 
 @migrate_app.command("rollback")
 def migrate_rollback(yes: Annotated[bool, typer.Option("--yes")] = False) -> None:
+    """Restore the latest unchanged applied migration backup."""
     if not yes and not Confirm.ask("Roll back the last migration?", default=False):
         raise typer.Exit()
     _emit(rollback_migration(_root()), False)
@@ -545,134 +542,6 @@ def code_validate(
     )
 
 
-@reference_app.command("list")
-def reference_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    """List indexed references without loading their full PDF content."""
-    records = [record.model_dump(mode="json", exclude_none=True) for record in load_index(_root())]
-    _emit(records, as_json)
-
-
-@reference_app.command("scan")
-def reference_scan(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    """Report local PDFs that have not yet been indexed by checksum."""
-    paths = [str(path) for path in unindexed_pdfs(_root())]
-    _emit({"unindexed": paths}, as_json)
-
-
-@reference_app.command("inspect")
-def reference_inspect(identifier: Annotated[str, typer.Argument()]) -> None:
-    _emit(get_reference(_root(), identifier).model_dump(mode="json", exclude_none=True), False)
-
-
-@reference_app.command("enrich")
-def reference_enrich(
-    identifier: Annotated[str, typer.Argument()],
-    confirm_remote: Annotated[bool, typer.Option("--confirm-remote")] = False,
-) -> None:
-    _emit(
-        enrich_reference(_root(), identifier, confirm_remote=confirm_remote).model_dump(
-            mode="json", exclude_none=True
-        ),
-        False,
-    )
-
-
-@reference_app.command("enrich-openalex")
-def reference_enrich_openalex(
-    identifier: Annotated[str, typer.Argument()],
-    api_key: Annotated[str | None, typer.Option(envvar="OPENALEX_API_KEY", hidden=True)] = None,
-    confirm_remote: Annotated[bool, typer.Option("--confirm-remote")] = False,
-) -> None:
-    _emit(
-        enrich_openalex(_root(), identifier, api_key, confirm_remote=confirm_remote).model_dump(
-            mode="json", exclude_none=True
-        ),
-        False,
-    )
-
-
-@reference_app.command("edit")
-def reference_edit(
-    identifier: Annotated[str, typer.Argument()],
-    field: Annotated[str, typer.Option()],
-    value: Annotated[str, typer.Option()],
-) -> None:
-    contributor = SmairtConfig.load(_root() / "smairt.yaml").active_contributor
-    if not contributor:
-        raise typer.BadParameter("select an active contributor first")
-    _emit(
-        edit_reference(_root(), identifier, field, value, contributor).model_dump(
-            mode="json", exclude_none=True
-        ),
-        False,
-    )
-
-
-@reference_app.command("verify")
-def reference_verify(identifier: Annotated[str, typer.Argument()]) -> None:
-    contributor = SmairtConfig.load(_root() / "smairt.yaml").active_contributor
-    if not contributor:
-        raise typer.BadParameter("select an active contributor first")
-    _emit(
-        verify_reference(_root(), identifier, contributor).model_dump(
-            mode="json", exclude_none=True
-        ),
-        False,
-    )
-
-
-@reference_app.command("export")
-def reference_export(
-    format_name: Annotated[str, typer.Option("--format")],
-    output: Annotated[Path | None, typer.Option()] = None,
-) -> None:
-    """Export the reference index as BibTeX or CSL JSON."""
-    content = export_references(_root(), format_name)
-    if output:
-        output.write_text(content, encoding="utf-8")
-        console.print(output)
-    else:
-        console.print(content, markup=False)
-
-
-@reference_app.command("add")
-def reference_add(
-    source: Annotated[Path, typer.Argument()],
-    title: Annotated[str | None, typer.Option()] = None,
-    authors: Annotated[list[str] | None, typer.Option()] = None,
-    year: Annotated[int | None, typer.Option()] = None,
-    doi: Annotated[str | None, typer.Option()] = None,
-    verified: Annotated[bool, typer.Option("--verified")] = False,
-    link: Annotated[bool, typer.Option("--link")] = False,
-    yes: Annotated[bool, typer.Option("--yes")] = False,
-) -> None:
-    """Inspect, confirm, and index one local scholarly PDF."""
-    proposed = inspect_pdf(source)
-    title = title or str(proposed["title"])
-    authors = authors or list(proposed["authors"])
-    doi = doi or proposed["doi"]
-    if not yes:
-        console.print({"title": title, "authors": authors, "year": year, "doi": doi})
-        title = Prompt.ask("Confirmed title", default=title)
-        if year is None:
-            entered = IntPrompt.ask("Year (0 if unknown)", default=0)
-            year = entered or None
-        verified = Confirm.ask("Have you verified this metadata?", default=False)
-        if not Confirm.ask("Add this local reference?", default=True):
-            raise typer.Exit()
-    record = add_reference(
-        _root(),
-        source,
-        title=title,
-        authors=authors,
-        year=year,
-        doi=doi,
-        verified=verified,
-        link=link,
-    )
-    _emit(record.model_dump(mode="json", exclude_none=True), False)
-
-
 @background_app.command("create")
 def background_create() -> None:
     """Create the initial-background synthesis workspace and show what follows."""
@@ -855,6 +724,7 @@ def paper_validate() -> None:
 
 @paper_app.command("status")
 def paper_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Summarize evidence, claim-review, and manuscript state."""
     root = _root()
     claims = [
         json.loads(path.read_text()) for path in sorted((root / "paper/claims").glob("*.json"))
@@ -872,6 +742,7 @@ def paper_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> No
 
 @paper_evidence_app.command("list")
 def paper_evidence_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """List immutable manuscript evidence cards."""
     root = _root()
     items = [
         json.loads(path.read_text()) for path in sorted((root / "paper/evidence").glob("*.json"))
@@ -888,6 +759,7 @@ def paper_evidence_review(
     decision: Annotated[str, typer.Option()],
     relevance: Annotated[str, typer.Option()] = "",
 ) -> None:
+    """Create an evidence card from a verified research run."""
     console.print(
         create_evidence_card(
             _root(),
@@ -907,6 +779,7 @@ def paper_claim_propose(
     evidence: Annotated[list[str], typer.Option()],
     reference: Annotated[list[str] | None, typer.Option()] = None,
 ) -> None:
+    """Propose a claim linked to project evidence and references."""
     console.print(create_claim(_root(), statement, evidence, reference))
 
 
@@ -921,6 +794,7 @@ def paper_claim_approve(
     identifier: Annotated[str, typer.Argument()],
     yes: Annotated[bool, typer.Option("--yes")] = False,
 ) -> None:
+    """Approve a currently supported manuscript claim."""
     _claim_review_command(identifier, "approved", yes)
 
 
@@ -929,11 +803,13 @@ def paper_claim_reject(
     identifier: Annotated[str, typer.Argument()],
     yes: Annotated[bool, typer.Option("--yes")] = False,
 ) -> None:
+    """Reject a proposed manuscript claim with human confirmation."""
     _claim_review_command(identifier, "rejected", yes)
 
 
 @paper_app.command("begin")
 def paper_begin(title: Annotated[str, typer.Option()]) -> None:
+    """Initialize canonical manuscript files."""
     console.print(begin_paper(_root(), title))
 
 
@@ -959,6 +835,7 @@ def paper_section_review(
     claim: Annotated[list[str], typer.Option()],
     yes: Annotated[bool, typer.Option("--yes")] = False,
 ) -> None:
+    """Mark a drafted section reviewed against approved claims."""
     if not yes and not Confirm.ask(f"Mark {section} reviewed?", default=False):
         raise typer.Exit()
     _emit(review_section(_root(), section, claim), False)
@@ -970,6 +847,7 @@ def paper_build(
     template: Annotated[Path | None, typer.Option()] = None,
     line_numbering: Annotated[bool, typer.Option("--line-numbering")] = False,
 ) -> None:
+    """Build a versioned manuscript after evidence validation."""
     console.print(
         build_paper(_root(), format_name, template=template, line_numbering=line_numbering)
     )
@@ -982,6 +860,7 @@ def summary_create(
     shareable: Annotated[bool, typer.Option("--shareable")] = False,
     redaction_confirmed: Annotated[bool, typer.Option("--redaction-confirmed")] = False,
 ) -> None:
+    """Create an immutable contributor-scoped source summary."""
     console.print(
         create_summary(
             _root(),
@@ -995,16 +874,19 @@ def summary_create(
 
 @summary_app.command("list")
 def summary_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """List current summary records and canonical state."""
     _emit(list_summaries(_root()), as_json)
 
 
 @summary_app.command("compare")
 def summary_compare(source_id: Annotated[str, typer.Argument()]) -> None:
+    """Compare contributor summaries for one source."""
     _emit([item for item in list_summaries(_root()) if item["source_id"] == source_id], False)
 
 
 @summary_app.command("promote")
 def summary_promote(identifier: Annotated[str, typer.Argument()]) -> None:
+    """Promote a fresh summary to the shared canonical pointer."""
     console.print(promote_summary(_root(), identifier))
 
 

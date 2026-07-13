@@ -44,6 +44,8 @@ tracks generated ownership so switching does not delete unrelated user files. Se
 - `docs/HARNESSES.md` — adapter behavior and conflict recovery.
 - `docs/SAFETY.md` — safety modes, visibility attestations, and release checks.
 - `docs/CONTEXT_AND_MODELS.md` — context budgeting, summaries, and model recommendations.
+- `docs/DEVELOPMENT.md` — enforceable readability and CLI module conventions.
+- `docs/plans/TUI_USABILITY.md` — phased terminal-native TUI redesign and acceptance criteria.
 - `README.md`, `QUICKSTART.md`, `TUTORIAL.md` — product overview and end-to-end usage.
 
 ## Verification

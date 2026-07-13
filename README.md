@@ -108,6 +108,10 @@ python -m pytest -p no:cacheprovider
 python -m pip wheel . --no-deps --wheel-dir /tmp/smairt-dist
 ```
 
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for readability and CLI module boundaries. The
+terminal-interface redesign is tracked in
+[docs/plans/TUI_USABILITY.md](docs/plans/TUI_USABILITY.md).
+
 The maintained package is the CLI under `src/smairt/`. The former Cookiecutter and paper-driven
 products have been removed; original Cookiecutter projects are not automatically migrated.
 
