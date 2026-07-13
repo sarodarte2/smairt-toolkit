@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from pathlib import Path
 
 import yaml
 
-from smairt.models import Decision, SmairtConfig, utc_now
-from smairt.utils import next_numeric_id, sha256_file, slugify
+from smairt.integrity import verify_run
+from smairt.locking import mutating
+from smairt.models import Decision, RunRecord, RunStatus, SmairtConfig, utc_now
+from smairt.provenance import require_contributor, stage_event
+from smairt.transactions import FileTransaction
+from smairt.utils import atomic_write, next_numeric_id, sha256_file, slugify, validate_identifier
 
 PROPOSAL_OPTION = """## Option {label}: [Distinct title]
 
@@ -37,6 +40,7 @@ PROPOSAL_OPTION = """## Option {label}: [Distinct title]
 """
 
 
+@mutating("background create")
 def create_background(root: Path) -> Path:
     """Expand the initial project framing into a source-grounded background workspace."""
     path = root / "background/initial_background.md"
@@ -44,7 +48,8 @@ def create_background(root: Path) -> Path:
         raise FileExistsError("initial background already contains project content")
     question = (root / "background/initial_question.md").read_text(encoding="utf-8")
     description = (root / "background/project_description.md").read_text(encoding="utf-8")
-    path.write_text(
+    atomic_write(
+        path,
         "# Initial Background\n\n"
         "Status: DRAFT\n\n"
         "## Initial Question\n\n"
@@ -58,11 +63,11 @@ def create_background(root: Path) -> Path:
         "## Limitations and Open Questions\n\n"
         "## Evidence Gaps\n\n"
         "## References Used\n",
-        encoding="utf-8",
     )
     return path
 
 
+@mutating("hypothesis propose")
 def create_proposal_set(root: Path) -> Path:
     """Create and retain a three-option hypothesis proposal document."""
     proposal_dir = root / "hypotheses/proposals"
@@ -86,7 +91,7 @@ def create_proposal_set(root: Path) -> Path:
     for label in ("A", "B", "C"):
         content.extend([PROPOSAL_OPTION.format(label=label), ""])
     path = proposal_dir / f"{proposal_id}.md"
-    path.write_text("\n".join(content), encoding="utf-8")
+    atomic_write(path, "\n".join(content))
     return path
 
 
@@ -127,6 +132,7 @@ def validate_proposal_set(path: Path) -> list[str]:
 
 def find_hypothesis(root: Path, hypothesis_id: str) -> Path:
     """Resolve exactly one canonical hypothesis file from its stable ID."""
+    validate_identifier(hypothesis_id, label="hypothesis ID")
     matches = list((root / "hypotheses").glob(f"{hypothesis_id}_*.md"))
     if len(matches) != 1:
         raise FileNotFoundError(f"Hypothesis {hypothesis_id} not found")
@@ -202,6 +208,7 @@ def _section_body(content: str, heading: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+@mutating("hypothesis activate")
 def activate_hypothesis(
     root: Path,
     proposal_set: Path,
@@ -213,6 +220,15 @@ def activate_hypothesis(
     rationale: str,
 ) -> Path:
     """Record an explicit human selection as the canonical active hypothesis."""
+    contributor = require_contributor(root)
+    if selected_by not in {contributor.id, contributor.name}:
+        raise ValueError("selected_by must match the active confirmed contributor")
+    selected_by = contributor.id
+    proposal_set = proposal_set.resolve()
+    try:
+        proposal_set.relative_to((root / "hypotheses/proposals").resolve())
+    except ValueError as exc:
+        raise ValueError("proposal set must be inside hypotheses/proposals") from exc
     option = option.upper()
     if option not in {"A", "B", "C", "CUSTOM"}:
         raise ValueError("option must be A, B, C, or CUSTOM")
@@ -259,22 +275,35 @@ reference_index_sha256: {sha256_file(references)}
 {rationale}
 """
     path = root / "hypotheses" / f"{hypothesis_id}_{slug}.md"
-    path.write_text(content, encoding="utf-8")
     # Activation is a human intellectual contribution, so update both the
     # machine-readable pointer and the append-only contribution log.
     config = SmairtConfig.load(root / "smairt.yaml")
     config.active.hypothesis = hypothesis_id
-    config.dump(root / "smairt.yaml")
     contribution = root / "prompts/intellectual_contribution.md"
-    with contribution.open("a", encoding="utf-8") as stream:
-        stream.write(
-            f"\n## {utc_now()} — Activated {hypothesis_id}\n"
-            f"- Selected by: {selected_by}\n- Proposal: {proposal_set.stem}, option {option}\n"
-            f"- Rationale: {rationale}\n"
-        )
+    contribution_content = contribution.read_text(encoding="utf-8") + (
+        f"\n## {utc_now()} — Activated {hypothesis_id}\n"
+        f"- Selected by: {selected_by}\n- Proposal: {proposal_set.stem}, option {option}\n"
+        f"- Rationale: {rationale}\n"
+    )
+    transaction = FileTransaction(root, "hypothesis activate")
+    transaction.stage_text(path, content)
+    transaction.stage_text(
+        root / "smairt.yaml",
+        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+    )
+    transaction.stage_text(contribution, contribution_content)
+    stage_event(
+        root,
+        transaction,
+        "hypothesis.activated",
+        artifact_ids=[hypothesis_id, proposal_set.stem],
+        details={"selected_option": option, "rationale": rationale},
+    )
+    transaction.commit()
     return path
 
 
+@mutating("experiment create")
 def create_experiment(
     root: Path,
     *,
@@ -292,7 +321,8 @@ def create_experiment(
     )
     path = root / "experiments" / f"{experiment_id}_{slugify(title)}"
     iteration = path / "iterations/ITERATION_001"
-    iteration.mkdir(parents=True)
+    if path.exists():
+        raise FileExistsError(f"experiment destination already exists: {path.name}")
     script_name = (
         f"script_{experiment_id.removeprefix('EXPERIMENT_')}_{slugify(title).replace('-', '_')}.py"
     )
@@ -305,11 +335,15 @@ def create_experiment(
         "status": "ACTIVE",
         "entrypoint": script_name,
     }
-    (path / "experiment.yaml").write_text(yaml.safe_dump(metadata, sort_keys=False))
-    (iteration / "config.yaml").write_text(
-        "seed: 1024\ndata: {}\nparameters: {}\n", encoding="utf-8"
-    )
-    (iteration / script_name).write_text(
+    analysis = root / "analysis" / experiment_id
+    config = SmairtConfig.load(root / "smairt.yaml")
+    config.active.experiment = experiment_id
+    config.active.iteration = "ITERATION_001"
+    transaction = FileTransaction(root, "experiment create")
+    transaction.stage_text(path / "experiment.yaml", yaml.safe_dump(metadata, sort_keys=False))
+    transaction.stage_text(iteration / "config.yaml", "seed: 1024\ndata: {}\nparameters: {}\n")
+    transaction.stage_text(
+        iteration / script_name,
         _experiment_script(
             experiment_id=experiment_id,
             iteration_id="ITERATION_001",
@@ -317,25 +351,27 @@ def create_experiment(
             hypothesis_id=hypothesis_id,
             purpose=purpose,
         ),
-        encoding="utf-8",
     )
-    analysis = root / "analysis" / experiment_id
-    analysis.mkdir(parents=True)
-    (analysis / "ANALYSIS_ITERATION_001.md").write_text(
+    transaction.stage_text(
+        analysis / "ANALYSIS_ITERATION_001.md",
         f"# Analysis: {experiment_id} / ITERATION_001\n\n"
         "## Executive Summary\n\n## Observed Results\n\n## Interpretation\n\n"
         "## Limitations and Confounders\n\n## Decision\n\n## Next Steps\n",
-        encoding="utf-8",
     )
-    config = SmairtConfig.load(root / "smairt.yaml")
-    config.active.experiment = experiment_id
-    config.active.iteration = "ITERATION_001"
-    config.dump(root / "smairt.yaml")
+    transaction.stage_text(
+        root / "smairt.yaml",
+        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+    )
+    stage_event(root, transaction, "experiment.created", artifact_ids=[experiment_id])
+    transaction.commit()
     return path
 
 
+@mutating("iteration create")
 def new_iteration(root: Path, experiment_id: str, source_id: str) -> Path:
     """Copy the prior method into a new iteration while preserving the old one."""
+    validate_identifier(experiment_id, label="experiment ID")
+    validate_identifier(source_id, label="iteration ID")
     experiment = next((root / "experiments").glob(f"{experiment_id}_*"), None)
     if experiment is None:
         raise FileNotFoundError(experiment_id)
@@ -345,31 +381,44 @@ def new_iteration(root: Path, experiment_id: str, source_id: str) -> Path:
         raise FileNotFoundError(source)
     iteration_id = next_numeric_id(list(iterations.glob("ITERATION_*")), "ITERATION_")
     destination = iterations / iteration_id
-    destination.mkdir()
+    if destination.exists():
+        raise FileExistsError(f"iteration destination already exists: {iteration_id}")
     metadata = yaml.safe_load((experiment / "experiment.yaml").read_text()) or {}
     entrypoint = str(metadata.get("entrypoint", "run.py"))
+    if Path(entrypoint).name != entrypoint:
+        raise ValueError("experiment entrypoint must be a filename")
+    transaction = FileTransaction(root, "iteration create")
     for name in ("config.yaml", entrypoint):
         if (source / name).exists():
-            shutil.copy2(source / name, destination / name)
-    copied_entrypoint = destination / entrypoint
-    if copied_entrypoint.exists():
-        content = copied_entrypoint.read_text(encoding="utf-8")
-        copied_entrypoint.write_text(
-            content.replace(f"Iteration: {source_id}", f"Iteration: {iteration_id}"),
-            encoding="utf-8",
-        )
-    (destination / "CHANGE.md").write_text(
-        f"# Changes from {source_id}\n\n[Record the scientific or methodological change.]\n"
+            content = (source / name).read_text(encoding="utf-8")
+            if name == entrypoint:
+                content = content.replace(f"Iteration: {source_id}", f"Iteration: {iteration_id}")
+            transaction.stage_text(destination / name, content)
+    transaction.stage_text(
+        destination / "CHANGE.md",
+        f"# Changes from {source_id}\n\n[Record the scientific or methodological change.]\n",
     )
     analysis = root / "analysis" / experiment_id / f"ANALYSIS_{iteration_id}.md"
-    analysis.write_text(
+    transaction.stage_text(
+        analysis,
         f"# Analysis: {experiment_id} / {iteration_id}\n\n## Changes\n\n"
-        "## Results\n\n## Interpretation\n\n## Decision\n"
+        "## Results\n\n## Interpretation\n\n## Decision\n",
     )
     config = SmairtConfig.load(root / "smairt.yaml")
     config.active.experiment = experiment_id
     config.active.iteration = iteration_id
-    config.dump(root / "smairt.yaml")
+    transaction.stage_text(
+        root / "smairt.yaml",
+        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+    )
+    stage_event(
+        root,
+        transaction,
+        "iteration.created",
+        artifact_ids=[experiment_id, iteration_id],
+        details={"source_iteration": source_id},
+    )
+    transaction.commit()
     return destination
 
 
@@ -449,6 +498,7 @@ if __name__ == "__main__":
 '''
 
 
+@mutating("decision record")
 def record_decision(
     root: Path,
     *,
@@ -460,9 +510,39 @@ def record_decision(
     decided_by: str,
 ) -> Path:
     """Append a human research decision and update accepted evidence when appropriate."""
+    contributor = require_contributor(root)
+    if decided_by not in {contributor.id, contributor.name}:
+        raise ValueError("decided_by must match the active confirmed contributor")
+    decided_by = contributor.id
+    for label, value in (
+        ("experiment ID", experiment_id),
+        ("iteration ID", iteration_id),
+        ("run ID", run_id),
+    ):
+        validate_identifier(value, label=label)
     run_path = root / "results" / experiment_id / iteration_id / run_id / "run.json"
     if not run_path.exists():
         raise FileNotFoundError(f"Run record not found: {run_path.relative_to(root)}")
+    run_record = RunRecord.model_validate_json(run_path.read_text(encoding="utf-8"))
+    if (
+        run_record.run_id != run_id
+        or run_record.experiment_id != experiment_id
+        or run_record.iteration_id != iteration_id
+    ):
+        raise ValueError("run record relationships do not match the requested decision")
+    if decision is Decision.ACCEPT and (
+        run_record.status is not RunStatus.COMPLETED or run_record.exit_code != 0
+    ):
+        raise ValueError("only successfully completed runs can become accepted evidence")
+    config = SmairtConfig.load(root / "smairt.yaml")
+    if (
+        decision is Decision.ACCEPT
+        and config.git.enabled
+        and run_record.environment.get("git_capture_status") != "ok"
+    ):
+        raise ValueError("accepted evidence requires known Git provenance")
+    if decision is Decision.ACCEPT and not verify_run(root, run_id)["ok"]:
+        raise ValueError("only integrity-verified runs can become accepted evidence")
     analysis_dir = root / "analysis" / experiment_id
     analysis_dir.mkdir(parents=True, exist_ok=True)
     path = analysis_dir / "decisions.yaml"
@@ -477,11 +557,13 @@ def record_decision(
             "decided_at": utc_now(),
         }
     )
-    path.write_text(yaml.safe_dump(payload, sort_keys=False))
+    transaction = FileTransaction(root, "decision record")
+    transaction.stage_text(path, yaml.safe_dump(payload, sort_keys=False))
     # Acceptance creates a single current selection used by paper provenance.
     # Other decisions remain in the append-only history without elevating a run.
     if decision is Decision.ACCEPT:
-        (analysis_dir / "selection.yaml").write_text(
+        transaction.stage_text(
+            analysis_dir / "selection.yaml",
             yaml.safe_dump(
                 {
                     "experiment_id": experiment_id,
@@ -493,25 +575,19 @@ def record_decision(
                     "rationale": rationale,
                 },
                 sort_keys=False,
-            )
+            ),
         )
-        config = SmairtConfig.load(root / "smairt.yaml")
         config.active.accepted_run = run_id
-        config.dump(root / "smairt.yaml")
-    return path
-
-
-def amend_record(path: Path, *, field: str, previous: str, corrected: str, reason: str) -> None:
-    """Append a metadata correction beside a record without rewriting history."""
-    amendment = path.with_suffix(path.suffix + ".amendments.yaml")
-    payload = yaml.safe_load(amendment.read_text()) if amendment.exists() else {"amendments": []}
-    payload["amendments"].append(
-        {
-            "field": field,
-            "previous": previous,
-            "corrected": corrected,
-            "reason": reason,
-            "recorded_at": utc_now(),
-        }
+        transaction.stage_text(
+            root / "smairt.yaml",
+            yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+        )
+    stage_event(
+        root,
+        transaction,
+        "decision.recorded",
+        artifact_ids=[run_id],
+        details={"decision": decision.value, "rationale": rationale},
     )
-    amendment.write_text(yaml.safe_dump(payload, sort_keys=False))
+    transaction.commit()
+    return path

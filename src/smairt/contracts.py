@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from smairt.models import (
     ClaimRecord,
     ContextCapsule,
@@ -23,7 +25,7 @@ from smairt.models import (
 )
 from smairt.utils import atomic_write
 
-MODELS = {
+MODELS: dict[str, type[BaseModel]] = {
     "project": SmairtConfig,
     "contributor": Contributor,
     "reference": ReferenceRecord,
@@ -69,9 +71,11 @@ def check_contracts(destination: Path) -> dict[str, object]:
             continue
         try:
             payload = json.loads(path.read_text())
-            if payload.get("type") != "object":
+            if not isinstance(payload, dict):
                 findings.append(f"invalid root type in {path.name}")
-        except json.JSONDecodeError as exc:
+            elif payload != MODELS[name].model_json_schema():
+                findings.append(f"stale or modified schema {path.name}")
+        except (json.JSONDecodeError, OSError) as exc:
             findings.append(f"invalid JSON in {path.name}: {exc}")
     fixtures = destination / "fixtures"
     for harness in ("codex", "zoo", "cline"):
@@ -81,9 +85,11 @@ def check_contracts(destination: Path) -> dict[str, object]:
             continue
         try:
             payload = json.loads(path.read_text())
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, OSError) as exc:
             findings.append(f"invalid fixture JSON in {path.name}: {exc}")
             continue
-        if payload.get("contract_version") != 1 or payload.get("harness") != harness:
+        from smairt.harnesses import compatibility_payload
+
+        if not isinstance(payload, dict) or payload != compatibility_payload(harness):
             findings.append(f"incompatible fixture {path.name}")
     return {"ok": not findings, "findings": findings}

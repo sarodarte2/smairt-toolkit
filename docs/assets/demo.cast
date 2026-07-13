@@ -1,0 +1,7 @@
+{"version":2,"width":92,"height":24,"timestamp":0,"env":{"SHELL":"/bin/sh","TERM":"xterm-256color"}}
+[0.2,"o","$ smairt status --json\r\n"]
+[0.6,"o","{\"schema_version\":1,\"command\":\"smairt status\",\"ok\":true,\"data\":{...}}\r\n"]
+[1.2,"o","$ smairt next --json\r\n"]
+[1.7,"o","Recommended next: Complete the grounded background\r\n"]
+[2.4,"o","$ smairt validate --staged\r\n"]
+[2.8,"o","PASS\r\n"]

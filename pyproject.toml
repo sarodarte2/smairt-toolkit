@@ -4,14 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smairt"
-version = "0.1.0"
+version = "0.2.0-beta.1"
 description = "Scientific Method with AI Research Toolkit"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "PNNL Computational Biology contributors" }]
 dependencies = [
-  "jinja2>=3.1",
   "pydantic>=2.8",
   "pyyaml>=6.0",
   "rich>=13.9",
@@ -22,7 +21,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["build>=1.2", "hatchling>=1.27", "pytest>=8.3", "pytest-cov>=6.0", "ruff>=0.9"]
+dev = [
+  "build>=1.2",
+  "hatchling>=1.27",
+  "hypothesis>=6.135",
+  "mypy>=1.15",
+  "pip-audit>=2.9",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.9",
+  "types-PyYAML>=6.0",
+]
 
 [project.scripts]
 smairt = "smairt.cli:app"
@@ -37,12 +46,46 @@ packages = ["src/smairt"]
 testpaths = ["tests"]
 addopts = "-q"
 
+[tool.coverage.run]
+source = ["smairt"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "D100", "D101", "D102", "D103", "D104"]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PIE", "RUF", "S", "D100", "D101", "D102", "D103", "D104"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D100", "D101", "D102", "D103"]
+"tests/**" = ["D100", "D101", "D102", "D103", "S101", "S105", "S603", "S607"]
+# These modules invoke fixed Git, GitHub CLI, Conda, or user-selected shell
+# executables with argument arrays and shell=False. Each boundary validates the
+# relevant project paths or command selector before execution.
+"src/smairt/cli.py" = ["S603", "S607"]
+"src/smairt/diagnostics.py" = ["S607"]
+"src/smairt/migrations.py" = ["S607"]
+"src/smairt/project.py" = ["S603"]
+"src/smairt/provenance.py" = ["S607"]
+"src/smairt/runner.py" = ["S603", "S607"]
+"src/smairt/safety.py" = ["S607"]
+"src/smairt/scaffold.py" = ["S603", "S607"]
+# These lines are generated shell-hook payloads whose exact quoting is part of
+# the external harness contract; wrapping them would make the script less safe.
+"src/smairt/harnesses.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["smairt"]
+warn_unreachable = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["docx.*", "pypdf.*"]
+ignore_missing_imports = true

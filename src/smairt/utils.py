@@ -17,6 +17,43 @@ def slugify(value: str) -> str:
     return normalized or "smairt-project"
 
 
+def validate_identifier(value: str, *, label: str = "identifier") -> str:
+    """Reject IDs that can change path or glob matching semantics."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", value):
+        raise ValueError(f"invalid {label}: {value!r}")
+    return value
+
+
+def ensure_within(root: Path, path: Path) -> Path:
+    """Resolve a path and reject traversal or symlink escape from ``root``."""
+    root = root.resolve()
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"path escapes project root: {path}") from exc
+    return resolved
+
+
+def ensure_no_symlink(root: Path, path: Path) -> Path:
+    """Resolve a contained path while rejecting every symlink component."""
+    root = root.resolve()
+    requested = path if path.is_absolute() else root / path
+    lexical = requested.absolute()
+    try:
+        relative = lexical.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"path escapes project root: {path}") from exc
+    if ".." in relative.parts:
+        raise ValueError(f"path escapes project root: {path}")
+    cursor = root
+    for part in relative.parts:
+        cursor /= part
+        if cursor.is_symlink():
+            raise ValueError(f"path contains a symlink: {path}")
+    return ensure_within(root, lexical)
+
+
 def sha256_file(path: Path) -> str:
     """Stream a file into SHA-256 without loading large research files into memory."""
     digest = hashlib.sha256()
@@ -31,17 +68,36 @@ def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def atomic_write(path: Path, content: str) -> None:
-    """Replace a text file atomically so interrupted writes cannot corrupt state."""
+def atomic_write_bytes(path: Path, content: bytes, *, mode: int | None = None) -> None:
+    """Replace a file atomically and fsync it before making it visible.
+
+    The optional mode is applied to the staged inode before replacement.  This
+    matters for generated hooks: there must never be a visible interval where a
+    new hook exists but is not executable.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+        with os.fdopen(handle, "wb") as stream:
             stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if mode is not None:
+            temporary.chmod(mode)
         temporary.replace(path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def atomic_write(path: Path, content: str, *, mode: int | None = None) -> None:
+    """Replace UTF-8 text atomically so interrupted writes cannot corrupt state."""
+    atomic_write_bytes(path, content.encode("utf-8"), mode=mode)
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:

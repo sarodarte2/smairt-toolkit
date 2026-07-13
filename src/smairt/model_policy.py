@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from smairt.models import SmairtConfig
 
 TASK_TIERS = {
@@ -22,7 +24,7 @@ TIER_PURPOSE = {
 }
 
 
-def recommend_model(root, task: str) -> dict[str, object]:
+def recommend_model(root: Path, task: str) -> dict[str, object]:
     """Return a harness-specific recommendation without storing provider credentials."""
     if task not in TASK_TIERS:
         raise ValueError(f"unknown task {task!r}; choose {', '.join(TASK_TIERS)}")

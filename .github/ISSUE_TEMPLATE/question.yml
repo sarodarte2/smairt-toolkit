@@ -1,0 +1,23 @@
+name: Question
+description: Ask about using or extending SMAIRT.
+title: "[Question]: "
+labels: [question]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Include sanitized commands and output.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data safety
+      options:
+        - label: I did not include protected data or credentials.
+          required: true

@@ -12,7 +12,7 @@ from smairt.integrity import verify_run
 from smairt.migrations import apply_migration, migration_plan, rollback_migration
 from smairt.model_policy import recommend_model
 from smairt.models import DataClassification, EnvironmentMode, ReferenceRecord, SmairtConfig
-from smairt.paper import begin_paper, build_paper, review_section
+from smairt.paper import begin_paper, build_paper, create_claim, review_claim, review_section
 from smairt.provenance import add_contributor, load_events, record_event, use_contributor
 from smairt.references import edit_reference, normalize_doi, save_index, verify_reference
 from smairt.runner import run_experiment
@@ -111,9 +111,9 @@ def test_harness_switch_preserves_shared_agents_custom_text(tmp_path: Path) -> N
 def test_v1_migration_preview_apply_and_safe_rollback(tmp_path: Path) -> None:
     root = project(tmp_path)
     config_path = root / "smairt.yaml"
-    config = SmairtConfig.load(config_path)
-    config.schema_version = 1
-    config.dump(config_path)
+    config = yaml.safe_load(config_path.read_text())
+    config["schema_version"] = 1
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
     assert migration_plan(root)["applicable"]
     apply_migration(root)
     assert SmairtConfig.load(config_path).schema_version == 2
@@ -154,14 +154,12 @@ def test_paper_markdown_and_docx_builds_are_versioned(tmp_path: Path) -> None:
     root = project(tmp_path)
     contributor = add_contributor(root, "Paper Author")
     use_contributor(root, contributor.id)
-    claim = root / "paper/claims/claim-ready.json"
-    claim.write_text(
-        '{"id":"claim-ready","status":"approved","evidence_ids":[],"reference_ids":[]}\n'
-    )
+    claim = create_claim(root, "A reviewed workflow claim.", [])
+    review_claim(root, claim.stem, "approved")
     manuscript = begin_paper(root, "A Reproducible Study")
     assert manuscript.exists()
     for section in ("Abstract", "Introduction", "Methods", "Results", "Discussion", "References"):
-        review_section(root, section, ["claim-ready"])
+        review_section(root, section, [claim.stem])
     markdown = build_paper(root, "md")
     docx = build_paper(root, "docx")
     assert markdown.read_text().startswith("# A Reproducible Study")
@@ -180,7 +178,24 @@ def test_correction_clears_active_evidence_and_marks_card_stale(tmp_path: Path) 
     selection.parent.mkdir(parents=True)
     selection.write_text("run_id: RUN_OLD\nstatus: ACCEPTED\n")
     evidence = root / "paper/evidence/evidence-run_old.json"
-    evidence.write_text('{"id":"evidence-run_old","run_id":"RUN_OLD","status":"current"}\n')
+    evidence.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": "evidence-run_old",
+                "run_id": "RUN_OLD",
+                "purpose": "Test correction propagation",
+                "observed_result": "Legacy result",
+                "limitations": "Synthetic fixture",
+                "decision": "ACCEPT",
+                "contributor": contributor.id,
+                "status": "current",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "run_record_sha256": "0" * 64,
+            }
+        )
+        + "\n"
+    )
     config = SmairtConfig.load(root / "smairt.yaml")
     config.active.accepted_run = run_id
     config.dump(root / "smairt.yaml")

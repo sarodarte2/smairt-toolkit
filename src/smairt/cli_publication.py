@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.prompt import Confirm
 
 from smairt.cli_shared import emit, project_root
+from smairt.models import ClaimRecord, EvidenceCard
 from smairt.paper import (
     begin_paper,
     build_paper,
@@ -49,16 +50,28 @@ def paper_validate() -> None:
 def paper_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
     """Summarize evidence, claim-review, and manuscript state."""
     root = project_root()
-    claims = [
-        json.loads(path.read_text()) for path in sorted((root / "paper/claims").glob("*.json"))
-    ]
+    claims: list[ClaimRecord] = []
+    corrupt: list[str] = []
+    seen: set[str] = set()
+    for path in sorted((root / "paper/claims").glob("*.json")):
+        try:
+            claim = ClaimRecord.model_validate_json(path.read_text())
+        except (OSError, ValueError, ValidationError):
+            corrupt.append(path.name)
+            continue
+        if claim.id in seen:
+            corrupt.append(path.name)
+            continue
+        seen.add(claim.id)
+        claims.append(claim)
     payload = {
         "evidence_cards": len(list((root / "paper/evidence").glob("*.json"))),
         "claims": {
-            state: sum(claim.get("status") == state for claim in claims)
+            state: sum(claim.status == state for claim in claims)
             for state in ("proposed", "approved", "rejected", "superseded", "retracted")
         },
         "manuscript_started": (root / "paper/manuscript.md").exists(),
+        "corrupt_records": corrupt,
     }
     emit(payload, as_json)
 
@@ -66,11 +79,21 @@ def paper_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> No
 @paper_evidence_app.command("list")
 def paper_evidence_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
     """List immutable manuscript evidence cards."""
-    items = [
-        json.loads(path.read_text())
-        for path in sorted((project_root() / "paper/evidence").glob("*.json"))
-    ]
-    emit(items, as_json)
+    items: list[dict[str, object]] = []
+    corrupt: list[str] = []
+    seen: set[str] = set()
+    for path in sorted((project_root() / "paper/evidence").glob("*.json")):
+        try:
+            card = EvidenceCard.model_validate_json(path.read_text())
+        except (OSError, ValueError, ValidationError):
+            corrupt.append(path.name)
+            continue
+        if card.id in seen:
+            corrupt.append(path.name)
+            continue
+        seen.add(card.id)
+        items.append(card.model_dump(mode="json", exclude_none=True))
+    emit({"items": items, "corrupt_records": corrupt}, as_json)
 
 
 @paper_evidence_app.command("review")

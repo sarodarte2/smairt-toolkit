@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import tempfile
 from importlib.resources import files
 from pathlib import Path
 
 import yaml
 
+from smairt import __version__
+from smairt.locking import ProjectMutationLock
 from smairt.models import (
     Contributor,
     DataClassification,
@@ -20,9 +24,11 @@ from smairt.models import (
     HarnessConfig,
     HarnessName,
     ProjectInfo,
+    SafetyMode,
     SmairtConfig,
 )
-from smairt.utils import atomic_write, sha256_text, slugify
+from smairt.transactions import FileTransaction
+from smairt.utils import atomic_write, ensure_within, sha256_text, slugify
 
 DIRECTORIES = (
     ".agents/skills/smairt-research/references",
@@ -33,6 +39,9 @@ DIRECTORIES = (
     ".smairt/contracts",
     ".smairt/corrections",
     ".smairt/local/summaries",
+    ".smairt/locks",
+    ".smairt/transactions",
+    ".smairt/cache",
     ".smairt/run-manifests",
     "docs",
     "prompts",
@@ -96,6 +105,9 @@ __pycache__/
 .DS_Store
 .smairt/backups/
 .smairt/local/
+.smairt/locks/
+.smairt/transactions/
+.smairt/cache/
 """
 
 
@@ -125,6 +137,7 @@ Do not activate or finalize a hypothesis without an explicit human decision.
 
 SKILL = files("smairt.resources").joinpath("smairt-research.md").read_text(encoding="utf-8")
 SKILL_REFERENCE = files("smairt.resources").joinpath("workflow.md").read_text(encoding="utf-8")
+SKILL_AGENT = files("smairt.resources").joinpath("openai-agent.yaml").read_text(encoding="utf-8")
 
 
 CODE_CONVENTIONS = """# Code Conventions
@@ -329,6 +342,22 @@ def _write(path: Path, relative: str, content: str) -> None:
     atomic_write(path / relative, content.rstrip() + "\n")
 
 
+def _validate_scaffold_paths(root: Path, directories: tuple[str, ...]) -> None:
+    """Reject directory symlinks before generated files can follow them."""
+    for relative in directories:
+        current = root
+        for part in Path(relative).parts:
+            current /= part
+            if current.is_symlink():
+                raise ValueError(f"scaffold directory must not be a symlink: {current}")
+        ensure_within(root, current)
+
+
+def _existing_conflicts(root: Path, relatives: set[str]) -> list[str]:
+    """Return existing generated targets, including broken symlinks."""
+    return sorted(relative for relative in relatives if os.path.lexists(root / relative))
+
+
 def create_project(
     destination: Path,
     *,
@@ -347,18 +376,96 @@ def create_project(
     safety_mode: str = "standard",
     confirm_contributor: bool = False,
 ) -> SmairtConfig:
-    """Create a safe project scaffold while preserving reviewed existing work."""
+    """Publish a complete new scaffold or safely initialize reviewed existing work.
+
+    New projects are constructed and validated under a temporary sibling name,
+    then revealed with one directory rename. Existing Git worktrees are changed
+    in place under the project mutation lock.
+    """
     destination = destination.expanduser().resolve()
+    existing_content = destination.exists() and any(destination.iterdir())
+    if existing_content:
+        if (destination / "smairt.yaml").exists():
+            raise FileExistsError(f"{destination} is already a SMAIRT project")
+        if not (destination / ".git").exists() and not allow_existing:
+            raise FileExistsError("destination is not empty; review it and pass allow_existing")
+        with ProjectMutationLock(destination, "project initialize"):
+            return _create_project_in_place(
+                destination,
+                name=name,
+                author=author,
+                classification=classification,
+                question=question,
+                description=description,
+                initialize_git=initialize_git,
+                environment_mode=environment_mode,
+                environment_name=environment_name,
+                environment_prefix=environment_prefix,
+                create_environment=create_environment,
+                allow_existing=allow_existing,
+                harness=harness,
+                safety_mode=safety_mode,
+                confirm_contributor=confirm_contributor,
+            )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}.smairt-", dir=destination.parent)
+    )
+    try:
+        config = _create_project_in_place(
+            temporary,
+            name=name,
+            author=author,
+            classification=classification,
+            question=question,
+            description=description,
+            initialize_git=initialize_git,
+            environment_mode=environment_mode,
+            environment_name=environment_name,
+            environment_prefix=environment_prefix,
+            create_environment=create_environment,
+            allow_existing=True,
+            harness=harness,
+            safety_mode=safety_mode,
+            confirm_contributor=confirm_contributor,
+        )
+        SmairtConfig.load(temporary / "smairt.yaml")
+        if destination.exists():
+            destination.rmdir()
+        temporary.replace(destination)
+        return config
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+
+
+def _create_project_in_place(
+    destination: Path,
+    *,
+    name: str,
+    author: str,
+    classification: DataClassification,
+    question: str | None,
+    description: str | None,
+    initialize_git: bool,
+    environment_mode: EnvironmentMode,
+    environment_name: str | None,
+    environment_prefix: str | None,
+    create_environment: bool,
+    allow_existing: bool,
+    harness: HarnessName,
+    safety_mode: str,
+    confirm_contributor: bool,
+) -> SmairtConfig:
+    """Create files inside a private staging directory or locked worktree."""
     if (destination / "smairt.yaml").exists():
         raise FileExistsError(f"{destination} is already a SMAIRT project")
     destination.mkdir(parents=True, exist_ok=True)
-    if any(destination.iterdir()) and not (destination / ".git").exists() and not allow_existing:
+    existing_content = any(destination.iterdir())
+    if existing_content and not (destination / ".git").exists() and not allow_existing:
         raise FileExistsError("destination is not empty; use 'smairt init' after reviewing it")
 
-    for directory in DIRECTORIES:
-        (destination / directory).mkdir(parents=True, exist_ok=True)
-    for keep in ("references/pdfs/.gitkeep", "results/.gitkeep"):
-        _write(destination, keep, "")
+    _validate_scaffold_paths(destination, DIRECTORIES)
 
     slug = slugify(name)
     if environment_mode is EnvironmentMode.NEW_CONDA:
@@ -383,16 +490,17 @@ def create_project(
         ),
         git=GitConfig(enabled=git_enabled, managed_hooks=git_enabled),
         harness=HarnessConfig(active=harness),
-        safety_mode=safety_mode,
+        safety_mode=SafetyMode(safety_mode),
         contributors=[contributor] if contributor else [],
         active_contributor=contributor.id if contributor else None,
     )
-    config.dump(destination / "smairt.yaml")
-
     files = {
+        "references/pdfs/.gitkeep": "",
+        "results/.gitkeep": "",
         ".gitignore": GITIGNORE,
         "AGENTS.md": "",
         ".agents/skills/smairt-research/SKILL.md": SKILL,
+        ".agents/skills/smairt-research/agents/openai.yaml": SKILL_AGENT,
         ".agents/skills/smairt-research/references/workflow.md": SKILL_REFERENCE,
         ".githooks/pre-commit": HOOK,
         "docs/PHILOSOPHY.md": PHILOSOPHY,
@@ -456,34 +564,76 @@ def create_project(
             "channels:\n  - conda-forge\n"
             "dependencies:\n  - python=3.11\n"
         )
-    for relative, content in files.items():
-        _write(destination, relative, content)
-
     # Managed-file hashes let later upgrades distinguish framework guidance
     # from researcher-authored scientific artifacts, which are never replaced.
     managed = {
         ".agents/skills/smairt-research/SKILL.md": SKILL,
+        ".agents/skills/smairt-research/agents/openai.yaml": SKILL_AGENT,
         ".agents/skills/smairt-research/references/workflow.md": SKILL_REFERENCE,
         "prompts/CODE_CONVENTIONS.md": CODE_CONVENTIONS,
     }
     framework_manifest = {
-        "framework_version": "0.1.0",
+        "framework_version": __version__,
         "managed_files": {
             relative: sha256_text(content.rstrip() + "\n") for relative, content in managed.items()
         },
     }
-    _write(
-        destination,
-        ".smairt/framework.yaml",
-        yaml.safe_dump(framework_manifest, sort_keys=False),
+    config_content = yaml.safe_dump(
+        config.model_dump(mode="json", exclude_none=True), sort_keys=False
     )
+    framework_content = yaml.safe_dump(framework_manifest, sort_keys=False)
 
-    from smairt.harnesses import select_harness
+    from smairt.harnesses import ADAPTERS, select_harness
+
+    generated_targets = set(files) | {
+        "smairt.yaml",
+        ".smairt/framework.yaml",
+        ".smairt/harnesses/" + harness.value + ".json",
+        *ADAPTERS[harness].files,
+    }
+    if existing_content:
+        conflicts = _existing_conflicts(destination, generated_targets)
+        if conflicts:
+            raise FileExistsError(
+                "existing checkout contains unmanaged scaffold targets: " + ", ".join(conflicts)
+            )
+        if git_enabled:
+            configured_hooks = subprocess.run(
+                ["git", "config", "--get", "core.hooksPath"],
+                cwd=destination,
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.strip()
+            if configured_hooks and configured_hooks != ".githooks":
+                raise FileExistsError(
+                    "existing Git hooksPath must be reviewed before SMAIRT initialization"
+                )
+
+    generated = {relative: content.rstrip() + "\n" for relative, content in files.items()}
+    generated["smairt.yaml"] = config_content
+    generated[".smairt/framework.yaml"] = framework_content.rstrip() + "\n"
+    if existing_content:
+        transaction = FileTransaction(destination, "project initialize scaffold")
+        for relative, content in generated.items():
+            transaction.stage_text(
+                destination / relative,
+                content,
+                mode=0o755 if relative == ".githooks/pre-commit" else None,
+            )
+        transaction.commit()
+    else:
+        for relative, content in generated.items():
+            atomic_write(
+                destination / relative,
+                content,
+                mode=0o755 if relative == ".githooks/pre-commit" else None,
+            )
+    for directory in DIRECTORIES:
+        (destination / directory).mkdir(parents=True, exist_ok=True)
 
     select_harness(destination, harness.value)
 
-    hook = destination / ".githooks/pre-commit"
-    hook.chmod(0o755)
     if initialize_git and not git_exists:
         subprocess.run(["git", "init"], cwd=destination, check=True, capture_output=True)
     if git_enabled:

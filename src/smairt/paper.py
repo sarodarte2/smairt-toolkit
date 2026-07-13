@@ -2,26 +2,73 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import tempfile
+import zipfile
 from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
 import yaml
 
 from smairt.integrity import verify_run
-from smairt.models import utc_now
-from smairt.provenance import record_event, require_contributor
+from smairt.locking import mutating
+from smairt.models import (
+    ClaimRecord,
+    ClaimStatus,
+    EvidenceCard,
+    EvidenceStatus,
+    RunRecord,
+    RunStatus,
+    utc_now,
+)
+from smairt.provenance import record_event, require_contributor, stage_event
 from smairt.references import load_index
-from smairt.utils import atomic_write, sha256_file, slugify, write_json
+from smairt.transactions import FileTransaction
+from smairt.utils import (
+    atomic_write,
+    ensure_no_symlink,
+    sha256_file,
+    sha256_text,
+    slugify,
+    validate_identifier,
+)
 
 
-def accepted_runs(root: Path) -> dict[str, dict[str, object]]:
-    """Return accepted, current run selections keyed by immutable run ID."""
-    accepted: dict[str, dict[str, object]] = {}
+def accepted_runs(root: Path) -> dict[str, dict[str, Any]]:
+    """Return only completed, relationship-consistent, integrity-verified selections."""
+    accepted: dict[str, dict[str, Any]] = {}
     for selection in (root / "analysis").glob("*/selection.yaml"):
         payload = yaml.safe_load(selection.read_text()) or {}
-        if payload.get("status") == "ACCEPTED" and payload.get("run_id"):
-            accepted[str(payload["run_id"])] = payload
+        if not isinstance(payload, dict) or payload.get("status") != "ACCEPTED":
+            continue
+        experiment_id = str(payload.get("experiment_id", selection.parent.name))
+        iteration_id = str(payload.get("iteration_id", ""))
+        run_id = str(payload.get("run_id", ""))
+        for label, identifier in (
+            ("experiment ID", experiment_id),
+            ("iteration ID", iteration_id),
+            ("run ID", run_id),
+        ):
+            validate_identifier(identifier, label=label)
+        if experiment_id != selection.parent.name:
+            raise ValueError("accepted selection does not match its analysis directory")
+        run_path = root / "results" / experiment_id / iteration_id / run_id / "run.json"
+        record = RunRecord.model_validate_json(run_path.read_text(encoding="utf-8"))
+        if (
+            record.run_id != run_id
+            or record.experiment_id != experiment_id
+            or record.iteration_id != iteration_id
+            or record.status is not RunStatus.COMPLETED
+            or record.exit_code != 0
+        ):
+            raise ValueError(f"accepted run is not a completed matching execution: {run_id}")
+        if not verify_run(root, run_id)["ok"]:
+            raise ValueError(f"accepted run failed integrity verification: {run_id}")
+        if run_id in accepted:
+            raise ValueError(f"duplicate accepted run selection: {run_id}")
+        accepted[run_id] = {**payload, "run_path": str(run_path.relative_to(root))}
     return accepted
 
 
@@ -32,8 +79,12 @@ def validate_paper(root: Path) -> list[str]:
     elements = payload.get("elements", [])
     if not isinstance(elements, list):
         return ["paper manifest elements must be a list"]
-    accepted = accepted_runs(root)
     errors: list[str] = []
+    try:
+        accepted = accepted_runs(root)
+    except (OSError, TypeError, ValueError) as exc:
+        accepted = {}
+        errors.append(f"invalid accepted-run state: {exc}")
     identifiers: set[str] = set()
     for index, element in enumerate(elements, start=1):
         if not isinstance(element, dict):
@@ -46,33 +97,55 @@ def validate_paper(root: Path) -> list[str]:
             errors.append(f"duplicate paper element id: {identifier}")
         identifiers.add(identifier)
         run_id = str(element.get("run_id", ""))
+        try:
+            validate_identifier(run_id, label="run ID")
+        except ValueError:
+            errors.append(f"{identifier or index} has an invalid run ID")
+            continue
         if run_id not in accepted:
             display_run = run_id or "[missing]"
             errors.append(f"{identifier or index} references non-accepted run {display_run}")
     for claim_path in sorted((root / "paper/claims").glob("*.json")):
-        claim = json.loads(claim_path.read_text())
-        if claim.get("status") != "approved":
+        try:
+            claim = ClaimRecord.model_validate_json(claim_path.read_text(encoding="utf-8"))
+            if claim.id != claim_path.stem:
+                raise ValueError("claim ID does not match its filename")
+        except (OSError, ValueError) as exc:
+            errors.append(f"invalid claim record {claim_path.name}: {exc}")
             continue
-        for evidence_id in claim.get("evidence_ids", []):
+        if claim.status is not ClaimStatus.APPROVED:
+            continue
+        for evidence_id in claim.evidence_ids:
             evidence_path = root / "paper/evidence" / f"{evidence_id}.json"
             if not evidence_path.exists():
-                errors.append(f"approved claim {claim['id']} has missing evidence {evidence_id}")
+                errors.append(f"approved claim {claim.id} has missing evidence {evidence_id}")
                 continue
-            evidence = json.loads(evidence_path.read_text())
-            if evidence.get("status") != "current" or evidence.get("run_id") not in accepted:
-                errors.append(f"approved claim {claim['id']} has stale evidence {evidence_id}")
+            try:
+                evidence = EvidenceCard.model_validate_json(
+                    evidence_path.read_text(encoding="utf-8")
+                )
+                if evidence.id != evidence_id:
+                    raise ValueError("evidence ID does not match its filename")
+                selection = accepted[evidence.run_id]
+                run_path = root / str(selection["run_path"])
+                if evidence.run_record_sha256 != sha256_file(run_path):
+                    raise ValueError("evidence run-record hash is stale")
+            except (KeyError, OSError, ValueError) as exc:
+                errors.append(f"approved claim {claim.id} has stale evidence {evidence_id}: {exc}")
+                continue
+            if evidence.status is not EvidenceStatus.CURRENT:
+                errors.append(f"approved claim {claim.id} has stale evidence {evidence_id}")
         references = {item.id: item for item in load_index(root)}
-        for reference_id in claim.get("reference_ids", []):
+        for reference_id in claim.reference_ids:
             if (
                 reference_id not in references
                 or references[reference_id].verification_status != "verified"
             ):
-                errors.append(
-                    f"approved claim {claim['id']} has unverified citation {reference_id}"
-                )
+                errors.append(f"approved claim {claim.id} has unverified citation {reference_id}")
     return errors
 
 
+@mutating("paper evidence create")
 def create_evidence_card(
     root: Path,
     run_id: str,
@@ -84,6 +157,7 @@ def create_evidence_card(
     relevance: str = "",
 ) -> Path:
     """Freeze one accepted run into a contributor-attributed evidence card."""
+    validate_identifier(run_id, label="run ID")
     contributor = require_contributor(root)
     accepted = accepted_runs(root)
     if run_id not in accepted:
@@ -91,7 +165,7 @@ def create_evidence_card(
     verification = verify_run(root, run_id)
     if not verification["ok"]:
         raise ValueError("run integrity verification failed")
-    run_path = next((root / "results").glob(f"EXPERIMENT_*/ITERATION_*/{run_id}/run.json"))
+    run_path = root / str(accepted[run_id]["run_path"])
     payload = {
         "schema_version": 1,
         "id": f"evidence-{run_id.lower()}",
@@ -106,27 +180,38 @@ def create_evidence_card(
         "run_record_sha256": sha256_file(run_path),
         "status": "current",
     }
-    path = root / "paper/evidence" / f"{payload['id']}.json"
+    card = EvidenceCard.model_validate(payload)
+    path = root / "paper/evidence" / f"{card.id}.json"
     if path.exists():
         raise ValueError(f"evidence card already exists for {run_id}")
-    write_json(path, payload)
-    record_event(
+    transaction = FileTransaction(root, "paper evidence create")
+    rendered = json.dumps(card.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    transaction.stage_text(path, rendered)
+    stage_event(
         root,
+        transaction,
         "paper.evidence.created",
-        artifact_ids=[payload["id"]],
-        hashes={str(path.relative_to(root)): sha256_file(path)},
+        artifact_ids=[card.id],
+        hashes={str(path.relative_to(root)): sha256_text(rendered)},
     )
+    transaction.commit()
     return path
 
 
+@mutating("paper claim create")
 def create_claim(
     root: Path, statement: str, evidence_ids: list[str], reference_ids: list[str] | None = None
 ) -> Path:
     """Propose a uniquely identified claim linked to existing evidence cards."""
     contributor = require_contributor(root)
     for identifier in evidence_ids:
-        if not (root / "paper/evidence" / f"{identifier}.json").exists():
+        validate_identifier(identifier, label="evidence ID")
+        evidence_path = root / "paper/evidence" / f"{identifier}.json"
+        if not evidence_path.exists():
             raise ValueError(f"unknown evidence card: {identifier}")
+        EvidenceCard.model_validate_json(evidence_path.read_text(encoding="utf-8"))
+    for identifier in reference_ids or []:
+        validate_identifier(identifier, label="reference ID")
     identifier = f"claim-{slugify(statement)[:40]}-{uuid4().hex[:8]}"
     payload = {
         "schema_version": 1,
@@ -138,29 +223,45 @@ def create_claim(
         "proposed_by": contributor.id,
         "created_at": utc_now(),
     }
+    claim = ClaimRecord.model_validate(payload)
     path = root / "paper/claims" / f"{identifier}.json"
-    write_json(path, payload)
-    record_event(root, "paper.claim.proposed", artifact_ids=[identifier])
+    transaction = FileTransaction(root, "paper claim create")
+    transaction.stage_text(
+        path, json.dumps(claim.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    )
+    stage_event(root, transaction, "paper.claim.proposed", artifact_ids=[identifier])
+    transaction.commit()
     return path
 
 
-def review_claim(root: Path, identifier: str, status: str) -> dict[str, object]:
+@mutating("paper claim review")
+def review_claim(root: Path, identifier: str, status: str) -> dict[str, Any]:
     """Record a human claim decision after validating approval dependencies."""
+    validate_identifier(identifier, label="claim ID")
     if status not in {"approved", "rejected", "retracted", "superseded"}:
         raise ValueError("invalid claim state")
     contributor = require_contributor(root)
     path = root / "paper/claims" / f"{identifier}.json"
-    payload = json.loads(path.read_text())
+    claim = ClaimRecord.model_validate_json(path.read_text(encoding="utf-8"))
+    if claim.id != identifier:
+        raise ValueError("claim ID does not match its filename")
+    payload = claim.model_dump(mode="json")
     if status == "approved":
         errors = _validate_claim(root, payload)
         if errors:
             raise ValueError("claim cannot be approved: " + "; ".join(errors))
     payload.update(status=status, reviewed_by=contributor.id, reviewed_at=utc_now())
-    write_json(path, payload)
-    record_event(root, f"paper.claim.{status}", artifact_ids=[identifier])
-    return payload
+    reviewed = ClaimRecord.model_validate(payload)
+    transaction = FileTransaction(root, "paper claim review")
+    transaction.stage_text(
+        path, json.dumps(reviewed.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
+    )
+    stage_event(root, transaction, f"paper.claim.{status}", artifact_ids=[identifier])
+    transaction.commit()
+    return reviewed.model_dump(mode="json")
 
 
+@mutating("paper begin")
 def begin_paper(root: Path, title: str) -> Path:
     """Create the authoritative manuscript only after approved claims exist."""
     claims = [json.loads(path.read_text()) for path in (root / "paper/claims").glob("*.json")]
@@ -170,12 +271,13 @@ def begin_paper(root: Path, title: str) -> Path:
     path = root / "paper/manuscript.md"
     if path.exists():
         raise FileExistsError(path)
-    atomic_write(
+    transaction = FileTransaction(root, "paper begin")
+    transaction.stage_text(
         path,
         f"# {title}\n\n## Abstract\n\n## Introduction\n\n## Methods\n\n"
         "## Results\n\n## Discussion\n\n## References\n",
     )
-    atomic_write(
+    transaction.stage_text(
         root / "paper/sections.yaml",
         yaml.safe_dump(
             {
@@ -194,10 +296,12 @@ def begin_paper(root: Path, title: str) -> Path:
             sort_keys=False,
         ),
     )
+    transaction.commit()
     record_event(root, "paper.begun", artifact_ids=["paper/manuscript.md"])
     return path
 
 
+@mutating("paper outline create")
 def create_outline(root: Path) -> Path:
     """Create a claim-linked outline from approved claims without drafting prose."""
     claims = [json.loads(path.read_text()) for path in (root / "paper/claims").glob("*.json")]
@@ -215,6 +319,7 @@ def create_outline(root: Path) -> Path:
     return path
 
 
+@mutating("paper section draft")
 def draft_section(root: Path, section: str, text: str, claim_ids: list[str]) -> Path:
     """Replace one canonical Markdown section with prose linked to approved claims."""
     manuscript = root / "paper/manuscript.md"
@@ -236,19 +341,23 @@ def draft_section(root: Path, section: str, text: str, claim_ids: list[str]) -> 
     next_heading = remainder.find("\n## ")
     after = remainder[next_heading:] if next_heading >= 0 else "\n"
     linked = " ".join(f"[{identifier}]" for identifier in claim_ids)
-    atomic_write(
-        manuscript, f"{before}{heading}\n\n{text.strip()}\n\nClaims: {linked}\n{after.lstrip()}"
+    manuscript_content = (
+        f"{before}{heading}\n\n{text.strip()}\n\nClaims: {linked}\n{after.lstrip()}"
     )
     sections_path = root / "paper/sections.yaml"
     payload = yaml.safe_load(sections_path.read_text()) or {"sections": {}}
     payload.setdefault("sections", {}).setdefault(section, {})
     payload["sections"][section].update(status="draft", claim_ids=claim_ids, drafted_at=utc_now())
-    atomic_write(sections_path, yaml.safe_dump(payload, sort_keys=False))
+    transaction = FileTransaction(root, "paper section draft")
+    transaction.stage_text(manuscript, manuscript_content)
+    transaction.stage_text(sections_path, yaml.safe_dump(payload, sort_keys=False))
+    transaction.commit()
     record_event(root, "paper.section.drafted", artifact_ids=[section])
     return manuscript
 
 
-def review_section(root: Path, section: str, claim_ids: list[str]) -> dict[str, object]:
+@mutating("paper section review")
+def review_section(root: Path, section: str, claim_ids: list[str]) -> dict[str, Any]:
     """Mark a manuscript section reviewed against approved supporting claims."""
     require_contributor(root)
     claims = {p.stem: json.loads(p.read_text()) for p in (root / "paper/claims").glob("*.json")}
@@ -265,11 +374,12 @@ def review_section(root: Path, section: str, claim_ids: list[str]) -> dict[str, 
     payload["sections"][section].update(
         status="reviewed", claim_ids=claim_ids, reviewed_at=utc_now()
     )
-    path.write_text(yaml.safe_dump(payload, sort_keys=False))
+    atomic_write(path, yaml.safe_dump(payload, sort_keys=False))
     record_event(root, "paper.section.reviewed", artifact_ids=[section])
-    return payload["sections"][section]
+    return cast(dict[str, Any], payload["sections"][section])
 
 
+@mutating("paper build")
 def build_paper(
     root: Path,
     format_name: str,
@@ -290,23 +400,50 @@ def build_paper(
     if not sections or unreviewed:
         raise ValueError("paper sections require explicit review: " + ", ".join(unreviewed))
     stamp = utc_now().replace(":", "").replace("+", "_")
+    manuscript_content = manuscript.read_text(encoding="utf-8")
     if format_name == "md":
         target = root / "paper/builds" / f"manuscript-{stamp}.md"
-        atomic_write(target, manuscript.read_text())
+        output = manuscript_content.encode("utf-8")
     elif format_name == "docx":
         target = root / "paper/builds" / f"manuscript-{stamp}.docx"
-        _write_docx(
-            target, manuscript.read_text(), template=template, line_numbering=line_numbering
-        )
+        template = _validated_docx_template(template)
+        with tempfile.TemporaryDirectory(prefix="smairt-docx-", dir=root / ".smairt") as temporary:
+            staged = Path(temporary) / "manuscript.docx"
+            _write_docx(
+                staged,
+                manuscript_content,
+                template=template,
+                line_numbering=line_numbering,
+                paper_root=root / "paper",
+            )
+            output = staged.read_bytes()
     else:
         raise ValueError("format must be md or docx")
-    record_event(
+    transaction = FileTransaction(root, "paper build")
+    transaction.stage_bytes(target, output)
+    stage_event(
         root,
+        transaction,
         "paper.built",
         artifact_ids=[str(target.relative_to(root))],
-        hashes={str(target.relative_to(root)): sha256_file(target)},
+        hashes={str(target.relative_to(root)): hashlib.sha256(output).hexdigest()},
     )
+    transaction.commit()
     return target
+
+
+def _validated_docx_template(template: Path | None) -> Path | None:
+    """Reject unsafe, oversized, or structurally invalid DOCX templates."""
+    if template is None:
+        return None
+    requested = template.expanduser().absolute()
+    if requested.is_symlink() or any(parent.is_symlink() for parent in requested.parents):
+        raise ValueError("DOCX template must not traverse symlinks")
+    if not requested.is_file() or requested.suffix.lower() != ".docx":
+        raise ValueError("DOCX template must be an existing .docx file")
+    if requested.stat().st_size > 50 * 1024 * 1024 or not zipfile.is_zipfile(requested):
+        raise ValueError("DOCX template is oversized or structurally invalid")
+    return requested.resolve()
 
 
 def _write_docx(
@@ -315,6 +452,7 @@ def _write_docx(
     *,
     template: Path | None = None,
     line_numbering: bool = False,
+    paper_root: Path,
 ) -> None:
     """Write a journal-neutral DOCX using Word-native styles and page structure."""
     from docx import Document
@@ -353,30 +491,61 @@ def _write_docx(
             document.add_heading(line[4:].strip(), level=2)
         elif line.startswith("![") and "](" in line:
             alt, source = line[2:].split("](", 1)
-            image = path.parent.parent / source.rstrip(")")
+            resolved_paper_root = paper_root.resolve()
+            image = ensure_no_symlink(resolved_paper_root, resolved_paper_root / source.rstrip(")"))
             if image.exists():
                 document.add_picture(str(image), width=Inches(6))
                 document.add_paragraph(alt, style="Caption")
         else:
             document.add_paragraph(line)
     path.parent.mkdir(parents=True, exist_ok=True)
-    document.save(path)
+    # python-docx writes incrementally, so render outside the final filename and
+    # publish only after the document package closes successfully.
+    with tempfile.NamedTemporaryFile(
+        prefix=f".{path.name}.", suffix=".docx", dir=path.parent, delete=False
+    ) as stream:
+        temporary = Path(stream.name)
+    try:
+        document.save(str(temporary))
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
-def _validate_claim(root: Path, claim: dict[str, object]) -> list[str]:
+def _validate_claim(root: Path, claim: dict[str, Any]) -> list[str]:
     """Return evidence and citation errors that prevent claim approval."""
     errors: list[str] = []
-    accepted = accepted_runs(root)
-    for evidence_id in claim.get("evidence_ids", []):
+    try:
+        record = ClaimRecord.model_validate(claim)
+    except ValueError as exc:
+        return [f"invalid claim record: {exc}"]
+    try:
+        accepted = accepted_runs(root)
+    except (OSError, TypeError, ValueError) as exc:
+        accepted = {}
+        errors.append(f"invalid accepted-run state: {exc}")
+    for evidence_id in record.evidence_ids:
         path = root / "paper/evidence" / f"{evidence_id}.json"
         if not path.exists():
             errors.append(f"missing evidence {evidence_id}")
             continue
-        evidence = json.loads(path.read_text())
-        if evidence.get("status") != "current" or evidence.get("run_id") not in accepted:
+        try:
+            evidence = EvidenceCard.model_validate_json(path.read_text(encoding="utf-8"))
+            selection = accepted[evidence.run_id]
+            run_path = root / str(selection["run_path"])
+            if evidence.id != evidence_id or evidence.run_record_sha256 != sha256_file(run_path):
+                raise ValueError("evidence identity or run hash is stale")
+        except (KeyError, OSError, ValueError) as exc:
+            errors.append(f"stale evidence {evidence_id}: {exc}")
+            continue
+        if evidence.status is not EvidenceStatus.CURRENT:
             errors.append(f"stale evidence {evidence_id}")
-    references = {item.id: item for item in load_index(root)}
-    for reference_id in claim.get("reference_ids", []):
+    try:
+        references = {item.id: item for item in load_index(root)}
+    except (OSError, TypeError, ValueError) as exc:
+        references = {}
+        errors.append(f"invalid reference index: {exc}")
+    for reference_id in record.reference_ids:
         if (
             reference_id not in references
             or references[reference_id].verification_status != "verified"

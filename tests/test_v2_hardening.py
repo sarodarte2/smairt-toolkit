@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from importlib.resources import files
 from pathlib import Path
 
+import pytest
 import yaml
 
 from smairt.contracts import check_contracts, export_contracts
@@ -26,7 +28,7 @@ from smairt.paper import (
 from smairt.references import enrich_openalex, enrich_reference, load_index, save_index
 from smairt.research import create_experiment, record_decision
 from smairt.runner import run_experiment
-from smairt.safety import safety_policy_findings, safety_status
+from smairt.safety import refresh_repository_visibility, safety_policy_findings, safety_status
 from smairt.scaffold import create_project
 from smairt.summaries import create_summary, promote_summary, supersede_summary
 
@@ -90,7 +92,24 @@ def test_complete_evidence_claim_and_paper_build(tmp_path: Path) -> None:
 def test_claim_approval_rejects_stale_evidence_and_citations(tmp_path: Path) -> None:
     root = make_project(tmp_path)
     stale = root / "paper/evidence/evidence-stale.json"
-    stale.write_text('{"id":"evidence-stale","run_id":"RUN_NONE","status":"retracted"}\n')
+    stale.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": "evidence-stale",
+                "run_id": "RUN_NONE",
+                "purpose": "Negative approval test",
+                "observed_result": "No current result",
+                "limitations": "Synthetic stale evidence",
+                "decision": "RETRACTED",
+                "contributor": "researcher",
+                "status": "retracted",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "run_record_sha256": "0" * 64,
+            }
+        )
+        + "\n"
+    )
     claim = create_claim(root, "Unsupported statement.", [stale.stem], ["missing-reference"])
     try:
         review_claim(root, claim.stem, "approved")
@@ -114,6 +133,26 @@ def test_supersession_requires_and_records_verified_replacement(tmp_path: Path) 
     assert payload["replacement_run"] == replacement
     selection = yaml.safe_load((root / "analysis/EXPERIMENT_001/selection.yaml").read_text())
     assert selection["status"] == "SUPERSEDED"
+
+
+def test_supersession_rejects_failed_replacement_with_valid_manifest(tmp_path: Path) -> None:
+    """A manifest proves integrity, not that an execution produced usable evidence."""
+    root = make_project(tmp_path)
+    old_run = accepted_run(root)
+    failed = run_experiment(
+        root,
+        experiment_id="EXPERIMENT_001",
+        iteration_id="ITERATION_001",
+        command=[sys.executable, "-c", "raise SystemExit(9)"],
+    )
+    with pytest.raises(ValueError, match="successfully completed"):
+        correct_run(
+            root,
+            "supersede",
+            old_run,
+            "Invalid replacement",
+            replacement_run=failed.run_id,
+        )
 
 
 class FakeResponse:
@@ -194,17 +233,21 @@ def test_contract_checker_reports_corrupt_fixture(tmp_path: Path) -> None:
 def test_packaged_skill_matches_contributor_skill() -> None:
     """Keep the distributable scaffold resource aligned with the repository skill."""
     package = files("smairt.resources")
-    assert package.joinpath("smairt-research.md").read_text() == Path(
-        "skills/smairt-research/SKILL.md"
-    ).read_text()
-    assert package.joinpath("workflow.md").read_text() == Path(
-        "skills/smairt-research/references/workflow.md"
-    ).read_text()
+    assert (
+        package.joinpath("smairt-research.md").read_text()
+        == Path("skills/smairt-research/SKILL.md").read_text()
+    )
+    assert (
+        package.joinpath("workflow.md").read_text()
+        == Path("skills/smairt-research/references/workflow.md").read_text()
+    )
+    assert (
+        package.joinpath("openai-agent.yaml").read_text()
+        == Path("skills/smairt-research/agents/openai.yaml").read_text()
+    )
 
 
-def test_observed_visibility_overrides_conflicting_attestation(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_observed_visibility_overrides_conflicting_attestation(tmp_path: Path, monkeypatch) -> None:
     """Treat authenticated host visibility as authoritative and report disagreement."""
     root = make_project(tmp_path)
     config = yaml.safe_load((root / "smairt.yaml").read_text())
@@ -222,6 +265,7 @@ def test_observed_visibility_overrides_conflicting_attestation(
 
     monkeypatch.setattr("smairt.safety.shutil.which", lambda command: f"/usr/bin/{command}")
     monkeypatch.setattr("smairt.safety.subprocess.run", fake_run)
+    refresh_repository_visibility(root)
     assert safety_status(root)["repository_visibility"] == "public"
     assert safety_status(root)["repository_visibility_mismatch"]
     assert any(

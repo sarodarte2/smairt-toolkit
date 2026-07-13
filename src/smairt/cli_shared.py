@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from typer._click.globals import get_current_context
 
 from smairt.project import find_project
 
@@ -21,9 +22,26 @@ def project_root() -> Path:
     return root
 
 
-def emit(payload: object, as_json: bool) -> None:
-    """Render a command payload as JSON or readable terminal output."""
+def json_envelope(payload: object, command: str | None = None) -> dict[str, object]:
+    """Wrap machine output in the breaking beta JSON contract."""
+    context = get_current_context(silent=True)
+    command_name = command or (context.command_path if context else "smairt")
+    mapping = payload if isinstance(payload, dict) else {}
+    warnings = mapping.get("warnings", []) if isinstance(mapping, dict) else []
+    errors = mapping.get("errors", []) if isinstance(mapping, dict) else []
+    return {
+        "schema_version": 1,
+        "command": command_name,
+        "ok": bool(mapping.get("ok", True)) if isinstance(mapping, dict) else True,
+        "data": payload,
+        "warnings": warnings if isinstance(warnings, list) else [warnings],
+        "errors": errors if isinstance(errors, list) else [errors],
+    }
+
+
+def emit(payload: object, as_json: bool, *, command: str | None = None) -> None:
+    """Render readable output or the versioned machine-output envelope."""
     if as_json:
-        typer.echo(json.dumps(payload, indent=2, default=str))
+        typer.echo(json.dumps(json_envelope(payload, command), indent=2, default=str))
     else:
         console.print(payload)

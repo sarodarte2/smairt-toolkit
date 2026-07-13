@@ -8,12 +8,16 @@ import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import yaml
 
 from smairt.code_quality import validate_code
+from smairt.locking import mutating
 from smairt.model_policy import recommend_model
-from smairt.models import Decision, RunRecord, SmairtConfig
+from smairt.models import Decision, RunRecord, RunStatus, SmairtConfig
+from smairt.provenance import require_contributor, stage_event
+from smairt.transactions import FileTransaction
 from smairt.utils import sha256_file, write_json
 
 PROHIBITED_SUFFIXES = {
@@ -37,6 +41,37 @@ def find_project(start: Path | None = None) -> Path:
         if (candidate / "smairt.yaml").exists():
             return candidate
     raise FileNotFoundError("No smairt.yaml found in this directory or its parents")
+
+
+@mutating("project identity update")
+def update_project_identity(
+    root: Path,
+    *,
+    name: str,
+    author: str,
+    question: str | None,
+    description: str | None,
+) -> SmairtConfig:
+    """Update only researcher-facing identity fields against the latest config state."""
+    contributor = require_contributor(root)
+    config = SmairtConfig.load(root / "smairt.yaml").model_copy(deep=True)
+    config.project.name = name
+    config.project.author = author
+    config.project.question = question
+    config.project.description = description
+    rendered = yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False)
+    SmairtConfig.model_validate(yaml.safe_load(rendered))
+    transaction = FileTransaction(root, "project identity update")
+    transaction.stage_text(root / "smairt.yaml", rendered)
+    stage_event(
+        root,
+        transaction,
+        "project.identity.updated",
+        artifact_ids=["smairt.yaml"],
+        details={"contributor": contributor.id},
+    )
+    transaction.commit()
+    return config
 
 
 @dataclass
@@ -73,10 +108,15 @@ class ValidationReport:
 
 
 def _git_files(root: Path, staged: bool) -> list[str]:
-    """List either tracked or staged paths without mutating the repository."""
+    """List tracked or staged paths, rejecting an unknown Git safety state."""
     command = ["git", "diff", "--cached", "--name-only"] if staged else ["git", "ls-files"]
-    result = subprocess.run(command, cwd=root, capture_output=True, text=True, check=False)
-    return result.stdout.splitlines() if result.returncode == 0 else []
+    try:
+        result = subprocess.run(command, cwd=root, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        raise RuntimeError("Git could not scan protected paths") from exc
+    if result.returncode != 0:
+        raise RuntimeError("Git could not scan protected paths")
+    return result.stdout.splitlines()
 
 
 def is_prohibited(relative: str) -> bool:
@@ -86,9 +126,7 @@ def is_prohibited(relative: str) -> bool:
     return (
         path.name.lower() in PROHIBITED_NAMES
         or path.suffix.lower() in PROHIBITED_SUFFIXES
-        or lower.startswith("references/pdfs/")
-        or lower.startswith("data/raw/")
-        or lower.startswith("data/local/")
+        or lower.startswith(("references/pdfs/", "data/raw/", "data/local/"))
         or path.name.lower().startswith("credentials")
         or path.name.lower().startswith("secrets")
     )
@@ -115,16 +153,30 @@ def validate_project(
             "error", "project.required_files", ".", f"Missing required files: {', '.join(missing)}"
         )
 
-    if config.git.enabled and (root / ".git").exists():
-        prohibited = [item for item in _git_files(root, staged) if is_prohibited(item)]
-        report.checks["git_safety"] = not prohibited
-        if prohibited:
+    if config.git.enabled:
+        if not (root / ".git").exists():
+            report.checks["git_safety"] = False
             report.add(
                 "error",
-                "git.protected",
+                "git.repository_missing",
                 ".git",
-                f"Protected files are tracked/staged: {', '.join(prohibited)}",
+                "Git is enabled in smairt.yaml but this checkout is not a repository",
             )
+        else:
+            try:
+                prohibited = [item for item in _git_files(root, staged) if is_prohibited(item)]
+            except RuntimeError as exc:
+                report.checks["git_safety"] = False
+                report.add("error", "git.scan_failed", ".git", str(exc))
+            else:
+                report.checks["git_safety"] = not prohibited
+                if prohibited:
+                    report.add(
+                        "error",
+                        "git.protected",
+                        ".git",
+                        f"Protected files are tracked/staged: {', '.join(prohibited)}",
+                    )
     else:
         report.checks["git_safety"] = True
 
@@ -139,16 +191,18 @@ def validate_project(
         )
 
     try:
-        references = json.loads("{}")
-        references = yaml.safe_load((root / "references/index.yaml").read_text()) or {}
-        report.checks["reference_index"] = isinstance(references.get("references"), list)
-        if not report.checks["reference_index"]:
-            report.add(
-                "error",
-                "references.schema",
-                "references/index.yaml",
-                "references/index.yaml must contain a references list",
-            )
+        from smairt.references import load_index
+
+        records = load_index(root)
+        for label, values in (
+            ("ID", [item.id for item in records]),
+            ("citation key", [item.citation_key for item in records if item.citation_key]),
+            ("DOI", [item.doi for item in records if item.doi]),
+            ("destination", [item.local_path for item in records]),
+        ):
+            if len(set(values)) != len(values):
+                raise ValueError(f"duplicate reference {label}")
+        report.checks["reference_index"] = True
     except Exception as exc:
         report.checks["reference_index"] = False
         report.add(
@@ -208,6 +262,13 @@ def validate_project(
         except Exception as exc:
             report.add("error", "run.record", relative, f"Invalid run record: {exc}")
             continue
+        if run_record.status is RunStatus.STARTED:
+            report.add(
+                "error",
+                "run.incomplete",
+                relative,
+                "Run was reserved but never finalized; do not use it as evidence",
+            )
         for field_name, recorded_path in (
             ("log", run_record.log_path),
             ("results", run_record.results_directory),
@@ -220,11 +281,21 @@ def validate_project(
                     f"Recorded {field_name} path does not exist: {recorded_path}",
                 )
 
+    recorded_directories = {path.parent for path in (root / "results").glob("*/*/*/run.json")}
+    for run_dir in sorted((root / "results").glob("EXPERIMENT_*/*/RUN_*")):
+        if run_dir.is_dir() and run_dir not in recorded_directories:
+            report.add(
+                "error",
+                "run.record_missing",
+                str(run_dir.relative_to(root)),
+                "Run directory has no durable run record",
+            )
+
     from smairt.integrity import verify_run
 
     integrity = verify_run(root)
     report.checks["run_integrity"] = bool(integrity["ok"])
-    for finding in integrity["findings"]:
+    for finding in cast(list[dict[str, Any]], integrity["findings"]):
         report.add(
             "error",
             "run.artifact_mutated",
@@ -236,26 +307,44 @@ def validate_project(
     for decisions_path in sorted((root / "analysis").glob("EXPERIMENT_*/decisions.yaml")):
         payload = yaml.safe_load(decisions_path.read_text()) or {}
         for decision in payload.get("decisions", []):
+            run_id = str(decision.get("run_id", ""))
+            iteration_id = str(decision.get("iteration_id", ""))
+            experiment_id = decisions_path.parent.name
             try:
                 Decision(str(decision.get("decision")))
+                from smairt.utils import validate_identifier
+
+                validate_identifier(run_id, label="run ID")
+                validate_identifier(iteration_id, label="iteration ID")
             except ValueError:
                 report.add(
                     "error",
                     "decision.value",
                     str(decisions_path.relative_to(root)),
-                    f"Invalid decision value: {decision.get('decision')}",
+                    f"Invalid decision record for run: {run_id or '[missing]'}",
                 )
-            matches = list(
-                (root / "results").glob(
-                    f"EXPERIMENT_*/ITERATION_*/{decision.get('run_id')}/run.json"
-                )
-            )
-            if len(matches) != 1:
+                continue
+            run_path = root / "results" / experiment_id / iteration_id / run_id / "run.json"
+            try:
+                record = RunRecord.model_validate_json(run_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
                 report.add(
                     "error",
                     "decision.run_link",
                     str(decisions_path.relative_to(root)),
-                    f"Decision references missing or ambiguous run: {decision.get('run_id')}",
+                    f"Decision references missing or invalid run: {run_id}",
+                )
+                continue
+            if (record.experiment_id, record.iteration_id, record.run_id) != (
+                experiment_id,
+                iteration_id,
+                run_id,
+            ):
+                report.add(
+                    "error",
+                    "decision.run_link",
+                    str(decisions_path.relative_to(root)),
+                    f"Decision relationships do not match run record: {run_id}",
                 )
 
     from smairt.paper import validate_paper
@@ -322,7 +411,7 @@ def _readiness(root: Path, config: SmairtConfig) -> dict[str, bool]:
     }
 
 
-def status(root: Path) -> dict[str, object]:
+def status(root: Path) -> dict[str, Any]:
     """Return compact project state, counts, validation, readiness, and guidance."""
     config = SmairtConfig.load(root / "smairt.yaml")
     report = validate_project(root)

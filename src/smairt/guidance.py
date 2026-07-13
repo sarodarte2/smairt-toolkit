@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from smairt.models import SmairtConfig
+from smairt.integrity import verify_run
+from smairt.models import ClaimRecord, EvidenceCard, RunRecord, RunStatus, SmairtConfig
 from smairt.references import load_index
 from smairt.research import (
     find_hypothesis,
@@ -323,12 +323,12 @@ def _active_experiment_guidance(
     metadata = yaml.safe_load((active_experiment / "experiment.yaml").read_text()) or {}
     iteration_id = config.active.iteration or "ITERATION_001"
     iteration = active_experiment / "iterations" / iteration_id
-    runs = (
+    run_directories = (
         sorted((root / "results" / str(metadata["id"]) / iteration_id).glob("RUN_*"))
         if (root / "results" / str(metadata["id"]) / iteration_id).exists()
         else []
     )
-    if not runs:
+    if not run_directories:
         return _guidance(
             "experiment_ready",
             f"{metadata['id']} / {iteration_id} is ready for implementation and review.",
@@ -361,8 +361,44 @@ def _active_experiment_guidance(
                 ),
             ],
         )
+    runs: list[Path] = []
+    for run_dir in run_directories:
+        try:
+            record = RunRecord.model_validate_json(
+                (run_dir / "run.json").read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            continue
+        if (
+            record.run_id == run_dir.name
+            and record.experiment_id == str(metadata["id"])
+            and record.iteration_id == iteration_id
+            and record.status is RunStatus.COMPLETED
+            and record.exit_code == 0
+            and verify_run(root, record.run_id)["ok"]
+        ):
+            runs.append(run_dir)
+    if not runs:
+        return _guidance(
+            "run_recovery",
+            "Run attempts exist, but none is a completed integrity-verified execution.",
+            [
+                _action(
+                    "inspect_failed_runs",
+                    "Inspect failed or incomplete run records",
+                    kind="command",
+                    recommended=True,
+                    command="smairt validate",
+                )
+            ],
+        )
     decisions = root / "analysis" / str(metadata["id"]) / "decisions.yaml"
-    if not decisions.exists():
+    decision_records: list[object] = []
+    if decisions.exists():
+        payload = yaml.safe_load(decisions.read_text(encoding="utf-8")) or {}
+        if isinstance(payload, dict) and isinstance(payload.get("decisions"), list):
+            decision_records = payload["decisions"]
+    if not decision_records:
         latest_run = runs[-1]
         return _guidance(
             "run_complete",
@@ -427,11 +463,31 @@ def _active_experiment_guidance(
 
 def _paper_guidance(root: Path, accepted_run: str) -> dict[str, Any] | None:
     """Recommend evidence, claim, drafting, review, and build steps when ready."""
-    evidence = [json.loads(path.read_text()) for path in (root / "paper/evidence").glob("*.json")]
+    try:
+        evidence = [
+            EvidenceCard.model_validate_json(path.read_text(encoding="utf-8"))
+            for path in (root / "paper/evidence").glob("*.json")
+        ]
+        claims = [
+            ClaimRecord.model_validate_json(path.read_text(encoding="utf-8"))
+            for path in (root / "paper/claims").glob("*.json")
+        ]
+    except (OSError, ValueError):
+        return _guidance(
+            "paper_recovery",
+            "Paper state contains a malformed evidence or claim record.",
+            [
+                _action(
+                    "validate_paper_state",
+                    "Inspect paper provenance errors",
+                    kind="command",
+                    recommended=True,
+                    command="smairt validate",
+                )
+            ],
+        )
     current = [
-        item
-        for item in evidence
-        if item.get("run_id") == accepted_run and item.get("status") == "current"
+        item for item in evidence if item.run_id == accepted_run and item.status.value == "current"
     ]
     if not current:
         return _guidance(
@@ -448,9 +504,8 @@ def _paper_guidance(root: Path, accepted_run: str) -> dict[str, Any] | None:
                 )
             ],
         )
-    claims = [json.loads(path.read_text()) for path in (root / "paper/claims").glob("*.json")]
-    proposed = [claim for claim in claims if claim.get("status") == "proposed"]
-    approved = [claim for claim in claims if claim.get("status") == "approved"]
+    proposed = [claim for claim in claims if claim.status.value == "proposed"]
+    approved = [claim for claim in claims if claim.status.value == "approved"]
     if proposed:
         return _guidance(
             "claim_review",

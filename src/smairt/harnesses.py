@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
-import shutil
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import yaml
 
+from smairt.locking import mutating
 from smairt.models import HarnessName, SmairtConfig, utc_now
-from smairt.utils import atomic_write, sha256_text
+from smairt.transactions import FileTransaction
+from smairt.utils import ensure_within, sha256_text
 
-ADAPTER_VERSION = 2
+ADAPTER_VERSION = 3
 BEGIN_MARKER = "<!-- SMAIRT:BEGIN MANAGED CORE -->"
 END_MARKER = "<!-- SMAIRT:END MANAGED CORE -->"
 CORE_RULES = """# SMAIRT managed core
@@ -109,11 +112,22 @@ else
   printf '%s\n' '{"cancel":true,"errorMessage":"SMAIRT safety validation failed"}'
 fi
 """
-CLINE_PRE_COMPACT = (
-    "#!/bin/sh\ncat >/dev/null\n"
-    'printf \'%s\\n\' \'{"cancel":false,"contextModification":'
-    '"Run smairt next --json and reload SMAIRT context after compaction."}\'\n'
-)
+CLINE_CONTEXT_RESTORE = """#!/bin/sh
+cat >/dev/null
+if ! command -v smairt >/dev/null 2>&1; then
+  printf '%s\n' '{"cancel":false,"contextModification":"SMAIRT CLI unavailable; do not mutate research state until project context is restored."}'
+  exit 0
+fi
+STATUS=$(smairt status --json 2>/dev/null || printf '%s' 'status unavailable')
+NEXT=$(smairt next --json 2>/dev/null || printf '%s' 'next action unavailable')
+export SMAIRT_HOOK_CONTEXT="SMAIRT project context:\n$STATUS\n\nRecommended next action:\n$NEXT\n\nLoad only task-scoped context and stop at human scientific gates."
+PYTHON=$(command -v python3 || command -v python || true)
+if [ -z "$PYTHON" ]; then
+  printf '%s\n' '{"cancel":false,"contextModification":"Run smairt status --json and smairt next --json before continuing."}'
+else
+  "$PYTHON" -c 'import json, os; print(json.dumps({"cancel": False, "contextModification": os.environ["SMAIRT_HOOK_CONTEXT"]}))'
+fi
+"""
 CLINE_FILES = {
     ".clinerules/01-smairt.md": (
         "# Cline project behavior\n\nUse the shared AGENTS.md rules and stop at human gates.\n"
@@ -127,7 +141,8 @@ CLINE_FILES = {
         "Draft only from approved claims, current evidence, and verified references.\n"
     ),
     ".clinerules/hooks/PreToolUse": CLINE_PRE_TOOL,
-    ".clinerules/hooks/PreCompact": CLINE_PRE_COMPACT,
+    ".clinerules/hooks/TaskStart": CLINE_CONTEXT_RESTORE,
+    ".clinerules/hooks/TaskResume": CLINE_CONTEXT_RESTORE,
     ".clineignore": (".env*\nreferences/pdfs/**\ndata/raw/**\ndata/local/**\n.smairt/local/**\n"),
     ".cline/workflows/smairt-next.md": (
         "# Continue SMAIRT research\n1. Run `smairt status --json`.\n"
@@ -143,19 +158,54 @@ ADAPTERS = {
     HarnessName.CLINE: Adapter(
         HarnessName.CLINE,
         CLINE_FILES,
-        frozenset({".clinerules/hooks/PreToolUse", ".clinerules/hooks/PreCompact"}),
+        frozenset(
+            {
+                ".clinerules/hooks/PreToolUse",
+                ".clinerules/hooks/TaskStart",
+                ".clinerules/hooks/TaskResume",
+            }
+        ),
     ),
 }
 
-CAPABILITIES = {
-    "codex": {"rules": True, "modes": False, "read_only_subagents": True},
-    "zoo": {"rules": True, "modes": True, "read_only_subagents": False},
-    "cline": {"rules": True, "modes": True, "read_only_subagents": True},
+CAPABILITIES: dict[str, dict[str, object]] = {
+    "codex": {
+        "rules": "advisory",
+        "protected_operation_hook": "advisory",
+        "modes": "unsupported",
+        "context_restore": "manual",
+    },
+    "zoo": {
+        "rules": "advisory",
+        "protected_operation_hook": "unsupported",
+        "modes": "advisory",
+        "context_restore": "manual",
+        "project_paths": ".roo, .roomodes, and .rooignore are intentionally Roo-compatible",
+    },
+    "cline": {
+        "rules": "advisory",
+        "protected_operation_hook": "blocking",
+        "modes": "advisory",
+        "context_restore": "advisory",
+    },
 }
 
 
 def _manifest_path(root: Path, harness: HarnessName) -> Path:
-    return root / ".smairt/harnesses" / f"{harness.value}.json"
+    return _managed_path(root, f".smairt/harnesses/{harness.value}.json")
+
+
+def _managed_path(root: Path, relative: str) -> Path:
+    """Resolve one manifest or adapter path without following project symlinks."""
+    path = Path(relative)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"unsafe managed harness path: {relative}")
+    current = root.resolve()
+    for part in path.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f"managed harness path must not be a symlink: {relative}")
+    return ensure_within(root, current)
 
 
 def _managed_block() -> str:
@@ -176,36 +226,128 @@ def _merge_agents(existing: str) -> str:
     )
 
 
-def _load_manifest(root: Path, harness: HarnessName) -> dict[str, object] | None:
+def _load_manifest(root: Path, harness: HarnessName) -> dict[str, Any] | None:
     path = _manifest_path(root, harness)
-    return json.loads(path.read_text()) if path.exists() else None
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("harness manifest root must be an object")
+    required = {"harness", "version", "activated_at", "files", "shared_agents_block_sha256"}
+    if set(payload) != required or payload.get("harness") != harness.value:
+        raise ValueError("harness manifest identity or fields are invalid")
+    if not isinstance(payload.get("version"), int) or not isinstance(
+        payload.get("activated_at"), str
+    ):
+        raise ValueError("harness manifest version or timestamp is invalid")
+    files = payload.get("files")
+    if not isinstance(files, dict) or not all(
+        isinstance(relative, str)
+        and isinstance(digest, str)
+        and re.fullmatch(r"[a-f0-9]{64}", digest)
+        for relative, digest in files.items()
+    ):
+        raise ValueError("harness manifest file digests are invalid")
+    if not re.fullmatch(r"[a-f0-9]{64}", str(payload.get("shared_agents_block_sha256"))):
+        raise ValueError("harness manifest AGENTS digest is invalid")
+    return payload
 
 
-def harness_status(root: Path, harness: str | None = None) -> dict[str, object]:
+def _validate_zoo_modes(content: str) -> list[str]:
+    """Validate the portable subset of Zoo's Roo-compatible mode schema."""
+    try:
+        payload = yaml.safe_load(content)
+    except yaml.YAMLError:
+        return [".roomodes is not valid YAML"]
+    modes = payload.get("customModes") if isinstance(payload, dict) else None
+    if not isinstance(modes, list):
+        return [".roomodes must contain a customModes list"]
+    errors: list[str] = []
+    required = {"slug", "name", "roleDefinition", "groups", "customInstructions"}
+    slugs: set[str] = set()
+    for index, mode in enumerate(modes):
+        if not isinstance(mode, dict) or not required.issubset(mode):
+            errors.append(f"custom mode {index} is missing required fields")
+            continue
+        slug = mode.get("slug")
+        if not isinstance(slug, str) or not re.fullmatch(r"[a-z][a-z0-9-]{1,63}", slug):
+            errors.append(f"custom mode {index} has an invalid slug")
+        elif slug in slugs:
+            errors.append(f"custom mode {index} duplicates slug {slug}")
+        else:
+            slugs.add(slug)
+        for field in ("name", "roleDefinition", "customInstructions"):
+            if not isinstance(mode.get(field), str) or not mode[field].strip():
+                errors.append(f"custom mode {index} has invalid {field}")
+        if not isinstance(mode["groups"], list) or not mode["groups"]:
+            errors.append(f"custom mode {index} groups must be a list")
+        elif not all(
+            isinstance(group, str) and group in {"read", "edit", "browser", "command", "mcp"}
+            for group in mode["groups"]
+        ):
+            errors.append(f"custom mode {index} contains unsupported groups")
+    return errors
+
+
+def harness_status(root: Path, harness: str | None = None) -> dict[str, Any]:
     """Report installation, activation, missing files, and local modifications."""
     config = SmairtConfig.load(root / "smairt.yaml")
     name = HarnessName(harness) if harness else config.harness.active
-    manifest = _load_manifest(root, name)
+    manifest_error: str | None = None
+    try:
+        manifest = _load_manifest(root, name)
+    except (OSError, ValueError, TypeError):
+        manifest = None
+        manifest_error = "manifest is malformed"
     modified: list[str] = []
     missing: list[str] = []
-    if manifest:
-        for relative, digest in dict(manifest.get("files", {})).items():
-            target = root / relative
-            if not target.exists():
-                missing.append(relative)
-            elif sha256_text(target.read_text()) != digest:
-                modified.append(relative)
+    executable_errors: list[str] = []
+    schema_errors: list[str] = []
+    try:
+        if manifest:
+            declared_files = dict(manifest.get("files", {}))
+            for relative in ADAPTERS[name].files:
+                if relative not in declared_files:
+                    missing.append(relative)
+            for relative, digest in dict(manifest.get("files", {})).items():
+                target = _managed_path(root, relative)
+                if not target.exists():
+                    missing.append(relative)
+                elif sha256_text(target.read_text()) != digest:
+                    modified.append(relative)
+        executable_errors = [
+            relative
+            for relative in ADAPTERS[name].executable
+            if _managed_path(root, relative).exists()
+            and not _managed_path(root, relative).stat().st_mode & 0o111
+        ]
+        schema_errors = (
+            _validate_zoo_modes(_managed_path(root, ".roomodes").read_text())
+            if name is HarnessName.ZOO and _managed_path(root, ".roomodes").exists()
+            else []
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        manifest_error = f"unsafe or unreadable managed path: {exc}"
+    version = manifest.get("version") if manifest else None
     return {
         "harness": name.value,
         "active": config.harness.active == name,
         "installed": manifest is not None,
-        "adapter_version": manifest.get("version") if manifest else None,
+        "adapter_version": version,
+        "adapter_supported": version == ADAPTER_VERSION if manifest else False,
+        "capabilities": CAPABILITIES[name.value],
         "modified": modified,
         "missing": missing,
+        "non_executable": executable_errors,
+        "schema_errors": schema_errors,
+        "manifest_error": manifest_error,
+        "configuration_notice": (
+            "Cline hooks must be enabled in Cline settings" if name is HarnessName.CLINE else None
+        ),
     }
 
 
-def switch_plan(root: Path, harness: str) -> dict[str, object]:
+def switch_plan(root: Path, harness: str) -> dict[str, Any]:
     """Preview a harness switch without changing project state."""
     target_name = HarnessName(harness)
     config = SmairtConfig.load(root / "smairt.yaml")
@@ -221,11 +363,11 @@ def switch_plan(root: Path, harness: str) -> dict[str, object]:
     preserve: list[str] = []
     for relative, digest in current_files.items():
         if relative in target_files:
-            path = root / relative
+            path = _managed_path(root, relative)
             if path.exists() and sha256_text(path.read_text()) != digest:
                 modified.append(relative)
             continue
-        path = root / relative
+        path = _managed_path(root, relative)
         if not path.exists():
             continue
         if sha256_text(path.read_text()) == digest:
@@ -233,13 +375,13 @@ def switch_plan(root: Path, harness: str) -> dict[str, object]:
         else:
             modified.append(relative)
     for relative in target_files:
-        path = root / relative
+        path = _managed_path(root, relative)
         if path.exists() and relative not in current_files:
             prior_digest = known_target.get(relative)
             if prior_digest is None or sha256_text(path.read_text()) != prior_digest:
                 conflicts.append(relative)
     for directory in (".codex", ".roo", ".cline", ".clinerules"):
-        base = root / directory
+        base = _managed_path(root, directory)
         if base.exists():
             owned = set(current_files) | set(target_files)
             preserve.extend(
@@ -259,13 +401,14 @@ def switch_plan(root: Path, harness: str) -> dict[str, object]:
     }
 
 
+@mutating("harness select")
 def select_harness(
     root: Path,
     harness: str,
     *,
     dry_run: bool = False,
     backup_and_switch: bool = False,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Select exactly one harness while preserving custom and modified files."""
     plan = switch_plan(root, harness)
     if dry_run:
@@ -280,25 +423,47 @@ def select_harness(
             + ", ".join(plan["modified_managed"])
         )
     target_name = HarnessName(harness)
+    if target_name is HarnessName.ZOO:
+        errors = _validate_zoo_modes(ZOO_FILES[".roomodes"])
+        if errors:
+            raise ValueError("invalid generated Zoo modes: " + "; ".join(errors))
+    transaction = FileTransaction(root, "harness select")
+    backup_root = _stage_harness_selection(root, target_name, plan, transaction)
+    transaction.commit()
+    return {
+        **harness_status(root),
+        "backup": str(backup_root.relative_to(root)) if plan["modified_managed"] else None,
+    }
+
+
+def _stage_harness_selection(
+    root: Path,
+    target_name: HarnessName,
+    plan: dict[str, Any],
+    transaction: FileTransaction,
+) -> Path:
+    """Stage a prevalidated harness switch into a caller-owned transaction."""
     stamp = utc_now().replace(":", "").replace("+", "_")
-    backup_root = root / ".smairt/backups/harness-switch" / stamp
+    backup_root = _managed_path(root, f".smairt/backups/harness-switch/{stamp}")
     for relative in plan["modified_managed"]:
-        source = root / relative
+        source = _managed_path(root, relative)
         destination = backup_root / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-        source.unlink()
+        transaction.stage_bytes(
+            destination, source.read_bytes(), mode=source.stat().st_mode & 0o777
+        )
+        if relative not in ADAPTERS[target_name].files:
+            transaction.stage_delete(source)
     for relative in plan["remove"]:
-        (root / relative).unlink(missing_ok=True)
-    agents = root / "AGENTS.md"
-    atomic_write(agents, _merge_agents(agents.read_text() if agents.exists() else ""))
+        transaction.stage_delete(_managed_path(root, relative))
+    agents = _managed_path(root, "AGENTS.md")
+    transaction.stage_text(agents, _merge_agents(agents.read_text() if agents.exists() else ""))
     hashes: dict[str, str] = {}
     adapter = ADAPTERS[target_name]
     for relative, content in adapter.files.items():
-        path = root / relative
-        atomic_write(path, content)
-        if relative in adapter.executable:
-            path.chmod(0o755)
+        path = _managed_path(root, relative)
+        transaction.stage_text(
+            path, content, mode=0o755 if relative in adapter.executable else None
+        )
         hashes[relative] = sha256_text(content)
     manifest = {
         "harness": target_name.value,
@@ -307,17 +472,23 @@ def select_harness(
         "files": hashes,
         "shared_agents_block_sha256": sha256_text(_managed_block()),
     }
-    atomic_write(_manifest_path(root, target_name), json.dumps(manifest, indent=2) + "\n")
+    transaction.stage_text(
+        _manifest_path(root, target_name), json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    )
     config = SmairtConfig.load(root / "smairt.yaml")
     config.harness.active = target_name
     config.harness.adapter_version = ADAPTER_VERSION
     config.harness.activated_at = utc_now()
-    config.dump(root / "smairt.yaml")
-    write_compatibility_fixture(root, target_name.value)
-    return {
-        **harness_status(root),
-        "backup": str(backup_root.relative_to(root)) if plan["modified_managed"] else None,
-    }
+    transaction.stage_text(
+        root / "smairt.yaml",
+        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+    )
+    fixture = root / ".smairt/contracts/v1/fixtures" / f"{target_name.value}.json"
+    transaction.stage_text(
+        fixture,
+        json.dumps(compatibility_payload(target_name.value), indent=2, sort_keys=True) + "\n",
+    )
+    return backup_root
 
 
 def install_harness(root: Path, harness: str, *, upgrade: bool = False) -> dict[str, object]:
@@ -330,12 +501,15 @@ def list_harnesses(root: Path) -> list[dict[str, object]]:
     return [harness_status(root, name.value) for name in HarnessName]
 
 
+@mutating("harness fixture write")
 def write_compatibility_fixture(root: Path, harness: str) -> Path:
     """Write a portable adapter fixture without duplicating scientific state."""
     name = HarnessName(harness)
     payload = compatibility_payload(name.value)
     path = root / ".smairt/contracts/v1/fixtures" / f"{name.value}.json"
-    atomic_write(path, json.dumps(payload, indent=2) + "\n")
+    transaction = FileTransaction(root, "harness fixture write")
+    transaction.stage_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    transaction.commit()
     return path
 
 
@@ -351,7 +525,12 @@ def compatibility_payload(harness: str) -> dict[str, object]:
             "next": "smairt next --json",
             "validate": "smairt validate --json",
         },
-        "exit_codes": {"success": 0, "validation_failure": 1, "usage_or_project_error": 2},
+        "exit_codes": {
+            "success": 0,
+            "validation_failure": 1,
+            "usage_or_project_error": 2,
+            "lock_or_recovery_required": 3,
+        },
         "human_gates": [
             "hypothesis_selection",
             "scientific_decision",

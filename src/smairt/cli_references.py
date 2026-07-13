@@ -1,7 +1,7 @@
 """Scholarly-reference CLI commands and confirmation flow."""
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 from rich.console import Console
@@ -21,6 +21,7 @@ from smairt.references import (
     unindexed_pdfs,
     verify_reference,
 )
+from smairt.utils import atomic_write
 
 reference_app = typer.Typer(help="Manage local scholarly references")
 console = Console()
@@ -74,14 +75,13 @@ def reference_enrich(
 @reference_app.command("enrich-openalex")
 def reference_enrich_openalex(
     identifier: Annotated[str, typer.Argument()],
-    api_key: Annotated[str | None, typer.Option(envvar="OPENALEX_API_KEY", hidden=True)] = None,
     confirm_remote: Annotated[bool, typer.Option("--confirm-remote")] = False,
 ) -> None:
-    """Add optional OpenAlex metadata without persisting the API key."""
+    """Add OpenAlex metadata using only the OPENALEX_API_KEY environment variable."""
     emit(
-        enrich_openalex(
-            project_root(), identifier, api_key, confirm_remote=confirm_remote
-        ).model_dump(mode="json", exclude_none=True),
+        enrich_openalex(project_root(), identifier, confirm_remote=confirm_remote).model_dump(
+            mode="json", exclude_none=True
+        ),
         False,
     )
 
@@ -120,7 +120,7 @@ def reference_export(
     """Export the reference index as BibTeX or CSL JSON."""
     content = export_references(project_root(), format_name)
     if output:
-        output.write_text(content, encoding="utf-8")
+        atomic_write(output, content)
         console.print(output)
     else:
         console.print(content, markup=False)
@@ -140,8 +140,8 @@ def reference_add(
     """Inspect, confirm, and index one local scholarly PDF."""
     proposed = inspect_pdf(source)
     title = title or str(proposed["title"])
-    authors = authors or list(proposed["authors"])
-    doi = doi or proposed["doi"]
+    authors = authors or list(cast(list[str], proposed["authors"]))
+    doi = doi or cast(str | None, proposed["doi"])
     if not yes:
         console.print({"title": title, "authors": authors, "year": year, "doi": doi})
         title = Prompt.ask("Confirmed title", default=title)
@@ -157,7 +157,8 @@ def reference_add(
         authors=authors,
         year=year,
         doi=doi,
-        verified=verified,
         link=link,
     )
+    if verified:
+        record = verify_reference(project_root(), record.id, _active_contributor())
     emit(record.model_dump(mode="json", exclude_none=True), False)

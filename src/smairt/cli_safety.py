@@ -6,15 +6,27 @@ import typer
 from rich.prompt import Confirm
 
 from smairt.cli_shared import emit, project_root
-from smairt.safety import attest_repository, release_check, safety_status, set_safety_mode
+from smairt.safety import (
+    attest_repository,
+    refresh_repository_visibility,
+    release_check,
+    safety_status,
+    set_safety_mode,
+)
 
 safety_app = typer.Typer(help="Inspect and change project safety policy")
 
 
 @safety_app.command("status")
-def safety_status_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+def safety_status_command(
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+    refresh_visibility: Annotated[bool, typer.Option("--refresh-visibility")] = False,
+) -> None:
     """Show active safety policy and visibility evidence."""
-    emit(safety_status(project_root()), as_json)
+    root = project_root()
+    if refresh_visibility:
+        refresh_repository_visibility(root)
+    emit(safety_status(root), as_json, command="safety status")
 
 
 @safety_app.command("set")

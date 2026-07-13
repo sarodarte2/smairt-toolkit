@@ -14,7 +14,7 @@ def test_version_and_noninteractive_creation(tmp_path: Path) -> None:
     """Verify version output and the complete non-interactive creation path."""
     version = runner.invoke(app, ["--version"])
     assert version.exit_code == 0
-    assert "0.1.0" in version.stdout
+    assert "0.2.0" in version.stdout
 
     destination = tmp_path / "cli-project"
     result = runner.invoke(
@@ -59,14 +59,17 @@ def test_status_json_from_project(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(destination)
     result = runner.invoke(app, ["status", "--json"])
     assert result.exit_code == 0
-    payload = json.loads(result.stdout)
+    envelope = json.loads(result.stdout)
+    assert envelope["schema_version"] == 1
+    assert envelope["ok"]
+    payload = envelope["data"]
     assert payload["project"]["author"] == "Researcher"
     assert payload["stage"] == "project_setup"
     assert payload["guidance"]["recommended"]["id"] == "add_references"
 
     next_result = runner.invoke(app, ["next", "--json"])
     assert next_result.exit_code == 0
-    assert json.loads(next_result.stdout)["stage"] == "project_setup"
+    assert json.loads(next_result.stdout)["data"]["stage"] == "project_setup"
 
 
 def test_noninteractive_init_preserves_existing_directory(tmp_path: Path) -> None:
@@ -97,3 +100,23 @@ def test_start_project_alias_reaches_wizard(monkeypatch, tmp_path: Path) -> None
     result = runner.invoke(app, ["start", "project", str(destination)])
     assert result.exit_code == 0, result.stdout
     assert observed == {"destination": destination, "allow_existing": False}
+
+
+def test_default_destination_uses_a_safe_slug(tmp_path: Path, monkeypatch) -> None:
+    """Never interpret separators in a project name as an implicit destination path."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "new",
+            "--name",
+            "../../Outside Study",
+            "--author",
+            "Researcher",
+            "--confirm-contributor",
+            "--no-git",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    assert (tmp_path / "outside-study/smairt.yaml").exists()
+    assert not (tmp_path.parent / "Outside Study").exists()

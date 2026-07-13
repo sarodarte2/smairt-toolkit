@@ -1,17 +1,41 @@
-# SMAIRT
+<p align="center">
+  <img src="docs/assets/smairt-banner.svg" alt="SMAIRT — research provenance in the terminal" width="820">
+</p>
 
-SMAIRT is a local-first research harness for scientists working with coding agents. It preserves
-the chain from research question to references, hypotheses, experiments, immutable runs, accepted
-evidence, approved claims, and a reviewable manuscript.
+<p align="center">
+  <a href="https://github.com/PNNL-CompBio/smairt-template/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/PNNL-CompBio/smairt-template/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/PNNL-CompBio/smairt-template/releases"><img alt="GitHub release" src="https://img.shields.io/github/v/release/PNNL-CompBio/smairt-template?include_prereleases"></a>
+  <img alt="Coverage gate: 90%" src="https://img.shields.io/badge/coverage_gate-90%25-1f8a70">
+  <img alt="Python 3.11–3.13" src="https://img.shields.io/badge/python-3.11%E2%80%933.13-3776ab">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-f28c28"></a>
+  <a href="CITATION.cff"><img alt="Cite this software" src="https://img.shields.io/badge/citation-CITATION.cff-6f42c1"></a>
+</p>
 
-SMAIRT currently supports one active harness per project: Codex, Zoo Code, or Cline. Scientific
-state remains in portable YAML, JSON, and Markdown; harness adapters provide instructions and
-guardrails without creating a second research record.
+SMAIRT is a local-first research workflow for scientists working with coding agents. It preserves
+the chain from a research question through references, hypotheses or exploratory purposes,
+immutable experiment runs, human decisions, accepted evidence, approved claims, and a reviewable
+manuscript. Scientific state stays in portable YAML, JSON, and Markdown rather than inside one AI
+vendor.
 
-## Install and create a project
+> **Beta safety notice:** SMAIRT safety checks are experimental. They are useful technical
+> guardrails, not regulatory, institutional, contractual, export-control, or human-subject
+> compliance certification. Controlled data is unsupported for compliance in this beta.
+
+## Choose your path
+
+| I am a researcher | I maintain or extend SMAIRT |
+|---|---|
+| Start with the five-minute workflow below, then read the [User Guide](docs/USER_GUIDE.md). | Read the [Developer Guide](docs/DEVELOPER_GUIDE.md) and [Architecture](docs/ARCHITECTURE.md). |
+| Use `smairt new` for the guided terminal wizard and `smairt menu` for the next-action dashboard. | Use the source-scoped test, type, security, package, and release gates documented in the [Release Guide](docs/RELEASE.md). |
+| Learn collaboration and corrections in the [Tutorial](TUTORIAL.md). | See the [CLI contract](docs/CLI_REFERENCE.md), [Security Policy](SECURITY.md), and [Contributing Guide](.github/CONTRIBUTING.md). |
+
+## Five-minute workflow
+
+Install the wheel from the `0.2.0-beta.1` GitHub Release (or use the source setup in the Developer
+Guide), then create a project:
 
 ```bash
-python -m pip install -e '.[dev]'
+python -m pip install "smairt @ https://github.com/PNNL-CompBio/smairt-template/releases/download/v0.2.0-beta.1/smairt-0.2.0b1-py3-none-any.whl"
 smairt new my-study \
   --name "My Study" \
   --author "Researcher Name" \
@@ -21,98 +45,88 @@ smairt new my-study \
 cd my-study
 smairt status --json
 smairt next --json
+smairt menu
 ```
 
-Run `smairt new` without `--name` and `--author` to use the interactive wizard. The wizard
-explains data classification, Standard and Strict safety, contributor confirmation, environment,
-Git, and harness selection before it writes the project.
+Run `smairt new` without `--name` and `--author` for the responsive terminal wizard. Ordinary
+status, validation, doctor, and TUI refresh operations stay offline.
 
-## Core workflow
-
-```text
-question + references -> background -> three proposal options
--> human-selected hypothesis -> experiment -> iteration -> immutable run
--> human decision -> evidence card -> approved claim
--> reviewed Markdown manuscript -> versioned Markdown/DOCX build
+```mermaid
+flowchart LR
+    Q["Question and references"] --> B["Grounded background"]
+    B --> H["Hypothesis or purpose"]
+    H --> E["Experiment and iteration"]
+    E --> R["Immutable run"]
+    R --> D{"Human decision"}
+    D -->|Accept| V["Current evidence"]
+    D -->|Revise| E
+    V --> C["Approved claim"]
+    C --> P["Reviewed manuscript"]
+    V -. correction .-> X["Retracted or superseded"]
 ```
 
-Useful commands:
+The [Quickstart](QUICKSTART.md) executes the complete placeholder-to-evidence journey. The
+[Tutorial](TUTORIAL.md) adds collaboration, correction, claim review, and Markdown/DOCX builds.
 
-| Goal | Command |
-|---|---|
-| Inspect project health | `smairt doctor --json` |
-| Get the next state-aware action | `smairt next --json` |
-| Build bounded context | `smairt context --task planning --token-budget 8000` |
-| Get an economical model tier | `smairt model recommend --task metadata` |
-| Confirm a contributor | `smairt contributor add --name "Name"` then `smairt contributor use <id>` |
-| Inspect safety | `smairt safety status --json` |
-| Validate before commit | `smairt validate --staged` |
-| Index and verify a reference | `smairt reference add paper.pdf`, then `smairt reference verify <id>` |
-| Create three hypotheses | `smairt hypothesis proposals new` |
-| Run registered research code | `smairt run --experiment EXPERIMENT_001 --iteration ITERATION_001` |
-| Verify immutable runs | `smairt verify --json` |
-| Build the paper | `smairt paper build --format docx` |
+## Harnesses: truthful enforcement
 
-Human confirmation is required for contributor identity, hypothesis selection, scientific
-decisions, claim approval, evidence corrections, safety-mode changes, and repository visibility.
+SMAIRT supports one active harness per project. CLI validation, Git checks, immutable records, and
+human gates remain authoritative; instructions alone are never described as enforcement.
 
-## Harness selection
+| Harness | Rules | Protected-operation hook | Context restore | Notes |
+|---|---|---|---|---|
+| Codex | Advisory | Advisory | Manual | Project `hooks.json` is validation support, not a guaranteed blocker. |
+| Zoo Code | Advisory | Unsupported | Manual | Zoo deliberately retains Roo-compatible `.roo`, `.roomodes`, and `.rooignore` paths. |
+| Cline | Advisory | Blocking when hooks are enabled | Advisory | `PreToolUse` blocks; `TaskStart` and `TaskResume` inject current status and next action. |
 
-The active adapter is stored in `smairt.yaml`. Preview every switch:
+Preview every switch with `smairt harness select zoo --dry-run`. SMAIRT owns individual files by
+hash manifest, preserves custom files, and stops on conflicts or modified managed files. See
+[Harness Adapters](docs/HARNESSES.md).
+
+## Individual and collaborative work
+
+An individual uses the same explicit gates as a team: register a contributor, select a hypothesis
+or purpose, run through `smairt run`, record a decision, and approve claims before drafting.
+
+Teams use separate Git branches or worktrees for parallel work. A checkout-local mutation lock
+prevents simultaneous writers from corrupting shared state; transaction journals make multi-file
+changes recoverable. SMAIRT does not automatically merge scientific judgments.
 
 ```bash
-smairt harness status --json
-smairt harness select zoo --dry-run
-smairt harness select zoo
+smairt lock status --json
+smairt recovery status --json
+smairt doctor --json
 ```
-
-SMAIRT keeps a marked shared block in `AGENTS.md`. Text outside that block is preserved. It owns
-individual adapter files through hash manifests and never deletes an entire `.codex`, `.roo`,
-`.cline`, or `.clinerules` directory. A locally modified managed file stops switching; use
-`--backup-and-switch` only after reviewing the preview.
-
-- Codex: `.codex/`, shared `AGENTS.md`, and the portable SMAIRT skill.
-- Zoo: `.roo/rules/`, mode-specific rules, `.roomodes`, and `.rooignore`.
-- Cline: conditional `.clinerules/`, safety/compaction hooks, workflows, and `.clineignore`.
-
-Model/provider credentials remain in the harness or operating-system secret store. SMAIRT records
-only provider-neutral `cheap`, `balanced`, and `strong` task recommendations.
-
-See [docs/HARNESSES.md](docs/HARNESSES.md) and
-[docs/CONTEXT_AND_MODELS.md](docs/CONTEXT_AND_MODELS.md).
 
 ## Safety modes
 
-Both modes prohibit secrets, private keys, raw protected data, ignored reference PDFs, and unsafe
-research data from Git.
+Classification describes the material; mode describes SMAIRT's response. Both modes block common
+credentials, private keys, protected paths, and raw-data formats from Git.
 
-- Standard supports ordinary collaboration and requires a private-repository acknowledgment for
-  private or controlled projects.
-- Strict keeps protected summaries local unless they are explicitly shareable and redaction is
-  confirmed. Unknown/public visibility and unconfirmed remote metadata queries are errors.
+- **Standard** supports ordinary public or private research collaboration. Unknown visibility is
+  usually a warning, while protected release operations still require adequate evidence.
+- **Strict** fails closed for consequential sharing and release, requires a fresh observed private
+  GitHub visibility, and keeps protected summaries local unless shareability and redaction are
+  explicitly confirmed.
 
-Before changing visibility or publishing:
+Visibility lookup is explicit and cached:
 
 ```bash
+smairt safety status --refresh-visibility --json
 smairt safety release-check --json
 ```
 
-A private repository is collaboration infrastructure, not institutional compliance
-certification. See [docs/SAFETY.md](docs/SAFETY.md).
+Read the complete [experimental safety contract](docs/SAFETY.md) before using protected material.
 
-## Development
+## Documentation and support
 
-```bash
-ruff check src tests
-python -m pytest -p no:cacheprovider
-python -m pip wheel . --no-deps --wheel-dir /tmp/smairt-dist
-```
+- [User Guide](docs/USER_GUIDE.md) · [CLI Reference](docs/CLI_REFERENCE.md) ·
+  [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Developer Guide](docs/DEVELOPER_GUIDE.md) · [Architecture](docs/ARCHITECTURE.md) ·
+  [Release Guide](docs/RELEASE.md)
+- [Security](SECURITY.md) · [Support](SUPPORT.md) · [Changelog](CHANGELOG.md) ·
+  [Contributing](.github/CONTRIBUTING.md)
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for readability and CLI module boundaries. The
-terminal-interface redesign is tracked in
-[docs/plans/TUI_USABILITY.md](docs/plans/TUI_USABILITY.md).
-
-The maintained package is the CLI under `src/smairt/`. The former Cookiecutter and paper-driven
-products have been removed; original Cookiecutter projects are not automatically migrated.
-
-SMAIRT is distributed under the MIT License. See [LICENSE](LICENSE) and [CITATION.cff](CITATION.cff).
+SMAIRT supports Linux and macOS natively and Windows through WSL. Native Windows and PyPI
+publication are outside this beta milestone. The project uses the MIT License; cite releases with
+[CITATION.cff](CITATION.cff).

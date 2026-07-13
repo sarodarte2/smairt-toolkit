@@ -6,13 +6,14 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import typer
 import yaml
 from rich.console import Console
+from rich.markup import escape
 from rich.prompt import Confirm
-from typer.core import _click as click
+from typer.core import _click as click  # type: ignore[attr-defined]
 
 from smairt import __version__
 from smairt.cli_harness import harness_app
@@ -27,12 +28,15 @@ from smairt.cli_research import (
     register_root_commands,
 )
 from smairt.cli_safety import safety_app
+from smairt.cli_shared import json_envelope
+from smairt.cli_state import lock_app, recovery_app
 from smairt.code_quality import build_code_index, validate_code
 from smairt.contracts import check_contracts, export_contracts
+from smairt.diagnostics import doctor
+from smairt.errors import SmairtError
 from smairt.guidance import next_guidance
-from smairt.harnesses import list_harnesses
 from smairt.integrity import verify_run
-from smairt.migrations import apply_migration, detect_scaffold, migration_plan, rollback_migration
+from smairt.migrations import apply_migration, migration_plan, rollback_migration
 from smairt.model_policy import recommend_model
 from smairt.models import DataClassification, EnvironmentMode, HarnessName, SmairtConfig
 from smairt.project import context as build_context
@@ -42,6 +46,7 @@ from smairt.provenance import add_contributor, generate_history, load_events, us
 from smairt.scaffold import conda_environments, create_project
 from smairt.tui import run_new_project, run_project_menu
 from smairt.upgrade import upgrade_project
+from smairt.utils import slugify
 
 console = Console()
 
@@ -51,6 +56,10 @@ class ProjectUsageError(click.ClickException):
 
     exit_code = 2
 
+    def __init__(self, message: str, exit_code: int = 2) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
+
 
 class FriendlyGroup(typer.core.TyperGroup):
     """Render expected domain failures without exposing implementation tracebacks."""
@@ -59,13 +68,21 @@ class FriendlyGroup(typer.core.TyperGroup):
         """Convert domain exceptions into stable usage-or-project errors."""
         try:
             return super().invoke(ctx)
-        except (FileNotFoundError, ValueError) as exc:
-            raise ProjectUsageError(str(exc)) from exc
+        except SmairtError as exc:
+            if ctx.find_root().params.get("verbose"):
+                raise
+            raise ProjectUsageError(str(exc), exc.exit_code) from None
+        except click.exceptions.Exit:
+            raise
+        except (FileNotFoundError, ValueError, RuntimeError) as exc:
+            if ctx.find_root().params.get("verbose"):
+                raise
+            raise ProjectUsageError(str(exc)) from None
 
 
 app = typer.Typer(
     help="Scientific Method with AI Research Toolkit",
-    no_args_is_help=True,
+    no_args_is_help=False,
     invoke_without_command=True,
     cls=FriendlyGroup,
 )
@@ -94,6 +111,8 @@ app.add_typer(harness_app, name="harness")
 app.add_typer(migrate_app, name="migrate")
 app.add_typer(summary_app, name="summary")
 app.add_typer(model_app, name="model")
+app.add_typer(lock_app, name="lock")
+app.add_typer(recovery_app, name="recovery")
 register_root_commands(app)
 
 
@@ -155,17 +174,8 @@ def history_command(as_json: Annotated[bool, typer.Option("--json")] = False) ->
 
 @app.command("doctor")
 def doctor_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    """Diagnose scaffold, Git, contract, and adapter health without writing files."""
-    root = _root()
-    validation = validate_project(root).as_dict()
-    payload = {
-        "ok": validation["ok"] and detect_scaffold(root) == "v2",
-        "scaffold": detect_scaffold(root),
-        "git_repository": (root / ".git").exists(),
-        "validation": validation,
-        "harnesses": list_harnesses(root),
-        "migration": migration_plan(root),
-    }
+    """Diagnose project and release health without network access or mutation."""
+    payload = doctor(_root())
     _emit(payload, as_json)
     if not payload["ok"]:
         raise typer.Exit(1)
@@ -235,7 +245,7 @@ def _root() -> Path:
 def _emit(payload: object, as_json: bool) -> None:
     """Render payloads either as stable JSON or readable Rich output."""
     if as_json:
-        console.print_json(json.dumps(payload, default=str))
+        console.print_json(json.dumps(json_envelope(payload), default=str))
     else:
         console.print(payload)
 
@@ -256,11 +266,15 @@ def _show_guidance(root: Path) -> None:
 def main(
     ctx: typer.Context,
     version: Annotated[bool, typer.Option("--version", help="Show the installed version.")] = False,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", help="Show diagnostic exception causes.")
+    ] = False,
 ) -> None:
-    """Handle global version output and show help when no command is selected."""
+    """Handle global output policy and show help when no command is selected."""
+    del verbose
     if version:
         console.print(__version__)
-        raise typer.Exit()
+        ctx.exit(0)
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
 
@@ -286,7 +300,7 @@ def _new_project(
         if created:
             console.print(f"[bold #f28c28]Created SMAIRT project:[/] {created}")
         return
-    destination = (destination or Path(name.lower().replace(" ", "-"))).resolve()
+    destination = (destination or Path(slugify(name))).resolve()
     config = create_project(
         destination,
         name=name,
@@ -303,7 +317,7 @@ def _new_project(
         create_environment=environment_mode is EnvironmentMode.NEW_CONDA,
         allow_existing=allow_existing,
     )
-    console.print(f"[bold #f28c28]Created {config.project.name}[/] at {destination}")
+    console.print(f"[bold #f28c28]Created {escape(config.project.name)}[/] at {destination}")
     _show_guidance(destination)
 
 
@@ -415,16 +429,19 @@ def status_command(
     if as_json:
         _emit(payload, True)
         return
-    project = payload["project"]
-    console.print(f"[bold #f28c28]{project['name']}[/] · {payload['data_classification']}")
-    console.print(f"Author: {project['author']}")
+    project = cast(dict[str, Any], payload["project"])
+    console.print(
+        f"[bold #f28c28]{escape(str(project['name']))}[/] · "
+        f"{escape(str(payload['data_classification']))}"
+    )
+    console.print(f"Author: {escape(str(project['author']))}")
     console.print(f"Active: {payload['active'] or 'none'}")
-    validation = payload["validation"]
+    validation = cast(dict[str, Any], payload["validation"])
     console.print(f"Validation: {'PASS' if validation['ok'] else 'FAIL'}")
     if not compact:
         console.print(payload["counts"])
         for warning in validation["warnings"]:
-            console.print(f"[yellow]Warning:[/] {warning}")
+            console.print(f"[yellow]Warning:[/] {escape(str(warning))}")
 
 
 @app.command("validate")

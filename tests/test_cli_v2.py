@@ -37,33 +37,39 @@ def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None
     )
     monkeypatch.chdir(root)
 
-    assert json.loads(invoke_ok(["status", "--json"]).stdout)["harness"]["active"] == "zoo"
+    assert json.loads(invoke_ok(["status", "--json"]).stdout)["data"]["harness"]["active"] == "zoo"
     invoke_ok(["next", "--json"])
     invoke_ok(["validate", "--json"])
     invoke_ok(["code", "index"])
     invoke_ok(["code", "validate", "--json"])
     invoke_ok(["upgrade"])
     invoke_ok(["env", "status", "--json"])
-    assert json.loads(invoke_ok(["contributor", "list", "--json"]).stdout)["active"]
-    assert json.loads(invoke_ok(["safety", "status", "--json"]).stdout)["mode"] == "standard"
-    assert json.loads(invoke_ok(["harness", "status", "--json"]).stdout)["active"]
-    assert len(json.loads(invoke_ok(["harness", "list", "--json"]).stdout)) == 3
+    assert json.loads(invoke_ok(["contributor", "list", "--json"]).stdout)["data"]["active"]
+    assert (
+        json.loads(invoke_ok(["safety", "status", "--json"]).stdout)["data"]["mode"] == "standard"
+    )
+    assert json.loads(invoke_ok(["harness", "status", "--json"]).stdout)["data"]["active"]
+    assert len(json.loads(invoke_ok(["harness", "list", "--json"]).stdout)["data"]) == 3
 
     preview = invoke_ok(["harness", "select", "cline", "--dry-run"])
     assert "create_or_update" in preview.stdout
     invoke_ok(["harness", "select", "cline"])
-    assert json.loads(invoke_ok(["harness", "status", "--json"]).stdout)["harness"] == "cline"
+    assert (
+        json.loads(invoke_ok(["harness", "status", "--json"]).stdout)["data"]["harness"] == "cline"
+    )
 
-    model = json.loads(invoke_ok(["model", "recommend", "--task", "metadata", "--json"]).stdout)
+    model = json.loads(invoke_ok(["model", "recommend", "--task", "metadata", "--json"]).stdout)[
+        "data"
+    ]
     assert model["tier"] == "cheap"
     capsule = json.loads(
         invoke_ok(
             ["context", "--task", "planning", "--token-budget", "20000", "--save", "--json"]
         ).stdout
-    )
+    )["data"]
     assert capsule["capsule_path"].startswith(".smairt/local/context/")
 
-    assert json.loads(invoke_ok(["migrate", "plan", "--json"]).stdout)["detected"] == "v2"
+    assert json.loads(invoke_ok(["migrate", "plan", "--json"]).stdout)["data"]["detected"] == "v2"
     invoke_ok(["contract", "export"])
     invoke_ok(["contract", "check"])
     invoke_ok(["reference", "list", "--json"])
@@ -81,7 +87,9 @@ def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None
     invoke_ok(["safety", "attest", "--visibility", "private", "--yes"])
     invoke_ok(["safety", "set", "strict", "--yes"])
     release = runner.invoke(app, ["safety", "release-check", "--json"])
-    assert release.exit_code == 0
+    # Strict mode fails closed until an explicit, fresh visibility observation exists.
+    assert release.exit_code == 1
+    assert not json.loads(release.stdout)["ok"]
 
 
 def test_cli_renders_model_policy_error_without_traceback(tmp_path: Path, monkeypatch) -> None:

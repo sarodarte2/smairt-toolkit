@@ -8,14 +8,23 @@ from typing import Any
 
 import yaml
 
-from smairt.utils import atomic_write
+from smairt.locking import mutating
+from smairt.utils import atomic_write, ensure_no_symlink
+
+
+def _safe_python(root: Path, path: Path) -> Path:
+    """Resolve a project-contained Python file without following symlinks."""
+    resolved = ensure_no_symlink(root, path)
+    if not resolved.is_file() or resolved.suffix != ".py":
+        raise ValueError(f"not a project Python file: {path}")
+    return resolved
 
 
 def _python_files(root: Path) -> list[Path]:
     """Discover experiment and shared Python modules while excluding caches."""
     files = list((root / "experiments").glob("EXPERIMENT_*/iterations/ITERATION_*/*.py"))
     files.extend((root / "scripts/shared").rglob("*.py"))
-    return sorted(path for path in files if "__pycache__" not in path.parts)
+    return sorted(_safe_python(root, path) for path in files if "__pycache__" not in path.parts)
 
 
 def _literal_constants(tree: ast.Module) -> list[str]:
@@ -32,22 +41,26 @@ def _literal_constants(tree: ast.Module) -> list[str]:
 
 def inspect_python(path: Path, root: Path) -> dict[str, Any]:
     """Return a stable, AST-derived summary without importing research code."""
+    root = root.resolve()
+    path = _safe_python(root, path)
     content = path.read_text(encoding="utf-8")
     tree = ast.parse(content, filename=str(path))
     functions = []
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            arguments = [argument.arg for argument in node.args.args]
+    for statement in tree.body:
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            arguments = [argument.arg for argument in statement.args.args]
             functions.append(
                 {
-                    "name": node.name,
+                    "name": statement.name,
                     "arguments": arguments,
-                    "typed": all(argument.annotation is not None for argument in node.args.args)
-                    and node.returns is not None,
-                    "documented": bool(ast.get_docstring(node)),
+                    "typed": all(
+                        argument.annotation is not None for argument in statement.args.args
+                    )
+                    and statement.returns is not None,
+                    "documented": bool(ast.get_docstring(statement)),
                 }
             )
-    imports = []
+    imports: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imports.extend(alias.name for alias in node.names)
@@ -64,6 +77,7 @@ def inspect_python(path: Path, root: Path) -> dict[str, Any]:
     }
 
 
+@mutating("code index")
 def build_code_index(root: Path, *, write: bool = True) -> dict[str, Any]:
     """Build the project code index and optionally persist it."""
     modules = [inspect_python(path, root) for path in _python_files(root)]
@@ -82,16 +96,17 @@ def validate_code(root: Path, target: Path | None = None) -> list[dict[str, str]
     else:
         paths = _python_files(root)
     findings: list[dict[str, str]] = []
-    for path in paths:
-        relative = str(path.relative_to(root))
+    for requested in paths:
         try:
+            path = _safe_python(root, requested)
+            relative = str(path.relative_to(root.resolve()))
             summary = inspect_python(path, root)
-        except (OSError, SyntaxError) as exc:
+        except (OSError, SyntaxError, ValueError) as exc:
             findings.append(
                 {
                     "severity": "error",
                     "code": "code.parse",
-                    "artifact": relative,
+                    "artifact": str(requested),
                     "message": str(exc),
                 }
             )

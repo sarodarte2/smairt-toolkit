@@ -32,6 +32,7 @@ def project(tmp_path: Path) -> Path:
         classification=DataClassification.UNPUBLISHED,
         initialize_git=False,
         environment_mode=EnvironmentMode.NONE,
+        confirm_contributor=True,
     )
     return root
 

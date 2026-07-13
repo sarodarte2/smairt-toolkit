@@ -1,14 +1,15 @@
 """Tests for adaptive workflow guidance, readable code, and safe upgrades."""
 
-import json
 from pathlib import Path
 
 import yaml
 
 from smairt.code_quality import build_code_index, validate_code
 from smairt.guidance import next_guidance
-from smairt.models import DataClassification
-from smairt.research import create_background, create_experiment
+from smairt.models import DataClassification, Decision
+from smairt.paper import create_claim, create_evidence_card, review_claim
+from smairt.research import create_background, create_experiment, record_decision
+from smairt.runner import run_experiment
 from smairt.scaffold import create_project
 from smairt.upgrade import upgrade_project
 
@@ -99,22 +100,28 @@ def test_upgrade_previews_backs_up_and_preserves_research(tmp_path: Path) -> Non
 def test_guidance_advances_from_accepted_run_into_paper_workflow(tmp_path: Path) -> None:
     root = make_project(tmp_path)
     create_experiment(root, title="Evidence", purpose="Generate accepted evidence")
-    config_path = root / "smairt.yaml"
-    config = yaml.safe_load(config_path.read_text())
-    config["active"]["accepted_run"] = "RUN_ACCEPTED"
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
-    (root / "results/EXPERIMENT_001/ITERATION_001/RUN_ACCEPTED").mkdir(parents=True)
-    decisions = root / "analysis/EXPERIMENT_001/decisions.yaml"
-    decisions.write_text("decisions:\n- run_id: RUN_ACCEPTED\n  decision: ACCEPT\n")
+    run = run_experiment(root, experiment_id="EXPERIMENT_001", iteration_id="ITERATION_001")
+    record_decision(
+        root,
+        experiment_id="EXPERIMENT_001",
+        iteration_id="ITERATION_001",
+        run_id=run.run_id,
+        decision=Decision.ACCEPT,
+        rationale="Verified evidence run.",
+        decided_by="Researcher",
+    )
     assert next_guidance(root)["stage"] == "evidence_review"
 
-    evidence = root / "paper/evidence/evidence-run.json"
-    evidence.write_text(
-        json.dumps({"id": "evidence-run", "run_id": "RUN_ACCEPTED", "status": "current"}) + "\n"
+    evidence = create_evidence_card(
+        root,
+        run.run_id,
+        purpose="Exercise guidance",
+        observed_result="The run completed.",
+        limitations="Smoke-only evidence.",
+        decision="ACCEPT",
     )
     assert next_guidance(root)["stage"] == "claim_proposal"
-    claim = root / "paper/claims/claim-one.json"
-    claim.write_text(json.dumps({"id": "claim-one", "status": "proposed"}) + "\n")
+    claim = create_claim(root, "The workflow completed.", [evidence.stem])
     assert next_guidance(root)["stage"] == "claim_review"
-    claim.write_text(json.dumps({"id": "claim-one", "status": "approved"}) + "\n")
+    review_claim(root, claim.stem, "approved")
     assert next_guidance(root)["stage"] == "paper_ready"

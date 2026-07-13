@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">SMAIRT</title><desc id="desc">Trace research from question to publication</desc>
+  <rect width="1280" height="640" fill="#101820"/><path d="M0 560h1280" stroke="#1f8a70" stroke-width="8"/>
+  <text x="96" y="230" fill="#f4f4f4" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="132" font-weight="700">&gt; SMAIRT_</text>
+  <text x="102" y="330" fill="#f28c28" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="42">question → evidence → publication</text>
+  <text x="102" y="410" fill="#a9bac5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="30">Local-first research provenance for coding-agent workflows</text>
+  <g fill="#1f8a70"><circle cx="105" cy="520" r="12"/><circle cx="145" cy="520" r="12"/><circle cx="185" cy="520" r="12"/></g>
+</svg>

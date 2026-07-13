@@ -20,16 +20,17 @@ switching, and preservation of user-owned files.
 Before opening a pull request, run:
 
 ```bash
-ruff check src tests
-pytest
-python -m coverage run -m pytest
-python -m coverage report
+ruff format --check src tests scripts
+ruff check src tests scripts
+mypy src/smairt
+python -m pytest --cov=smairt --cov-branch
+pip-audit
 git diff --check
 ```
 
 Documentation changes are expected when commands, generated files, safety behavior, harness
-ownership, or user journeys change. Keep `README.md`, `REPO_MAP.md`, and the focused documents in
-`docs/` consistent with the executable behavior.
+ownership, or user journeys change. Keep `README.md`, the architecture, CLI reference, and focused
+documents in `docs/` consistent with executable behavior.
 
 Use the issue templates for bugs and feature requests. Bug reports are most useful when they
 include the exact command, SMAIRT version, active harness, safety mode, and a minimal reproduction

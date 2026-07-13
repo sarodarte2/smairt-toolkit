@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a researcher or maintainer workflow improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Researcher workflow and friction
+      description: Explain who is blocked, at which state transition, and why.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: textarea
+    id: gates
+    attributes:
+      label: Human, provenance, collaboration, or safety impact
+    validations:
+      required: true
