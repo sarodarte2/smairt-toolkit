@@ -2,9 +2,10 @@
 
 **Scientific Method with AI Research Toolkit**
 
-SMAIRT is a local-first research framework for scientists working with coding agents such as
-Codex. It gives the researcher and the AI a shared, inspectable project structure so that ideas,
-evidence, code, experiment runs, corrections, and decisions remain connected.
+SMAIRT is a local-first research framework for scientists working with agentic harnesses such as
+Codex, Claude Code, Cursor, Zoo/Cline and OpenCode. It gives the researcher and the AI a shared, 
+inspectable project structure so that ideas, evidence, code, experiment runs, corrections, 
+and decisions remain connected.
 
 The aim is not to automate scientific judgment. It is to make AI-assisted research easier to
 conduct without losing provenance, reproducibility, data safeguards, or the researcher's own
