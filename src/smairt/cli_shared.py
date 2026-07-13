@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import click
 import typer
 from rich.console import Console
-from typer._click.globals import get_current_context
 
 from smairt.project import find_project
 
@@ -24,7 +24,7 @@ def project_root() -> Path:
 
 def json_envelope(payload: object, command: str | None = None) -> dict[str, object]:
     """Wrap machine output in the breaking beta JSON contract."""
-    context = get_current_context(silent=True)
+    context = click.get_current_context(silent=True)
     command_name = command or (context.command_path if context else "smairt")
     mapping = payload if isinstance(payload, dict) else {}
     warnings = mapping.get("warnings", []) if isinstance(mapping, dict) else []

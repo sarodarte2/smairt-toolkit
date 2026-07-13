@@ -69,7 +69,7 @@ def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None
     )["data"]
     assert capsule["capsule_path"].startswith(".smairt/local/context/")
 
-    assert json.loads(invoke_ok(["migrate", "plan", "--json"]).stdout)["data"]["detected"] == "v2"
+    assert json.loads(invoke_ok(["migrate", "plan", "--json"]).stdout)["data"]["detected"] == "v4"
     invoke_ok(["contract", "export"])
     invoke_ok(["contract", "check"])
     invoke_ok(["reference", "list", "--json"])
@@ -109,6 +109,6 @@ def test_cli_renders_model_policy_error_without_traceback(tmp_path: Path, monkey
     monkeypatch.chdir(root)
     result = runner.invoke(app, ["model", "recommend", "--task", "impossible"])
     assert result.exit_code == 2
-    output = result.stdout + result.stderr
+    output = result.output
     assert "unknown task" in output
     assert "Traceback" not in output

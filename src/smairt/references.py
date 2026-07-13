@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 import re
@@ -18,12 +20,13 @@ from pypdf.errors import PdfReadError
 from smairt import __version__
 from smairt.errors import ExternalServiceError
 from smairt.locking import mutating
-from smairt.models import ReferenceRecord, VerificationStatus, utc_now
+from smairt.models import ReferenceRecord, SmairtConfig, VerificationStatus, utc_now
 from smairt.transactions import FileTransaction
 from smairt.utils import (
     atomic_write,
     ensure_within,
     sha256_file,
+    sha256_text,
     slugify,
     validate_identifier,
 )
@@ -32,12 +35,16 @@ DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 MAX_METADATA_BYTES = 10 * 1024 * 1024
 
 
-def _index_yaml(records: list[ReferenceRecord]) -> str:
+def render_index(records: list[ReferenceRecord]) -> str:
     """Render a validated deterministic reference index for atomic transactions."""
     payload = {
-        "references": [record.model_dump(mode="json", exclude_none=True) for record in records]
+        "schema_version": 2,
+        "references": [record.model_dump(mode="json", exclude_none=True) for record in records],
     }
     return yaml.safe_dump(payload, sort_keys=False)
+
+
+_index_yaml = render_index
 
 
 def normalize_doi(value: str) -> str:
@@ -84,7 +91,23 @@ def _first_string(value: object, fallback: str | None = None) -> str | None:
 def load_index(root: Path) -> list[ReferenceRecord]:
     """Load and validate all reference records from the project index."""
     payload = yaml.safe_load((root / "references/index.yaml").read_text(encoding="utf-8")) or {}
+    version = payload.get("schema_version", 1)
+    if version not in {1, 2}:
+        raise ValueError("unsupported reference index schema")
     return [ReferenceRecord.model_validate(item) for item in payload.get("references", [])]
+
+
+def doi_reference_id(doi: str) -> str:
+    """Return a stable opaque ID for a normalized DOI."""
+    return f"doi-{sha256_text(normalize_doi(doi))[:20]}"
+
+
+def zotero_reference_id(library_type: str, item_key: str) -> str:
+    """Return a stable path-safe ID for a Zotero-only item."""
+    if library_type not in {"user", "group"}:
+        raise ValueError("Zotero library type must be user or group")
+    key = validate_identifier(item_key, label="Zotero item key")
+    return f"zotero-{library_type}-{key.lower()}"
 
 
 @mutating("reference index save")
@@ -189,6 +212,428 @@ def add_reference(
     return record
 
 
+def _fetch_crossref(doi: str) -> dict[str, Any]:
+    """Fetch one bounded Crossref work record."""
+    url = "https://api.crossref.org/works/" + urllib.parse.quote(normalize_doi(doi))
+    request = urllib.request.Request(  # noqa: S310
+        url, headers={"User-Agent": f"SMAIRT/{__version__}"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310
+            if getattr(response, "status", 200) != 200:
+                raise ExternalServiceError("Crossref returned an unsuccessful response")
+            raw = _read_metadata_response(response, "Crossref")
+    except urllib.error.HTTPError as exc:
+        raise ExternalServiceError(f"Crossref request failed with HTTP {exc.code}") from None
+    except (urllib.error.URLError, TimeoutError):
+        raise ExternalServiceError("Crossref is unavailable; no reference was changed") from None
+    if not isinstance(raw, dict) or not isinstance(raw.get("message"), dict):
+        raise ExternalServiceError("Crossref returned an unexpected record shape")
+    return raw
+
+
+def _merge_crossref(record: ReferenceRecord, raw: dict[str, Any]) -> None:
+    """Fill missing fields without overwriting verified or manually edited metadata."""
+    message = raw["message"]
+    authors = message.get("author", [])
+    if not isinstance(authors, list) or not all(isinstance(author, dict) for author in authors):
+        raise ExternalServiceError("Crossref returned malformed author metadata")
+    values: dict[str, Any] = {
+        "title": _first_string(message.get("title")),
+        "authors": [
+            " ".join(
+                part
+                for part in (author.get("given"), author.get("family"))
+                if isinstance(part, str) and part
+            )
+            for author in authors
+        ],
+        "venue": _first_string(message.get("container-title")),
+        "volume": message.get("volume"),
+        "issue": message.get("issue"),
+        "pages": message.get("page"),
+        "publisher": message.get("publisher"),
+        "url": message.get("URL"),
+    }
+    date_parts = (message.get("published-print") or message.get("published") or {}).get(
+        "date-parts", []
+    )
+    if date_parts and isinstance(date_parts[0], list) and date_parts[0]:
+        values["year"] = date_parts[0][0]
+    edited = {str(item.get("field")) for item in record.edit_history}
+    for field, value in values.items():
+        fill_empty = value is not None and value != [] and not getattr(record, field)
+        replace_seed = record.verification_status is not VerificationStatus.VERIFIED and field in {
+            "title",
+            "authors",
+        }
+        if value and field not in edited and (fill_empty or replace_seed):
+            setattr(record, field, value)
+
+
+def _resolve_openalex_key(root: Path, api_key: str | None = None) -> str:
+    """Resolve the configured OpenAlex profile without exposing the credential."""
+    if api_key:
+        return api_key
+    from smairt.credentials import resolve_credential
+
+    config = SmairtConfig.load(root / "smairt.yaml")
+    profile = config.integrations.openalex.credential
+    key, _ = resolve_credential(
+        "openalex", profile.profile, profile.environment_variable or "OPENALEX_API_KEY"
+    )
+    if not key:
+        raise ValueError("OpenAlex credential is missing")
+    return key
+
+
+def _fetch_openalex(doi: str, api_key: str) -> dict[str, Any]:
+    """Fetch and validate one bounded OpenAlex work response."""
+    external_id = urllib.parse.quote(f"doi:{normalize_doi(doi)}", safe=":")
+    url = f"https://api.openalex.org/works/{external_id}?" + urllib.parse.urlencode(
+        {"api_key": api_key}
+    )
+    request = urllib.request.Request(  # noqa: S310 - fixed HTTPS endpoint
+        url, headers={"User-Agent": f"SMAIRT/{__version__}"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310
+            if getattr(response, "status", 200) != 200:
+                raise ExternalServiceError("OpenAlex returned an unsuccessful response")
+            raw = _read_metadata_response(response, "OpenAlex")
+    except urllib.error.HTTPError as exc:
+        raise ExternalServiceError(f"OpenAlex request failed with HTTP {exc.code}") from None
+    except (urllib.error.URLError, TimeoutError):
+        raise ExternalServiceError("OpenAlex is unavailable; no reference was changed") from None
+    if not isinstance(raw, dict) or not raw.get("id"):
+        raise ExternalServiceError("OpenAlex returned an unexpected or empty record")
+    location = raw.get("primary_location") or {}
+    if not isinstance(location, dict) or not isinstance(location.get("source") or {}, dict):
+        raise ExternalServiceError("OpenAlex returned malformed location metadata")
+    return raw
+
+
+def _merge_openalex(record: ReferenceRecord, raw: dict[str, Any]) -> None:
+    """Supplement only missing, non-manually-edited fields from OpenAlex."""
+    location = raw.get("primary_location") or {}
+    source = location.get("source") or {}
+    edited = {str(item.get("field")) for item in record.edit_history}
+    values = {
+        "publication_date": raw.get("publication_date"),
+        "venue": source.get("display_name"),
+        "url": location.get("landing_page_url"),
+        "license": location.get("license"),
+    }
+    for field, value in values.items():
+        if value and not getattr(record, field) and field not in edited:
+            setattr(record, field, value)
+    record.identifiers.setdefault("openalex", str(raw["id"]))
+
+
+@mutating("reference add DOI")
+def add_doi_reference(
+    root: Path,
+    doi: str,
+    *,
+    use_openalex: bool = False,
+    confirm_remote: bool = False,
+) -> ReferenceRecord:
+    """Create or merge one metadata-only DOI record from Crossref."""
+    _require_remote_permission(root, confirm_remote)
+    normalized = normalize_doi(doi)
+    crossref_raw = _fetch_crossref(normalized)
+    openalex_raw = None
+    if use_openalex:
+        openalex_raw = _fetch_openalex(normalized, _resolve_openalex_key(root))
+    records = load_index(root)
+    record = next((item for item in records if item.doi == normalized), None)
+    if record is None:
+        record = ReferenceRecord(
+            id=doi_reference_id(normalized),
+            title=normalized,
+            doi=normalized,
+            identifiers={"doi": normalized},
+        )
+        records.append(record)
+    _merge_crossref(record, crossref_raw)
+    if openalex_raw is not None:
+        _merge_openalex(record, openalex_raw)
+    captured = utc_now()
+    crossref_snapshot = (
+        root / "references/provenance" / record.id / f"crossref-{captured.replace(':', '')}.json"
+    )
+    record.source_provenance.append(
+        {
+            "source": "crossref",
+            "captured_at": captured,
+            "snapshot": str(crossref_snapshot.relative_to(root)),
+        }
+    )
+    openalex_snapshot = None
+    if openalex_raw is not None:
+        openalex_snapshot = (
+            root
+            / "references/provenance"
+            / record.id
+            / f"openalex-{captured.replace(':', '')}.json"
+        )
+        record.source_provenance.append(
+            {
+                "source": "openalex",
+                "captured_at": captured,
+                "snapshot": str(openalex_snapshot.relative_to(root)),
+            }
+        )
+    if record.verification_status is not VerificationStatus.VERIFIED:
+        record.verification_status = VerificationStatus.ENRICHED_UNVERIFIED
+    transaction = FileTransaction(root, "reference add DOI")
+    transaction.stage_text(
+        crossref_snapshot, json.dumps(crossref_raw, indent=2, sort_keys=True) + "\n"
+    )
+    if openalex_raw is not None and openalex_snapshot is not None:
+        transaction.stage_text(
+            openalex_snapshot, json.dumps(openalex_raw, indent=2, sort_keys=True) + "\n"
+        )
+    transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
+    transaction.commit()
+    return record
+
+
+@mutating("reference attach")
+def attach_reference(root: Path, identifier: str, source: Path) -> ReferenceRecord:
+    """Attach one explicitly selected local PDF to a metadata-only record."""
+    source = source.expanduser().absolute()
+    if (
+        source.is_symlink()
+        or any(parent.is_symlink() for parent in source.parents)
+        or not source.exists()
+        or source.suffix.lower() != ".pdf"
+    ):
+        raise ValueError("attachment must be an existing non-symlink PDF")
+    source = source.resolve()
+    inspect_pdf(source)
+    records = load_index(root)
+    record = next((item for item in records if item.id == identifier), None)
+    if record is None:
+        raise ValueError(f"unknown reference: {identifier}")
+    if record.local_path:
+        raise ValueError("reference already has an attachment")
+    digest = sha256_file(source)
+    if any(item.sha256 == digest for item in records):
+        raise ValueError("this PDF is already indexed")
+    destination = root / "references/pdfs" / f"{record.id}.pdf"
+    ensure_within(root, destination)
+    if os.path.lexists(destination):
+        raise ValueError("reference attachment destination already exists")
+    position = records.index(record)
+    payload = record.model_dump(mode="json", exclude_none=True)
+    payload.update(local_path=str(destination.relative_to(root / "references")), sha256=digest)
+    record = ReferenceRecord.model_validate(payload)
+    records[position] = record
+    record.source_provenance.append(
+        {"source": "local_pdf", "captured_at": utc_now(), "sha256": digest}
+    )
+    transaction = FileTransaction(root, "reference attach")
+    transaction.stage_bytes(destination, source.read_bytes(), mode=0o644)
+    transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
+    transaction.commit()
+    return record
+
+
+def _merge_zotero_item(
+    records: list[ReferenceRecord], provider: Any, raw: dict[str, Any], fallback_key: str
+) -> ReferenceRecord:
+    """Merge one already-fetched Zotero record without changing a stable ID."""
+    from smairt.zotero import public_item
+
+    item = public_item(raw)
+    doi_value = item.get("DOI")
+    doi = normalize_doi(str(doi_value)) if doi_value else None
+    record = next((existing for existing in records if doi and existing.doi == doi), None)
+    key = str(item.get("key") or fallback_key)
+    validate_identifier(key, label="Zotero item key")
+    creators = item.get("creators") or []
+    authors = [
+        str(
+            creator.get("name")
+            or " ".join(
+                part for part in (creator.get("firstName"), creator.get("lastName")) if part
+            )
+        )
+        for creator in creators
+        if isinstance(creator, dict)
+    ]
+    date = str(item.get("date") or "")
+    year_match = re.search(r"\b(\d{4})\b", date)
+    if record is None:
+        record = ReferenceRecord(
+            id=doi_reference_id(doi)
+            if doi
+            else zotero_reference_id(provider.config.library_type.value, key),
+            title=str(item.get("title") or f"Zotero item {key}"),
+            authors=[author for author in authors if author],
+            year=int(year_match.group(1)) if year_match else None,
+            doi=doi,
+            venue=str(item.get("publicationTitle") or "") or None,
+            url=str(item.get("url") or "") or None,
+            identifiers={"zotero": key, **({"doi": doi} if doi else {})},
+        )
+        records.append(record)
+    else:
+        record.identifiers.setdefault("zotero", key)
+        edited = {str(entry.get("field")) for entry in record.edit_history}
+        missing: dict[str, Any] = {
+            "authors": [author for author in authors if author],
+            "year": int(year_match.group(1)) if year_match else None,
+            "venue": str(item.get("publicationTitle") or "") or None,
+            "url": str(item.get("url") or "") or None,
+        }
+        for field, value in missing.items():
+            if value and not getattr(record, field) and field not in edited:
+                setattr(record, field, value)
+    return record
+
+
+def _zotero_snapshot(root: Path, record: ReferenceRecord, captured: str, suffix: str) -> Path:
+    """Return one collision-resistant bounded raw-snapshot location."""
+    safe_suffix = validate_identifier(suffix, label="Zotero item key").lower()
+    stamp = captured.replace(":", "").replace("+", "")
+    return root / "references/provenance" / record.id / f"zotero-{stamp}-{safe_suffix}.json"
+
+
+@mutating("reference import Zotero")
+def import_zotero_item(root: Path, item_key: str) -> ReferenceRecord:
+    """Import one Zotero item as metadata in one recoverable transaction."""
+    from smairt.zotero import ZoteroProvider
+
+    provider = ZoteroProvider(root)
+    raw = provider.item(item_key)
+    records = load_index(root)
+    record = _merge_zotero_item(records, provider, raw, item_key)
+    captured = utc_now()
+    snapshot = _zotero_snapshot(root, record, captured, item_key)
+    record.source_provenance.append(
+        {"source": "zotero", "captured_at": captured, "snapshot": str(snapshot.relative_to(root))}
+    )
+    transaction = FileTransaction(root, "reference import Zotero")
+    transaction.stage_text(snapshot, json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
+    transaction.commit()
+    return record
+
+
+@mutating("reference import Zotero collection")
+def import_zotero_collection(
+    root: Path, collection_key: str, *, limit: int = 500
+) -> list[ReferenceRecord]:
+    """Import one paginated collection atomically without per-item refetches."""
+    from smairt.zotero import ZoteroProvider
+
+    provider = ZoteroProvider(root)
+    raw_items = provider.collection_items(collection_key, limit)
+    records = load_index(root)
+    imported: list[ReferenceRecord] = []
+    snapshots: list[tuple[Path, dict[str, Any]]] = []
+    for raw in raw_items:
+        data_value = raw.get("data")
+        data = data_value if isinstance(data_value, dict) else {}
+        key_value = raw.get("key") or data.get("key")
+        if not isinstance(key_value, str) or not key_value:
+            raise ValueError("Zotero collection contained an item without a key")
+        record = _merge_zotero_item(records, provider, raw, key_value)
+        captured = utc_now()
+        snapshot = _zotero_snapshot(root, record, captured, key_value)
+        record.source_provenance.append(
+            {
+                "source": "zotero",
+                "captured_at": captured,
+                "snapshot": str(snapshot.relative_to(root)),
+            }
+        )
+        snapshots.append((snapshot, raw))
+        if record not in imported:
+            imported.append(record)
+    transaction = FileTransaction(root, "reference import Zotero collection")
+    for snapshot, raw in snapshots:
+        transaction.stage_text(snapshot, json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
+    transaction.commit()
+    return imported
+
+
+def copy_zotero_attachment(
+    root: Path, item_key: str, attachment_key: str, *, confirmed: bool
+) -> ReferenceRecord:
+    """Copy one explicitly selected local Zotero PDF attachment."""
+    from smairt.models import ZoteroMode
+    from smairt.zotero import ZoteroProvider
+
+    if not confirmed:
+        raise ValueError("local Zotero attachment copying requires --yes")
+    provider = ZoteroProvider(root)
+    if provider.config.mode is not ZoteroMode.LOCAL:
+        raise ValueError("Web attachment downloads are out of scope")
+    parent_raw = provider.item(item_key)
+    child = next(
+        (
+            item
+            for item in provider.children(item_key)
+            if str(item.get("key") or item.get("data", {}).get("key")) == attachment_key
+        ),
+        None,
+    )
+    if child is None:
+        raise ValueError("unknown Zotero attachment")
+    attachment_raw, content = provider.local_attachment(attachment_key)
+    try:
+        reader = PdfReader(io.BytesIO(content), strict=False)
+        if reader.is_encrypted:
+            raise ValueError("encrypted PDFs are not supported")
+        if not reader.pages:
+            raise ValueError("PDF contains no pages")
+    except (PdfReadError, OSError) as exc:
+        raise ValueError("Zotero attachment is corrupt or unreadable") from exc
+
+    records = load_index(root)
+    record = _merge_zotero_item(records, provider, parent_raw, item_key)
+    if record.local_path:
+        raise ValueError("reference already has an attachment")
+    digest = hashlib.sha256(content).hexdigest()
+    if any(existing.sha256 == digest for existing in records):
+        raise ValueError("this PDF is already indexed")
+    destination = root / "references/pdfs" / f"{record.id}.pdf"
+    ensure_within(root, destination)
+    if os.path.lexists(destination):
+        raise ValueError("reference attachment destination already exists")
+    position = records.index(record)
+    payload = record.model_dump(mode="json", exclude_none=True)
+    payload.update(local_path=str(destination.relative_to(root / "references")), sha256=digest)
+    record = ReferenceRecord.model_validate(payload)
+    records[position] = record
+    captured = utc_now()
+    parent_snapshot = _zotero_snapshot(root, record, captured, item_key)
+    attachment_snapshot = _zotero_snapshot(root, record, captured, attachment_key)
+    record.source_provenance.extend(
+        [
+            {
+                "source": "zotero",
+                "captured_at": captured,
+                "snapshot": str(parent_snapshot.relative_to(root)),
+            },
+            {"source": "zotero_local_pdf", "captured_at": captured, "sha256": digest},
+        ]
+    )
+    transaction = FileTransaction(root, "reference copy Zotero attachment")
+    transaction.stage_text(parent_snapshot, json.dumps(parent_raw, indent=2, sort_keys=True) + "\n")
+    transaction.stage_text(
+        attachment_snapshot, json.dumps(attachment_raw, indent=2, sort_keys=True) + "\n"
+    )
+    transaction.stage_bytes(destination, content, mode=0o644)
+    transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
+    transaction.commit()
+    return record
+
+
 def get_reference(root: Path, identifier: str) -> ReferenceRecord:
     """Return one indexed reference by stable identifier."""
     validate_identifier(identifier, label="reference ID")
@@ -274,54 +719,11 @@ def enrich_reference(
     record = next((item for item in records if item.id == identifier), None)
     if record is None or not record.doi:
         raise ValueError("reference enrichment requires a DOI")
-    url = "https://api.crossref.org/works/" + urllib.parse.quote(normalize_doi(record.doi))
-    request = urllib.request.Request(  # noqa: S310 - URL is constructed from HTTPS literal
-        url, headers={"User-Agent": f"SMAIRT/{__version__}"}
-    )
-    try:
-        with urllib.request.urlopen(  # noqa: S310 - Request URL is HTTPS-only above
-            request, timeout=15
-        ) as response:
-            if getattr(response, "status", 200) != 200:
-                raise ExternalServiceError("Crossref returned an unsuccessful response")
-            raw = _read_metadata_response(response, "Crossref")
-    except urllib.error.HTTPError as exc:
-        raise ExternalServiceError(f"Crossref request failed with HTTP {exc.code}") from None
-    except (urllib.error.URLError, TimeoutError):
-        raise ExternalServiceError(
-            "Crossref is unavailable; local metadata was preserved"
-        ) from None
-    if not isinstance(raw, dict) or not isinstance(raw.get("message"), dict):
-        raise ExternalServiceError("Crossref returned an unexpected record shape")
+    raw = _fetch_crossref(record.doi)
     snapshot = (
         root / "references/provenance" / identifier / f"crossref-{utc_now().replace(':', '')}.json"
     )
-    message = raw.get("message", {})
-    authors = message.get("author", [])
-    if not isinstance(authors, list) or not all(isinstance(author, dict) for author in authors):
-        raise ExternalServiceError("Crossref returned malformed author metadata")
-    record.title = _first_string(message.get("title"), record.title) or record.title
-    record.authors = [
-        " ".join(
-            part
-            for part in (author.get("given"), author.get("family"))
-            if isinstance(part, str) and part
-        )
-        for author in authors
-    ] or record.authors
-    record.venue = _first_string(message.get("container-title"), record.venue)
-    for field, key in (
-        ("volume", "volume"),
-        ("issue", "issue"),
-        ("pages", "page"),
-        ("publisher", "publisher"),
-        ("url", "URL"),
-    ):
-        value = message.get(key)
-        if value is not None and not isinstance(value, str):
-            raise ExternalServiceError(f"Crossref returned malformed {key} metadata")
-        if value:
-            setattr(record, field, value)
+    _merge_crossref(record, raw)
     record.source_provenance.append(
         {
             "source": "crossref",
@@ -329,7 +731,8 @@ def enrich_reference(
             "snapshot": str(snapshot.relative_to(root)),
         }
     )
-    record.verification_status = VerificationStatus.ENRICHED_UNVERIFIED
+    if record.verification_status is not VerificationStatus.VERIFIED:
+        record.verification_status = VerificationStatus.ENRICHED_UNVERIFIED
     transaction = FileTransaction(root, "reference enrich crossref")
     transaction.stage_text(snapshot, json.dumps(raw, indent=2, sort_keys=True) + "\n")
     transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
@@ -346,51 +749,16 @@ def enrich_openalex(
     confirm_remote: bool = False,
 ) -> ReferenceRecord:
     """Optionally enrich a DOI record from OpenAlex without replacing Crossref authority."""
-    records = load_index(root)
     _require_remote_permission(root, confirm_remote)
+    records = load_index(root)
     record = next((item for item in records if item.id == identifier), None)
     if record is None or not record.doi:
         raise ValueError("OpenAlex enrichment requires a DOI")
-    key = api_key or os.environ.get("OPENALEX_API_KEY")
-    if not key:
-        raise ValueError("OpenAlex enrichment requires OPENALEX_API_KEY")
-    external_id = urllib.parse.quote(f"doi:{normalize_doi(record.doi)}", safe=":")
-    url = f"https://api.openalex.org/works/{external_id}?" + urllib.parse.urlencode(
-        {"api_key": key}
-    )
-    request = urllib.request.Request(  # noqa: S310 - URL is constructed from HTTPS literal
-        url, headers={"User-Agent": f"SMAIRT/{__version__}"}
-    )
-    try:
-        with urllib.request.urlopen(  # noqa: S310 - Request URL is HTTPS-only above
-            request, timeout=15
-        ) as response:
-            if getattr(response, "status", 200) != 200:
-                raise ExternalServiceError("OpenAlex returned an unsuccessful response")
-            raw = _read_metadata_response(response, "OpenAlex")
-    except urllib.error.HTTPError as exc:
-        raise ExternalServiceError(f"OpenAlex request failed with HTTP {exc.code}") from None
-    except (urllib.error.URLError, TimeoutError):
-        raise ExternalServiceError(
-            "OpenAlex is unavailable; local metadata was preserved"
-        ) from None
-    if not isinstance(raw, dict) or not raw.get("id"):
-        raise ExternalServiceError("OpenAlex returned an unexpected or empty record")
+    raw = _fetch_openalex(record.doi, _resolve_openalex_key(root, api_key))
     snapshot = (
         root / "references/provenance" / identifier / f"openalex-{utc_now().replace(':', '')}.json"
     )
-    location = raw.get("primary_location") or {}
-    if not isinstance(location, dict):
-        raise ExternalServiceError("OpenAlex returned malformed location metadata")
-    source = location.get("source") or {}
-    if not isinstance(source, dict):
-        raise ExternalServiceError("OpenAlex returned malformed source metadata")
-    # OpenAlex supplements missing fields. Crossref-derived values remain authoritative.
-    record.publication_date = record.publication_date or raw.get("publication_date")
-    record.venue = record.venue or source.get("display_name")
-    record.url = record.url or location.get("landing_page_url")
-    record.license = record.license or location.get("license")
-    record.identifiers["openalex"] = str(raw.get("id", ""))
+    _merge_openalex(record, raw)
     record.source_provenance.append(
         {
             "source": "openalex",
@@ -398,7 +766,8 @@ def enrich_openalex(
             "snapshot": str(snapshot.relative_to(root)),
         }
     )
-    record.verification_status = VerificationStatus.ENRICHED_UNVERIFIED
+    if record.verification_status is not VerificationStatus.VERIFIED:
+        record.verification_status = VerificationStatus.ENRICHED_UNVERIFIED
     transaction = FileTransaction(root, "reference enrich openalex")
     transaction.stage_text(snapshot, json.dumps(raw, indent=2, sort_keys=True) + "\n")
     transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
@@ -465,7 +834,7 @@ def export_references(root: Path, format_name: str) -> str:
 def unindexed_pdfs(root: Path) -> list[Path]:
     """List local reference PDFs whose checksums are absent from the index."""
     records = load_index(root)
-    known = {record.sha256 for record in records}
+    known = {record.sha256 for record in records if record.sha256}
     return [
         path
         for path in sorted((root / "references/pdfs").glob("*.pdf"))

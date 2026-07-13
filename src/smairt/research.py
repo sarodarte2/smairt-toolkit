@@ -289,7 +289,7 @@ reference_index_sha256: {sha256_file(references)}
     transaction.stage_text(path, content)
     transaction.stage_text(
         root / "smairt.yaml",
-        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+        config.to_yaml(),
     )
     transaction.stage_text(contribution, contribution_content)
     stage_event(
@@ -360,7 +360,7 @@ def create_experiment(
     )
     transaction.stage_text(
         root / "smairt.yaml",
-        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+        config.to_yaml(),
     )
     stage_event(root, transaction, "experiment.created", artifact_ids=[experiment_id])
     transaction.commit()
@@ -409,7 +409,7 @@ def new_iteration(root: Path, experiment_id: str, source_id: str) -> Path:
     config.active.iteration = iteration_id
     transaction.stage_text(
         root / "smairt.yaml",
-        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+        config.to_yaml(),
     )
     stage_event(
         root,
@@ -580,7 +580,7 @@ def record_decision(
         config.active.accepted_run = run_id
         transaction.stage_text(
             root / "smairt.yaml",
-            yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+            config.to_yaml(),
         )
     stage_event(
         root,

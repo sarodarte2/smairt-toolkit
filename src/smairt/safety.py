@@ -10,8 +10,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
-import yaml
-
 from smairt.locking import mutating
 from smairt.models import RepositoryVisibility, SafetyMode, SmairtConfig, utc_now
 from smairt.project import _git_files, is_prohibited
@@ -144,7 +142,7 @@ def attest_repository(root: Path, visibility: str) -> dict[str, object]:
     transaction = FileTransaction(root, "safety repository attest")
     transaction.stage_text(
         root / "smairt.yaml",
-        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+        config.to_yaml(),
     )
     stage_event(
         root,
@@ -280,7 +278,7 @@ def set_safety_mode(root: Path, mode: str) -> dict[str, object]:
     transaction = FileTransaction(root, "safety mode set")
     transaction.stage_text(
         root / "smairt.yaml",
-        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+        config.to_yaml(),
     )
     stage_event(
         root,

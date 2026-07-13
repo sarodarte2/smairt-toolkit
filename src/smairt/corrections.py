@@ -91,7 +91,7 @@ def correct_run(
         config.active.accepted_run = None
         transaction.stage_text(
             root / "smairt.yaml",
-            yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+            config.to_yaml(),
         )
     for evidence in (root / "paper/evidence").glob("*.json"):
         card = EvidenceCard.model_validate_json(evidence.read_text(encoding="utf-8"))

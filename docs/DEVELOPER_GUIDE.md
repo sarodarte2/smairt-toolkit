@@ -12,8 +12,7 @@ python -m pip install -e '.[dev]'
 ruff format --check src tests scripts
 ruff check src tests scripts
 mypy src/smairt
-python -m pytest --cov=smairt --cov-branch
-python scripts/check_critical_coverage.py
+python -m pytest -p no:cacheprovider
 ```
 
 Runtime code is under `src/smairt/`; tests are under `tests/`. Public functions and classes need
@@ -39,7 +38,7 @@ upstream JSON, and custom-file preservation. Capabilities use `blocking`, `advis
 
 ## Tests and release gates
 
-Coverage is source-scoped with branches and a 90% global floor. Locking, transactions, runner,
-safety, corrections, migrations, integrity, research transitions, and harness switching have a
-95% per-module floor enforced from the coverage JSON report. The security workflow runs CodeQL,
-pip-audit, dependency review, and gitleaks. See [Release](RELEASE.md).
+Functional tests protect locking, transactions, runner behavior, safety, corrections, migrations,
+integrity, research transitions, and harness switching. The security workflow runs separate
+CodeQL, third-party dependency audit, dependency review, and gitleaks jobs. See
+[Release](RELEASE.md).

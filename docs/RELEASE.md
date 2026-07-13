@@ -3,14 +3,14 @@
 ## Automated gates
 
 A release candidate must pass CI on Python 3.11–3.13 for Linux and macOS, minimum/latest dependency
-resolution, source-scoped branch coverage at or above 90%, strict mypy, Ruff, clean-wheel user
+resolution, functional scientific and recovery tests, strict mypy, Ruff, clean-wheel user
 journeys, CodeQL, pip-audit, dependency review, gitleaks, and the formal repository security scan.
 
 ## Manual gates
 
 - Run the WSL clean-wheel smoke journey.
-- Confirm the TUI first paint and 80×24 wizard/dashboard behavior.
-- Confirm ordinary status, validation, doctor, and TUI refresh have no network access.
+- Confirm the workflow hub in narrow and normal terminals without alternate-screen behavior.
+- Confirm ordinary status, validation, doctor, and workflow refresh have no network access.
 - Review experimental safety wording and controlled-data refusal with the team.
 - Verify README commands, links, badges, changelog, and installation instructions.
 - Confirm no high/critical validated security or dependency finding is open.

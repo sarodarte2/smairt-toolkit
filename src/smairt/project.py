@@ -59,7 +59,7 @@ def update_project_identity(
     config.project.author = author
     config.project.question = question
     config.project.description = description
-    rendered = yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False)
+    rendered = config.to_yaml()
     SmairtConfig.model_validate(yaml.safe_load(rendered))
     transaction = FileTransaction(root, "project identity update")
     transaction.stage_text(root / "smairt.yaml", rendered)

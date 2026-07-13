@@ -1,71 +1,120 @@
-"""Textual interface tests for safe creation and existing-project dashboards."""
+"""Terminal-native workflow tests for navigation, state, and project creation."""
 
-import asyncio
 from pathlib import Path
 
-from textual.widgets import Button, Input, Static
+import pytest
+from prompt_toolkit.application import create_app_session
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import DummyOutput
 
-from smairt.tui import NewProjectApp, ProjectMenuApp
-
-
-def test_new_project_tui_mounts(tmp_path: Path) -> None:
-    """Verify the creation wizard exposes every required low-friction field."""
-
-    async def exercise() -> None:
-        """Mount the wizard in Textual's isolated test driver."""
-        app = NewProjectApp(tmp_path / "tui-project")
-        async with app.run_test(size=(100, 50)) as pilot:
-            await pilot.pause()
-            assert app.query_one("#name")
-            assert app.query_one("#author")
-            assert app.query_one("#classification")
-            assert app.query_one("#environment")
-
-    asyncio.run(exercise())
+from smairt.models import ProjectLicense, SmairtConfig
+from smairt.tui import BackNavigation, _preflight_destination, _select, run_new_project
 
 
-def test_new_project_preflights_nonempty_destination(tmp_path: Path) -> None:
-    """Explain non-empty destinations before creation can leave partial output."""
-    destination = tmp_path / "partial"
-    destination.mkdir()
-    (destination / "leftover").mkdir()
+def test_choice_uses_arrows_enter_and_escape() -> None:
+    """Exercise Prompt Toolkit's real key processing without an alternate screen."""
 
-    async def exercise() -> None:
-        """Submit the preview action and inspect its non-destructive warning."""
-        app = NewProjectApp(destination)
-        async with app.run_test(size=(100, 50)) as pilot:
-            app.query_one("#name", Input).value = "Test Project"
-            app.query_one("#author", Input).value = "Manual Researcher"
-            app.query_one("#submit", Button).press()
-            await pilot.pause()
-            message = str(app.query_one("#message", Static).render())
-            assert "Choose a new empty folder" in message
-            assert not app.previewing
-            assert not (destination / "smairt.yaml").exists()
+    class TrackingOutput(DummyOutput):
+        entered_alternate_screen = False
 
-    asyncio.run(exercise())
+        def enter_alternate_screen(self) -> None:
+            self.entered_alternate_screen = True
+
+    output = TrackingOutput()
+    with (
+        create_pipe_input() as input_stream,
+        create_app_session(input=input_stream, output=output),
+    ):
+        input_stream.send_text("\x1b[B\r")
+        assert _select("Choose", [("first", "First"), ("second", "Second")]) == "second"
+        input_stream.send_text("\x1b")
+        with pytest.raises(BackNavigation):
+            _select("Choose", [("first", "First")])
+        input_stream.send_text("\x03")
+        with pytest.raises(KeyboardInterrupt):
+            _select("Choose", [("first", "First")])
+    assert not output.entered_alternate_screen
 
 
-def test_project_menu_mounts(tmp_path: Path) -> None:
-    """Verify the existing-project dashboard renders project identity."""
-    from smairt.models import DataClassification, EnvironmentMode
-    from smairt.scaffold import create_project
+def test_new_project_workflow_creates_v4_project(monkeypatch, tmp_path: Path) -> None:
+    """Create through retained-state steps and verify metadata and managed license."""
+    target = tmp_path / "terminal-project"
 
-    root = tmp_path / "project"
-    create_project(
-        root,
-        name="TUI",
-        author="Researcher",
-        classification=DataClassification.PUBLIC,
-        initialize_git=False,
-        environment_mode=EnvironmentMode.NONE,
-    )
+    def answer_text(message: str, default: str = "") -> str:
+        answers = {
+            "Destination": str(target),
+            "Project name": "Terminal Study",
+            "Primary researcher": "Researcher",
+            "Email (optional)": "researcher@example.org",
+            "Fields of study, comma separated (optional)": "Biology, biology, Genomics",
+        }
+        return answers.get(message, default)
 
-    async def exercise() -> None:
-        """Mount the project dashboard and inspect its visible title."""
-        app = ProjectMenuApp(root)
-        async with app.run_test(size=(100, 50)) as pilot:
-            await pilot.pause()
-            assert "TUI" in str(app.query_one(".title").render())
+    def answer_select(message: str, options, default=None):
+        answers = {
+            "Register this researcher as the active contributor?": True,
+            "Add another collaborator?": False,
+            "Project license": ProjectLicense.MIT,
+            "Initialize Git?": False,
+            "Review": "create",
+            "Next": False,
+        }
+        return answers.get(message, default if default is not None else options[0][0])
 
-    asyncio.run(exercise())
+    monkeypatch.setattr("smairt.tui._text", answer_text)
+    monkeypatch.setattr("smairt.tui._select", answer_select)
+
+    assert run_new_project(target) == target
+    config = SmairtConfig.load(target / "smairt.yaml")
+    assert config.schema_version == 4
+    assert config.project.fields_of_study == ["Biology", "Genomics"]
+    assert config.project.license is ProjectLicense.MIT
+    assert config.contributors[0].email == "researcher@example.org"
+    assert (target / "LICENSE").read_text().startswith("MIT License")
+    assert (target / ".smairt/license.json").is_file()
+
+
+def test_new_project_escape_preserves_previous_values(monkeypatch, tmp_path: Path) -> None:
+    """Escape moves back one step and supplies prior values as editable defaults."""
+    target = tmp_path / "retained"
+    observed_name_defaults: list[str] = []
+    escaped = False
+
+    def answer_text(message: str, default: str = "") -> str:
+        nonlocal escaped
+        if message == "Destination":
+            return str(target)
+        if message == "Project name":
+            observed_name_defaults.append(default)
+            return default or "Retained Study"
+        if message == "Primary researcher":
+            return "Researcher"
+        if message == "Initial research question (optional)" and not escaped:
+            escaped = True
+            raise BackNavigation
+        return default
+
+    def answer_select(message: str, options, default=None):
+        answers = {
+            "Register this researcher as the active contributor?": True,
+            "Add another collaborator?": False,
+            "Initialize Git?": False,
+            "Review": "cancel",
+        }
+        return answers.get(message, default if default is not None else options[0][0])
+
+    monkeypatch.setattr("smairt.tui._text", answer_text)
+    monkeypatch.setattr("smairt.tui._select", answer_select)
+
+    assert run_new_project(target) is None
+    assert observed_name_defaults == ["", "Retained Study"]
+
+
+def test_nonempty_destination_is_rejected_before_writes(tmp_path: Path) -> None:
+    """Keep an existing non-project folder untouched unless init is explicit."""
+    target = tmp_path / "nonempty"
+    target.mkdir()
+    (target / "notes.txt").write_text("research notes")
+    with pytest.raises(FileExistsError, match="contains files"):
+        _preflight_destination(target, allow_existing=False)
+    assert not (target / "smairt.yaml").exists()

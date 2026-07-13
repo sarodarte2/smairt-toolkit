@@ -13,6 +13,7 @@ from pathlib import Path
 import yaml
 
 from smairt import __version__
+from smairt.licenses import license_manifest, render_license
 from smairt.locking import ProjectMutationLock
 from smairt.models import (
     Contributor,
@@ -24,6 +25,7 @@ from smairt.models import (
     HarnessConfig,
     HarnessName,
     ProjectInfo,
+    ProjectLicense,
     SafetyMode,
     SmairtConfig,
 )
@@ -321,20 +323,50 @@ def conda_environments() -> list[dict[str, str]]:
     """Discover available Conda environments without failing when Conda is absent."""
     if not shutil.which("conda"):
         return []
-    result = subprocess.run(
-        ["conda", "env", "list", "--json"], capture_output=True, text=True, check=False
-    )
+    try:
+        result = subprocess.run(
+            ["conda", "env", "list", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
     if result.returncode:
         return []
-    payload = json.loads(result.stdout)
-    return [{"name": Path(prefix).name or "base", "prefix": prefix} for prefix in payload["envs"]]
+    try:
+        payload = json.loads(result.stdout)
+        environments = payload["envs"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return []
+    if not isinstance(environments, list) or not all(
+        isinstance(item, str) for item in environments
+    ):
+        return []
+    return [{"name": Path(prefix).name or "base", "prefix": prefix} for prefix in environments]
 
 
 def create_conda_environment(name: str) -> None:
     """Create one Python 3.11 Conda environment owned by the research project."""
     if not shutil.which("conda"):
         raise RuntimeError("Conda is not installed; choose an existing/no-managed environment")
-    subprocess.run(["conda", "create", "-y", "-n", name, "python=3.11"], check=True)
+    try:
+        subprocess.run(
+            ["conda", "create", "-y", "-n", name, "python=3.11"],
+            check=True,
+            timeout=900,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Conda environment creation timed out after 15 minutes") from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "Conda could not create the environment; run 'conda info --envs' and retry"
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            "Conda could not start; run 'smairt setup doctor' for shell setup guidance"
+        ) from exc
 
 
 def _write(path: Path, relative: str, content: str) -> None:
@@ -364,8 +396,11 @@ def create_project(
     name: str,
     author: str,
     classification: DataClassification,
+    author_email: str | None = None,
     question: str | None = None,
     description: str | None = None,
+    fields_of_study: list[str] | None = None,
+    license_name: ProjectLicense = ProjectLicense.MIT,
     initialize_git: bool = True,
     environment_mode: EnvironmentMode = EnvironmentMode.NONE,
     environment_name: str | None = None,
@@ -394,9 +429,12 @@ def create_project(
                 destination,
                 name=name,
                 author=author,
+                author_email=author_email,
                 classification=classification,
                 question=question,
                 description=description,
+                fields_of_study=fields_of_study or [],
+                license_name=license_name,
                 initialize_git=initialize_git,
                 environment_mode=environment_mode,
                 environment_name=environment_name,
@@ -416,9 +454,12 @@ def create_project(
             temporary,
             name=name,
             author=author,
+            author_email=author_email,
             classification=classification,
             question=question,
             description=description,
+            fields_of_study=fields_of_study or [],
+            license_name=license_name,
             initialize_git=initialize_git,
             environment_mode=environment_mode,
             environment_name=environment_name,
@@ -444,9 +485,12 @@ def _create_project_in_place(
     *,
     name: str,
     author: str,
+    author_email: str | None,
     classification: DataClassification,
     question: str | None,
     description: str | None,
+    fields_of_study: list[str],
+    license_name: ProjectLicense,
     initialize_git: bool,
     environment_mode: EnvironmentMode,
     environment_name: str | None,
@@ -475,7 +519,11 @@ def _create_project_in_place(
 
     git_exists = (destination / ".git").exists()
     git_enabled = initialize_git or git_exists
-    contributor = Contributor(id=slugify(author), name=author) if confirm_contributor else None
+    contributor = (
+        Contributor(id=slugify(author), name=author, email=author_email)
+        if confirm_contributor
+        else None
+    )
     config = SmairtConfig(
         project=ProjectInfo(
             name=name,
@@ -483,6 +531,8 @@ def _create_project_in_place(
             author=author,
             question=question or None,
             description=description or None,
+            fields_of_study=fields_of_study,
+            license=license_name,
         ),
         data=DataPolicy(classification=classification),
         environment=EnvironmentConfig(
@@ -552,12 +602,16 @@ def _create_project_in_place(
             "# References\n\n"
             "PDFs remain local; verified metadata and checksums live in index.yaml.\n"
         ),
-        "references/index.yaml": "references: []\n",
+        "references/index.yaml": "schema_version: 2\nreferences: []\n",
         "paper/README.md": PAPER_README,
         "paper/manifest.yaml": "elements: []\n",
         "paper/contribution_statement.md": "# Contribution Statement\n",
         "environment/software_versions.yaml": "tools: {}\n",
     }
+    license_content = render_license(license_name, author)
+    if license_content is not None:
+        files["LICENSE"] = license_content
+        files[".smairt/license.json"] = license_manifest(license_name, license_content)
     if environment_mode is EnvironmentMode.NEW_CONDA:
         files["environment/environment.yml"] = (
             f"name: {environment_name}\n"
@@ -578,9 +632,7 @@ def _create_project_in_place(
             relative: sha256_text(content.rstrip() + "\n") for relative, content in managed.items()
         },
     }
-    config_content = yaml.safe_dump(
-        config.model_dump(mode="json", exclude_none=True), sort_keys=False
-    )
+    config_content = config.to_yaml()
     framework_content = yaml.safe_dump(framework_manifest, sort_keys=False)
 
     from smairt.harnesses import ADAPTERS, select_harness

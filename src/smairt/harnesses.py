@@ -15,7 +15,7 @@ from smairt.models import HarnessName, SmairtConfig, utc_now
 from smairt.transactions import FileTransaction
 from smairt.utils import ensure_within, sha256_text
 
-ADAPTER_VERSION = 3
+ADAPTER_VERSION = 4
 BEGIN_MARKER = "<!-- SMAIRT:BEGIN MANAGED CORE -->"
 END_MARKER = "<!-- SMAIRT:END MANAGED CORE -->"
 CORE_RULES = """# SMAIRT managed core
@@ -38,30 +38,7 @@ class Adapter:
     executable: frozenset[str] = frozenset()
 
 
-CODEX_FILES = {
-    ".codex/config.toml": 'model_instructions_file = "../AGENTS.md"\n',
-    ".codex/hooks.json": json.dumps(
-        {
-            "hooks": {
-                "PreToolUse": [
-                    {
-                        "matcher": "^Bash$",
-                        "hooks": [
-                            {
-                                "type": "command",
-                                "command": "smairt validate --tool-input",
-                                "timeout": 30,
-                                "statusMessage": "Checking SMAIRT safety policy",
-                            }
-                        ],
-                    }
-                ]
-            }
-        },
-        indent=2,
-    )
-    + "\n",
-}
+CODEX_FILES: dict[str, str] = {}
 
 ZOO_FILES = {
     ".roo/rules/01-smairt.md": (
@@ -103,6 +80,14 @@ ZOO_FILES = {
         sort_keys=False,
     ),
 }
+
+MCP_TOOL_NAMES = [
+    "reference_search",
+    "reference_get",
+    "zotero_search",
+    "zotero_get_item",
+    "zotero_list_collections",
+]
 
 CLINE_PRE_TOOL = """#!/bin/sh
 INPUT=$(cat)
@@ -168,18 +153,67 @@ ADAPTERS = {
     ),
 }
 
+
+def _adapter(root: Path, name: HarnessName, *, enabled: bool | None = None) -> Adapter:
+    """Render current project-scoped adapter files without embedding credentials."""
+    base = ADAPTERS[name]
+    files = dict(base.files)
+    config = SmairtConfig.load(root / "smairt.yaml")
+    is_enabled = name in config.integrations.mcp.enabled_harnesses if enabled is None else enabled
+    if name is HarnessName.CODEX:
+        content = (
+            'model_instructions_file = "../AGENTS.md"\n\n'
+            '[[hooks.PreToolUse]]\nmatcher = "^Bash$"\n\n'
+            '[[hooks.PreToolUse.hooks]]\ntype = "command"\n'
+            'command = "smairt validate --tool-input"\ntimeout = 30\n'
+            'statusMessage = "Checking SMAIRT safety policy"\n'
+        )
+        if is_enabled:
+            content += (
+                '\n[mcp_servers.smairt]\ncommand = "smairt"\nargs = ["mcp", "serve"]\n'
+                f"enabled_tools = {json.dumps(MCP_TOOL_NAMES)}\n"
+            )
+        files[".codex/config.toml"] = content
+    elif name is HarnessName.ZOO:
+        path = _managed_path(root, ".roo/mcp.json")
+        payload: dict[str, Any] = {"mcpServers": {}}
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(".roo/mcp.json must be valid JSON") from exc
+            if not isinstance(loaded, dict) or not isinstance(loaded.get("mcpServers", {}), dict):
+                raise ValueError(".roo/mcp.json must contain an mcpServers object")
+            payload = loaded
+            payload.setdefault("mcpServers", {})
+        servers = payload["mcpServers"]
+        servers.pop("smairt", None)
+        if is_enabled:
+            servers["smairt"] = {
+                "command": "smairt",
+                "args": ["mcp", "serve"],
+                "alwaysAllow": MCP_TOOL_NAMES,
+            }
+        if servers:
+            files[".roo/mcp.json"] = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    return Adapter(name, files, base.executable)
+
+
 CAPABILITIES: dict[str, dict[str, object]] = {
     "codex": {
         "rules": "advisory",
         "protected_operation_hook": "advisory",
         "modes": "unsupported",
         "context_restore": "manual",
+        "mcp": "read_only_opt_in",
+        "configuration_notice": "project hooks and MCP require Codex project trust",
     },
     "zoo": {
         "rules": "advisory",
         "protected_operation_hook": "unsupported",
         "modes": "advisory",
         "context_restore": "manual",
+        "mcp": "read_only_opt_in",
         "project_paths": ".roo, .roomodes, and .rooignore are intentionally Roo-compatible",
     },
     "cline": {
@@ -187,6 +221,7 @@ CAPABILITIES: dict[str, dict[str, object]] = {
         "protected_operation_hook": "blocking",
         "modes": "advisory",
         "context_restore": "advisory",
+        "mcp": "deferred",
     },
 }
 
@@ -306,7 +341,7 @@ def harness_status(root: Path, harness: str | None = None) -> dict[str, Any]:
     try:
         if manifest:
             declared_files = dict(manifest.get("files", {}))
-            for relative in ADAPTERS[name].files:
+            for relative in _adapter(root, name).files:
                 if relative not in declared_files:
                     missing.append(relative)
             for relative, digest in dict(manifest.get("files", {})).items():
@@ -317,7 +352,7 @@ def harness_status(root: Path, harness: str | None = None) -> dict[str, Any]:
                     modified.append(relative)
         executable_errors = [
             relative
-            for relative in ADAPTERS[name].executable
+            for relative in _adapter(root, name).executable
             if _managed_path(root, relative).exists()
             and not _managed_path(root, relative).stat().st_mode & 0o111
         ]
@@ -342,7 +377,11 @@ def harness_status(root: Path, harness: str | None = None) -> dict[str, Any]:
         "schema_errors": schema_errors,
         "manifest_error": manifest_error,
         "configuration_notice": (
-            "Cline hooks must be enabled in Cline settings" if name is HarnessName.CLINE else None
+            "Cline hooks must be enabled in Cline settings"
+            if name is HarnessName.CLINE
+            else "Codex project hooks and MCP require project trust"
+            if name is HarnessName.CODEX
+            else None
         ),
     }
 
@@ -356,7 +395,7 @@ def switch_plan(root: Path, harness: str) -> dict[str, Any]:
     target_manifest = _load_manifest(root, target_name) or {"files": {}}
     current_files = dict(current_manifest.get("files", {}))
     known_target = dict(target_manifest.get("files", {}))
-    target_files = ADAPTERS[target_name].files
+    target_files = _adapter(root, target_name).files
     remove: list[str] = []
     modified: list[str] = []
     conflicts: list[str] = []
@@ -451,14 +490,14 @@ def _stage_harness_selection(
         transaction.stage_bytes(
             destination, source.read_bytes(), mode=source.stat().st_mode & 0o777
         )
-        if relative not in ADAPTERS[target_name].files:
+        if relative not in _adapter(root, target_name).files:
             transaction.stage_delete(source)
     for relative in plan["remove"]:
         transaction.stage_delete(_managed_path(root, relative))
     agents = _managed_path(root, "AGENTS.md")
     transaction.stage_text(agents, _merge_agents(agents.read_text() if agents.exists() else ""))
     hashes: dict[str, str] = {}
-    adapter = ADAPTERS[target_name]
+    adapter = _adapter(root, target_name)
     for relative, content in adapter.files.items():
         path = _managed_path(root, relative)
         transaction.stage_text(
@@ -481,7 +520,7 @@ def _stage_harness_selection(
     config.harness.activated_at = utc_now()
     transaction.stage_text(
         root / "smairt.yaml",
-        yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False),
+        config.to_yaml(),
     )
     fixture = root / ".smairt/contracts/v1/fixtures" / f"{target_name.value}.json"
     transaction.stage_text(
@@ -499,6 +538,112 @@ def install_harness(root: Path, harness: str, *, upgrade: bool = False) -> dict[
 def list_harnesses(root: Path) -> list[dict[str, object]]:
     """Return status for every maintained harness adapter."""
     return [harness_status(root, name.value) for name in HarnessName]
+
+
+def mcp_status(root: Path) -> dict[str, object]:
+    """Report project-scoped MCP state without starting a provider connection."""
+    config = SmairtConfig.load(root / "smairt.yaml")
+    return {
+        "active_harness": config.harness.active.value,
+        "enabled_harnesses": [item.value for item in config.integrations.mcp.enabled_harnesses],
+        "zotero_access": config.integrations.zotero.mcp_access_enabled,
+        "tools": MCP_TOOL_NAMES,
+        "network_accessed": False,
+    }
+
+
+@mutating("MCP harness configuration")
+def configure_mcp(
+    root: Path,
+    harness: HarnessName,
+    enabled: bool,
+    *,
+    dry_run: bool = False,
+) -> dict[str, object]:
+    """Transactionally toggle MCP for the active Codex or Zoo adapter."""
+    config = SmairtConfig.load(root / "smairt.yaml")
+    if config.schema_version < 4:
+        raise ValueError("MCP settings require schema v4; run 'smairt migrate apply'")
+    if harness is HarnessName.CLINE:
+        raise ValueError("Cline MCP configuration is deferred")
+    if config.harness.active is not harness:
+        raise ValueError("MCP can be changed only for the active harness")
+    currently_enabled = harness in config.integrations.mcp.enabled_harnesses
+    if currently_enabled is enabled:
+        return {
+            "harness": harness.value,
+            "enabled": enabled,
+            "changed": False,
+            "files": [],
+            **mcp_status(root),
+        }
+    manifest = _load_manifest(root, harness)
+    if manifest is None:
+        raise ValueError("active harness is not installed")
+    modified = []
+    for relative, digest in dict(manifest["files"]).items():
+        path = _managed_path(root, relative)
+        if path.exists() and sha256_text(path.read_text()) != digest:
+            if harness is HarnessName.ZOO and relative == ".roo/mcp.json":
+                # This shared Zoo file may contain researcher-owned server entries.
+                _adapter(root, harness, enabled=enabled)
+                continue
+            modified.append(relative)
+    if modified:
+        raise ValueError(
+            "locally modified managed files prevent MCP changes: " + ", ".join(modified)
+        )
+    plan: dict[str, Any] = {
+        "harness": harness.value,
+        "enabled": enabled,
+        "changed": True,
+        "files": [],
+    }
+    next_adapter = _adapter(root, harness, enabled=enabled)
+    current_files = dict(manifest["files"])
+    plan["files"] = sorted(
+        relative
+        for relative in set(current_files) | set(next_adapter.files)
+        if relative not in next_adapter.files
+        or not _managed_path(root, relative).exists()
+        or _managed_path(root, relative).read_text() != next_adapter.files[relative]
+    )
+    if dry_run:
+        return plan
+    enabled_harnesses = config.integrations.mcp.enabled_harnesses
+    if enabled and harness not in enabled_harnesses:
+        enabled_harnesses.append(harness)
+    if not enabled:
+        config.integrations.mcp.enabled_harnesses = [
+            item for item in enabled_harnesses if item is not harness
+        ]
+    transaction = FileTransaction(root, "MCP harness configuration")
+    hashes: dict[str, str] = {}
+    for relative in set(current_files) - set(next_adapter.files):
+        path = _managed_path(root, relative)
+        if path.exists():
+            transaction.stage_delete(path)
+    for relative, content in next_adapter.files.items():
+        path = _managed_path(root, relative)
+        if not path.exists() or path.read_text() != content:
+            transaction.stage_text(path, content)
+        hashes[relative] = sha256_text(content)
+    next_manifest = {
+        "harness": harness.value,
+        "version": ADAPTER_VERSION,
+        "activated_at": manifest["activated_at"],
+        "files": hashes,
+        "shared_agents_block_sha256": sha256_text(_managed_block()),
+    }
+    transaction.stage_text(
+        _manifest_path(root, harness), json.dumps(next_manifest, indent=2, sort_keys=True) + "\n"
+    )
+    transaction.stage_text(
+        root / "smairt.yaml",
+        config.to_yaml(),
+    )
+    transaction.commit()
+    return {**plan, **mcp_status(root)}
 
 
 @mutating("harness fixture write")

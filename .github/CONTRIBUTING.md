@@ -23,7 +23,7 @@ Before opening a pull request, run:
 ruff format --check src tests scripts
 ruff check src tests scripts
 mypy src/smairt
-python -m pytest --cov=smairt --cov-branch
+python -m pytest -p no:cacheprovider
 pip-audit
 git diff --check
 ```

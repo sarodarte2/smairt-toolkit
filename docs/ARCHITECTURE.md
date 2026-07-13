@@ -7,13 +7,16 @@ adapters nor agent conversations own scientific state.
 
 ```mermaid
 flowchart TB
-    UI["CLI and Textual TUI"] --> D["Research domain services"]
+    UI["CLI and terminal-native prompt hub"] --> D["Research domain services"]
     D --> S["Validated portable records"]
     D --> L["Mutation lock"]
     D --> T["Transaction journals"]
     D --> I["Run integrity manifests"]
     H["Codex / Zoo / Cline adapters"] --> UI
     H -. advisory instructions .-> D
+    M["SMAIRT read-only MCP"] --> S
+    Z["Zotero local or Web read API"] --> D
+    K["Environment / OS keyring"] --> D
     G["Git branches and worktrees"] --> S
 ```
 
@@ -41,3 +44,9 @@ The local process has the researcher's filesystem permissions. SMAIRT reduces ac
 violations; it is not a sandbox. Secret scans are defense in depth, not a proof that content is
 safe. The detailed trust and non-compliance boundary is in [Safety](SAFETY.md) and
 [Security](../SECURITY.md).
+
+Reference index v2 allows metadata-only records and requires attachment paths and checksums as a
+pair. Crossref is authoritative for DOI metadata; OpenAlex fills missing fields only. Zotero is
+read/import-only. The MCP process exposes exactly five bounded metadata tools and strips local
+paths, checksums, PDFs, and full text. Zotero tools are separately disabled by default and cannot
+be enabled for controlled projects.

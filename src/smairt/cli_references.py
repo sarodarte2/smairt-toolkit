@@ -10,12 +10,17 @@ from rich.prompt import Confirm, IntPrompt, Prompt
 from smairt.cli_shared import emit, project_root
 from smairt.models import SmairtConfig
 from smairt.references import (
+    add_doi_reference,
     add_reference,
+    attach_reference,
+    copy_zotero_attachment,
     edit_reference,
     enrich_openalex,
     enrich_reference,
     export_references,
     get_reference,
+    import_zotero_collection,
+    import_zotero_item,
     inspect_pdf,
     load_index,
     unindexed_pdfs,
@@ -77,7 +82,7 @@ def reference_enrich_openalex(
     identifier: Annotated[str, typer.Argument()],
     confirm_remote: Annotated[bool, typer.Option("--confirm-remote")] = False,
 ) -> None:
-    """Add OpenAlex metadata using only the OPENALEX_API_KEY environment variable."""
+    """Add OpenAlex metadata using environment-first credential resolution."""
     emit(
         enrich_openalex(project_root(), identifier, confirm_remote=confirm_remote).model_dump(
             mode="json", exclude_none=True
@@ -162,3 +167,56 @@ def reference_add(
     if verified:
         record = verify_reference(project_root(), record.id, _active_contributor())
     emit(record.model_dump(mode="json", exclude_none=True), False)
+
+
+@reference_app.command("add-doi")
+def reference_add_doi(
+    doi: Annotated[str, typer.Argument()],
+    openalex: Annotated[bool, typer.Option("--openalex")] = False,
+    confirm_remote: Annotated[bool, typer.Option("--confirm-remote")] = False,
+) -> None:
+    """Create a metadata-only reference from authoritative Crossref metadata."""
+    record = add_doi_reference(
+        project_root(), doi, use_openalex=openalex, confirm_remote=confirm_remote
+    )
+    emit(record.model_dump(mode="json", exclude_none=True), False)
+
+
+@reference_app.command("attach")
+def reference_attach(
+    identifier: Annotated[str, typer.Argument()], pdf: Annotated[Path, typer.Argument()]
+) -> None:
+    """Attach one explicit local PDF to an existing metadata-only record."""
+    emit(
+        attach_reference(project_root(), identifier, pdf).model_dump(
+            mode="json", exclude_none=True
+        ),
+        False,
+    )
+
+
+@reference_app.command("import-zotero")
+def reference_import_zotero(
+    item: Annotated[str | None, typer.Option("--item")] = None,
+    collection: Annotated[str | None, typer.Option("--collection")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, max=1000)] = 500,
+    copy_attachment: Annotated[str | None, typer.Option("--copy-attachment")] = None,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    """Import Zotero metadata, with optional confirmed local attachment copy."""
+    if bool(item) == bool(collection):
+        raise typer.BadParameter("provide exactly one of --item or --collection")
+    if copy_attachment and not item:
+        raise typer.BadParameter("--copy-attachment requires --item")
+    if item and copy_attachment:
+        result: object = copy_zotero_attachment(
+            project_root(), item, copy_attachment, confirmed=yes
+        ).model_dump(mode="json", exclude_none=True)
+    elif item:
+        result = import_zotero_item(project_root(), item).model_dump(mode="json", exclude_none=True)
+    else:
+        result = [
+            record.model_dump(mode="json", exclude_none=True)
+            for record in import_zotero_collection(project_root(), collection or "", limit=limit)
+        ]
+    emit(result, False)

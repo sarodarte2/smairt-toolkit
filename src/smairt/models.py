@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -50,6 +51,32 @@ class HarnessName(StrEnum):
     CODEX = "codex"
     ZOO = "zoo"
     CLINE = "cline"
+
+
+class ZoteroMode(StrEnum):
+    """Describe the configured read-only Zotero connection."""
+
+    DISABLED = "disabled"
+    LOCAL = "local"
+    WEB = "web"
+
+
+class ZoteroLibraryType(StrEnum):
+    """Enumerate Zotero Web API library namespaces."""
+
+    USER = "user"
+    GROUP = "group"
+
+
+class ProjectLicense(StrEnum):
+    """Enumerate the project-level licenses SMAIRT can generate safely."""
+
+    UNSPECIFIED = "unspecified"
+    MIT = "MIT"
+    BSD_3_CLAUSE = "BSD-3-Clause"
+    APACHE_2_0 = "Apache-2.0"
+    GPL_3_0_ONLY = "GPL-3.0-only"
+    PROPRIETARY = "proprietary"
 
 
 class Decision(StrEnum):
@@ -122,6 +149,8 @@ class ProjectInfo(DurableModel):
     author: str
     description: str | None = None
     question: str | None = None
+    fields_of_study: list[str] = Field(default_factory=list)
+    license: ProjectLicense = ProjectLicense.UNSPECIFIED
     created_at: str = Field(default_factory=utc_now)
 
     @field_validator("name", "slug", "author")
@@ -137,6 +166,22 @@ class ProjectInfo(DurableModel):
     def valid_slug(cls, value: str) -> str:
         """Require the project slug to remain path-safe."""
         return _validated_identifier(value, "project slug")
+
+    @field_validator("fields_of_study")
+    @classmethod
+    def valid_fields_of_study(cls, values: list[str]) -> list[str]:
+        """Trim fields and remove case-insensitive duplicates without reordering."""
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            field = value.strip()
+            if not field:
+                raise ValueError("fields of study must not contain blank values")
+            key = field.casefold()
+            if key not in seen:
+                normalized.append(field)
+                seen.add(key)
+        return normalized
 
 
 class DataPolicy(DurableModel):
@@ -216,6 +261,79 @@ class HarnessConfig(DurableModel):
     activated_at: str = Field(default_factory=utc_now)
 
 
+class CredentialProfile(DurableModel):
+    """Reference a secret without storing its value in project files."""
+
+    profile: str = "default"
+    environment_variable: str | None = None
+
+    @field_validator("profile")
+    @classmethod
+    def valid_profile(cls, value: str) -> str:
+        """Require a path-safe portable profile name."""
+        return _validated_identifier(value, "credential profile")
+
+    @field_validator("environment_variable")
+    @classmethod
+    def valid_environment_variable(cls, value: str | None) -> str | None:
+        """Accept only portable environment-variable names, never shell expressions."""
+        if value is not None and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+            raise ValueError("invalid credential environment-variable name")
+        return value
+
+
+class OpenAlexIntegration(DurableModel):
+    """Configure optional OpenAlex supplementation."""
+
+    enabled: bool = False
+    credential: CredentialProfile = Field(
+        default_factory=lambda: CredentialProfile(environment_variable="OPENALEX_API_KEY")
+    )
+
+
+class ZoteroIntegration(DurableModel):
+    """Configure read-only local or Web Zotero access."""
+
+    mode: ZoteroMode = ZoteroMode.DISABLED
+    library_id: str | None = None
+    library_type: ZoteroLibraryType = ZoteroLibraryType.USER
+    credential: CredentialProfile = Field(
+        default_factory=lambda: CredentialProfile(environment_variable="ZOTERO_API_KEY")
+    )
+    mcp_access_enabled: bool = False
+    mcp_confirmed_by: str | None = None
+    mcp_confirmed_at: str | None = None
+
+    @model_validator(mode="after")
+    def coherent_web_library(self) -> ZoteroIntegration:
+        """Require the library selector used by Web API requests."""
+        if self.mode is ZoteroMode.WEB and not (self.library_id or "").strip():
+            raise ValueError("Zotero Web mode requires a library ID")
+        return self
+
+
+class McpIntegration(DurableModel):
+    """Record which maintained harnesses may start SMAIRT's read-only MCP."""
+
+    enabled_harnesses: list[HarnessName] = Field(default_factory=list)
+
+    @field_validator("enabled_harnesses")
+    @classmethod
+    def unique_supported_harnesses(cls, values: list[HarnessName]) -> list[HarnessName]:
+        """Reject deferred Cline configuration and remove duplicates."""
+        if any(value is HarnessName.CLINE for value in values):
+            raise ValueError("Cline MCP configuration is not supported")
+        return list(dict.fromkeys(values))
+
+
+class IntegrationConfig(DurableModel):
+    """Store non-secret literature and agent integration settings."""
+
+    openalex: OpenAlexIntegration = Field(default_factory=OpenAlexIntegration)
+    zotero: ZoteroIntegration = Field(default_factory=ZoteroIntegration)
+    mcp: McpIntegration = Field(default_factory=McpIntegration)
+
+
 class ActiveState(DurableModel):
     """Point to the current hypothesis, experiment, iteration, and accepted run."""
 
@@ -234,13 +352,14 @@ class ActiveState(DurableModel):
 class SmairtConfig(DurableModel):
     """Define the authoritative, versioned project contract in smairt.yaml."""
 
-    schema_version: int = 2
+    schema_version: int = 4
     smairt_version: str = Field(default_factory=lambda: __version__)
     project: ProjectInfo
     data: DataPolicy
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
     git: GitConfig = Field(default_factory=GitConfig)
     harness: HarnessConfig = Field(default_factory=HarnessConfig)
+    integrations: IntegrationConfig = Field(default_factory=IntegrationConfig)
     safety_mode: SafetyMode = SafetyMode.STANDARD
     contributors: list[Contributor] = Field(default_factory=list)
     active_contributor: str | None = None
@@ -252,9 +371,9 @@ class SmairtConfig(DurableModel):
     @classmethod
     def supported_schema(cls, value: int) -> int:
         """Reject beta schemas that this release cannot safely interpret."""
-        if value != 2:
+        if value not in {2, 3, 4}:
             raise ValueError(
-                "incompatible beta project schema; export needed records and recreate the project"
+                "incompatible project schema; migrate through a supported SMAIRT release"
             )
         return value
 
@@ -277,7 +396,36 @@ class SmairtConfig(DurableModel):
         attested_by = self.repository_attestation.contributor_id
         if attested_by and attested_by not in contributor_ids:
             raise ValueError("repository attestation contributor is not registered")
+        zotero = self.integrations.zotero
+        if bool(zotero.mcp_confirmed_by) != bool(zotero.mcp_confirmed_at):
+            raise ValueError("Zotero MCP confirmation contributor and timestamp must be paired")
+        if zotero.mcp_confirmed_by and zotero.mcp_confirmed_by not in contributor_ids:
+            raise ValueError("Zotero MCP confirmation contributor is not registered")
+        if self.data.classification is DataClassification.CONTROLLED and zotero.mcp_access_enabled:
+            raise ValueError("controlled projects cannot enable Zotero MCP access")
+        if (
+            self.data.classification is DataClassification.PRIVATE
+            and zotero.mcp_access_enabled
+            and not zotero.mcp_confirmed_by
+        ):
+            raise ValueError("private projects require attributed Zotero MCP confirmation")
         return self
+
+    def durable_dict(self) -> dict[str, Any]:
+        """Return only fields defined by the project's declared schema version."""
+        data = self.model_dump(mode="json", exclude_none=True)
+        if self.schema_version < 4:
+            data.pop("integrations", None)
+        if self.schema_version < 3:
+            project = data.get("project")
+            if isinstance(project, dict):
+                project.pop("fields_of_study", None)
+                project.pop("license", None)
+        return data
+
+    def to_yaml(self) -> str:
+        """Render version-aware durable YAML for transactions and managed writers."""
+        return yaml.safe_dump(self.durable_dict(), sort_keys=False)
 
     @classmethod
     def load(cls, path: Path) -> SmairtConfig:
@@ -286,8 +434,7 @@ class SmairtConfig(DurableModel):
 
     def dump(self, path: Path) -> None:
         """Serialize the validated contract without implicit null fields."""
-        data = self.model_dump(mode="json", exclude_none=True)
-        atomic_write(path, yaml.safe_dump(data, sort_keys=False))
+        atomic_write(path, self.to_yaml())
 
 
 class ReferenceRecord(DurableModel):
@@ -299,8 +446,8 @@ class ReferenceRecord(DurableModel):
     year: int | None = None
     doi: str | None = None
     document_type: str = "article"
-    local_path: str
-    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    local_path: str | None = None
+    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     metadata_verified: bool = False
     citation_key: str | None = None
     identifiers: dict[str, str] = Field(default_factory=dict)
@@ -329,12 +476,21 @@ class ReferenceRecord(DurableModel):
 
     @field_validator("local_path")
     @classmethod
-    def safe_local_path(cls, value: str) -> str:
+    def safe_local_path(cls, value: str | None) -> str | None:
         """Require a portable relative path contained by the project."""
+        if value is None:
+            return None
         path = Path(value)
         if path.is_absolute() or ".." in path.parts:
             raise ValueError("reference path must be project-relative")
         return value
+
+    @model_validator(mode="after")
+    def coherent_attachment(self) -> ReferenceRecord:
+        """Require a path and checksum together when an attachment exists."""
+        if (self.local_path is None) != (self.sha256 is None):
+            raise ValueError("reference attachment path and checksum must be provided together")
+        return self
 
 
 class RunRecord(DurableModel):

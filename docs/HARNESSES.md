@@ -11,12 +11,15 @@ scientific records never change when a harness changes. Preview switches with
 | Custom research modes | Unsupported | Advisory | Advisory |
 | Automatic context restore | Manual | Manual | Advisory on TaskStart/TaskResume |
 
-Codex uses `.codex/config.toml`, `.codex/hooks.json`, and shared `AGENTS.md`. Its hook is advisory;
-SMAIRT CLI/Git/integrity gates remain authoritative.
+Codex uses `.codex/config.toml` and shared `AGENTS.md`. The inline `PreToolUse` hook and
+project-scoped MCP entry load only after Codex trusts the project configuration; the hook is
+advisory and SMAIRT CLI/Git/integrity gates remain authoritative.
 
 Zoo Code is the correct public name. Zoo deliberately preserves the Roo-compatible `.roo/rules-*`,
 `.roomodes`, and `.rooignore` project paths so migrated settings and modes remain usable. SMAIRT
 validates its generated mode schema and reports malformed or modified files.
+`.roo/mcp.json` contains only the SMAIRT server and the exact five read-only tools in
+`alwaysAllow`. Zoo protected-operation hooks remain unsupported.
 
 Cline uses conditional `.clinerules`, `.clineignore`, and executable hooks. `PreToolUse` consumes
 the upstream JSON payload and can cancel protected operations. `TaskStart` and `TaskResume` inject
@@ -29,5 +32,5 @@ wholesale and preserves custom files. Missing files, modified content, corrupt m
 unsupported adapter versions, invalid Zoo modes, and non-executable hooks appear in
 `smairt harness status` and `smairt doctor`.
 
-Provider profiles, API keys, and concrete model names remain harness or OS settings. SMAIRT stores
-only provider-neutral capability recommendations.
+Credential values remain environment or OS-keyring settings and never enter adapter files.
+SMAIRT stores only provider/profile references and provider-neutral capability recommendations.

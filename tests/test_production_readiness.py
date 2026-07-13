@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from textual.widgets import Button, Input
 
 from smairt.diagnostics import doctor
 from smairt.errors import IntegrityError, MutationConflictError, RecoveryRequiredError
@@ -32,7 +31,7 @@ from smairt.transactions import (
     rollback_transaction,
     transaction_status,
 )
-from smairt.tui import NewProjectApp
+from smairt.tui import _preflight_destination
 
 
 @pytest.fixture
@@ -386,26 +385,17 @@ def test_pdf_and_schema_edge_cases(project: Path, tmp_path: Path) -> None:
         add_reference(project, source, title="Unique", year=2026)
 
 
-def test_doctor_and_small_terminal_first_paint(project: Path) -> None:
-    """Keep doctor offline and render the wizard at the supported 80 by 24 size."""
+def test_doctor_and_terminal_preflight_stay_offline(project: Path) -> None:
+    """Keep doctor offline and reject unsafe terminal-wizard destinations."""
     report = doctor(project)
     assert report["network_accessed"] is False
     assert report["schema_compatible"]
 
-    async def exercise() -> None:
-        app = NewProjectApp(project.parent / "small")
-        async with app.run_test(size=(80, 24)) as pilot:
-            await pilot.pause()
-            assert app.query_one("#submit", Button).label == "Next"
-            app.query_one("#name", Input).value = "Small"
-            app.query_one("#author", Input).value = "Researcher"
-            app.query_one("#submit", Button).press()
-            await pilot.pause()
-            assert app.step == 1
-
-    import asyncio
-
-    asyncio.run(exercise())
+    occupied = project.parent / "small"
+    occupied.mkdir()
+    (occupied / "notes.txt").write_text("keep")
+    with pytest.raises(FileExistsError, match="contains files"):
+        _preflight_destination(occupied, allow_existing=False)
 
 
 def test_existing_checkout_scaffold_rejects_symlinks_and_unmanaged_targets(

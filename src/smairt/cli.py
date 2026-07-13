@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Annotated, Any, cast
 
@@ -13,10 +14,11 @@ import yaml
 from rich.console import Console
 from rich.markup import escape
 from rich.prompt import Confirm
-from typer.core import _click as click  # type: ignore[attr-defined]
 
 from smairt import __version__
 from smairt.cli_harness import harness_app
+from smairt.cli_integrations import credential_app, integration_app
+from smairt.cli_mcp import mcp_app
 from smairt.cli_publication import paper_app, summary_app
 from smairt.cli_references import reference_app
 from smairt.cli_research import (
@@ -32,26 +34,33 @@ from smairt.cli_shared import json_envelope
 from smairt.cli_state import lock_app, recovery_app
 from smairt.code_quality import build_code_index, validate_code
 from smairt.contracts import check_contracts, export_contracts
-from smairt.diagnostics import doctor
+from smairt.diagnostics import doctor, setup_doctor
 from smairt.errors import SmairtError
 from smairt.guidance import next_guidance
 from smairt.integrity import verify_run
 from smairt.migrations import apply_migration, migration_plan, rollback_migration
 from smairt.model_policy import recommend_model
-from smairt.models import DataClassification, EnvironmentMode, HarnessName, SmairtConfig
+from smairt.models import (
+    DataClassification,
+    EnvironmentMode,
+    HarnessName,
+    ProjectLicense,
+    SmairtConfig,
+)
 from smairt.project import context as build_context
 from smairt.project import find_project, save_context_capsule, validate_project
 from smairt.project import status as project_status
 from smairt.provenance import add_contributor, generate_history, load_events, use_contributor
 from smairt.scaffold import conda_environments, create_project
-from smairt.tui import run_new_project, run_project_menu
+from smairt.settings import select_environment, update_project_settings
+from smairt.tui import run_contextual_menu, run_new_project, run_project_menu
 from smairt.upgrade import upgrade_project
 from smairt.utils import slugify
 
 console = Console()
 
 
-class ProjectUsageError(click.ClickException):
+class ProjectUsageError(typer.BadParameter):
     """Represent a stable usage or project-state failure."""
 
     exit_code = 2
@@ -64,7 +73,7 @@ class ProjectUsageError(click.ClickException):
 class FriendlyGroup(typer.core.TyperGroup):
     """Render expected domain failures without exposing implementation tracebacks."""
 
-    def invoke(self, ctx: click.Context) -> object:
+    def invoke(self, ctx: Any) -> object:
         """Convert domain exceptions into stable usage-or-project errors."""
         try:
             return super().invoke(ctx)
@@ -72,7 +81,7 @@ class FriendlyGroup(typer.core.TyperGroup):
             if ctx.find_root().params.get("verbose"):
                 raise
             raise ProjectUsageError(str(exc), exc.exit_code) from None
-        except click.exceptions.Exit:
+        except typer.Exit:
             raise
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             if ctx.find_root().params.get("verbose"):
@@ -93,6 +102,8 @@ contributor_app = typer.Typer(help="Manage confirmed project contributors")
 contract_app = typer.Typer(help="Export and check portable harness contracts")
 migrate_app = typer.Typer(help="Plan, apply, and roll back schema migrations")
 model_app = typer.Typer(help="Recommend economical model capability tiers")
+settings_app = typer.Typer(help="Inspect and update researcher-facing project settings")
+setup_app = typer.Typer(help="Diagnose the user-wide SMAIRT tool setup")
 
 app.add_typer(start_app, name="start")
 app.add_typer(reference_app, name="reference")
@@ -113,6 +124,11 @@ app.add_typer(summary_app, name="summary")
 app.add_typer(model_app, name="model")
 app.add_typer(lock_app, name="lock")
 app.add_typer(recovery_app, name="recovery")
+app.add_typer(settings_app, name="settings")
+app.add_typer(setup_app, name="setup")
+app.add_typer(credential_app, name="credential")
+app.add_typer(integration_app, name="integration")
+app.add_typer(mcp_app, name="mcp")
 register_root_commands(app)
 
 
@@ -176,6 +192,18 @@ def history_command(as_json: Annotated[bool, typer.Option("--json")] = False) ->
 def doctor_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
     """Diagnose project and release health without network access or mutation."""
     payload = doctor(_root())
+    _emit(payload, as_json)
+    if not payload["ok"]:
+        raise typer.Exit(1)
+
+
+@setup_app.command("doctor")
+def setup_doctor_command(
+    check_github: Annotated[bool, typer.Option("--check-github")] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Check tool installation and optional GitHub authentication without a project."""
+    payload = setup_doctor(check_github=check_github)
     _emit(payload, as_json)
     if not payload["ok"]:
         raise typer.Exit(1)
@@ -276,7 +304,14 @@ def main(
         console.print(__version__)
         ctx.exit(0)
     if ctx.invoked_subcommand is None:
-        console.print(ctx.get_help())
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            try:
+                run_contextual_menu()
+            except KeyboardInterrupt:
+                console.print("[yellow]SMAIRT interrupted.[/yellow]")
+                raise typer.Exit(130) from None
+        else:
+            console.print(ctx.get_help())
 
 
 def _new_project(
@@ -285,6 +320,8 @@ def _new_project(
     author: str | None,
     question: str | None,
     description: str | None,
+    fields_of_study: list[str] | None,
+    license_name: ProjectLicense,
     classification: DataClassification,
     git: bool,
     environment_mode: EnvironmentMode,
@@ -296,7 +333,13 @@ def _new_project(
 ) -> None:
     """Share interactive and non-interactive creation behavior across aliases."""
     if not name or not author:
-        created = run_new_project(destination, allow_existing=allow_existing)
+        try:
+            created = run_new_project(destination, allow_existing=allow_existing)
+        except KeyboardInterrupt:
+            console.print(
+                "[yellow]Project creation interrupted; retained input was not written.[/yellow]"
+            )
+            raise typer.Exit(130) from None
         if created:
             console.print(f"[bold #f28c28]Created SMAIRT project:[/] {created}")
         return
@@ -307,6 +350,8 @@ def _new_project(
         author=author,
         question=question,
         description=description,
+        fields_of_study=fields_of_study,
+        license_name=license_name,
         classification=classification,
         initialize_git=git,
         environment_mode=environment_mode,
@@ -328,6 +373,8 @@ def new_command(
     author: Annotated[str | None, typer.Option()] = None,
     question: Annotated[str | None, typer.Option()] = None,
     description: Annotated[str | None, typer.Option()] = None,
+    field: Annotated[list[str] | None, typer.Option("--field")] = None,
+    license_name: Annotated[ProjectLicense, typer.Option("--license")] = ProjectLicense.MIT,
     classification: Annotated[DataClassification, typer.Option()] = DataClassification.UNPUBLISHED,
     git: Annotated[bool, typer.Option("--git/--no-git")] = True,
     environment: Annotated[EnvironmentMode, typer.Option()] = EnvironmentMode.NONE,
@@ -336,13 +383,15 @@ def new_command(
     safety_mode: Annotated[str, typer.Option()] = "standard",
     confirm_contributor: Annotated[bool, typer.Option("--confirm-contributor")] = False,
 ) -> None:
-    """Create a new project; opens the TUI when name/author are omitted."""
+    """Create a new project; opens terminal prompts when name or author is omitted."""
     _new_project(
         destination,
         name,
         author,
         question,
         description,
+        field,
+        license_name,
         classification,
         git,
         environment,
@@ -365,6 +414,8 @@ def start_project(
         None,
         None,
         None,
+        None,
+        ProjectLicense.MIT,
         DataClassification.UNPUBLISHED,
         True,
         EnvironmentMode.NONE,
@@ -389,6 +440,8 @@ def init_command(
         author,
         None,
         None,
+        None,
+        ProjectLicense.MIT,
         DataClassification.UNPUBLISHED,
         True,
         EnvironmentMode.NONE,
@@ -403,7 +456,51 @@ def init_command(
 @app.command("menu")
 def menu_command() -> None:
     """Open the editable project dashboard."""
-    run_project_menu(_root())
+    try:
+        run_project_menu(_root())
+    except KeyboardInterrupt:
+        console.print("[yellow]SMAIRT interrupted.[/yellow]")
+        raise typer.Exit(130) from None
+
+
+@settings_app.command("show")
+def settings_show(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+    """Show the durable researcher-facing project settings."""
+    config = SmairtConfig.load(_root() / "smairt.yaml")
+    _emit(
+        {
+            "schema_version": config.schema_version,
+            "project": config.project.model_dump(mode="json", exclude_none=True),
+            "environment": config.environment.model_dump(mode="json", exclude_none=True),
+            "integrations": config.integrations.model_dump(mode="json", exclude_none=True),
+            "active_contributor": config.active_contributor,
+        },
+        as_json,
+    )
+
+
+@settings_app.command("project")
+def settings_project(
+    name: Annotated[str | None, typer.Option()] = None,
+    author: Annotated[str | None, typer.Option()] = None,
+    question: Annotated[str | None, typer.Option()] = None,
+    description: Annotated[str | None, typer.Option()] = None,
+    field: Annotated[list[str] | None, typer.Option("--field")] = None,
+    license_name: Annotated[ProjectLicense | None, typer.Option("--license")] = None,
+) -> None:
+    """Update project identity, fields of study, and the managed license."""
+    root = _root()
+    config = SmairtConfig.load(root / "smairt.yaml")
+    updated = update_project_settings(
+        root,
+        name=name if name is not None else config.project.name,
+        author=author if author is not None else config.project.author,
+        question=question if question is not None else config.project.question,
+        description=description if description is not None else config.project.description,
+        fields_of_study=field if field is not None else config.project.fields_of_study,
+        license_name=license_name if license_name is not None else config.project.license,
+    )
+    _emit(updated.project.model_dump(mode="json", exclude_none=True), False)
 
 
 @app.command("upgrade")
@@ -539,6 +636,19 @@ def env_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None
         "available_conda_environments": conda_environments(),
     }
     _emit(payload, as_json)
+
+
+@env_app.command("select")
+def env_select(
+    mode: Annotated[EnvironmentMode, typer.Option()],
+    name: Annotated[str | None, typer.Option()] = None,
+    prefix: Annotated[str | None, typer.Option()] = None,
+    create: Annotated[bool, typer.Option("--create")] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Select or create the Conda environment used for project commands."""
+    selected = select_environment(_root(), mode=mode, name=name, prefix=prefix, create=create)
+    _emit(selected.model_dump(mode="json", exclude_none=True), as_json)
 
 
 @env_app.command("shell")
