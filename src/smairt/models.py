@@ -10,6 +10,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from smairt.utils import atomic_write
+
 
 def utc_now() -> str:
     """Return a timezone-aware UTC timestamp suitable for durable records."""
@@ -31,6 +33,14 @@ class EnvironmentMode(StrEnum):
     NEW_CONDA = "new_conda"
     EXISTING_CONDA = "existing_conda"
     NONE = "none"
+
+
+class HarnessName(StrEnum):
+    """Enumerate coding harnesses with maintained SMAIRT adapters."""
+
+    CODEX = "codex"
+    ZOO = "zoo"
+    CLINE = "cline"
 
 
 class Decision(StrEnum):
@@ -101,6 +111,7 @@ class RepositoryAttestation(BaseModel):
     acknowledged: bool = False
     contributor_id: str | None = None
     acknowledged_at: str | None = None
+    visibility: str = "unknown"
 
 
 class MigrationEntry(BaseModel):
@@ -110,6 +121,14 @@ class MigrationEntry(BaseModel):
     to_version: int
     applied_at: str = Field(default_factory=utc_now)
     contributor_id: str | None = None
+
+
+class HarnessConfig(BaseModel):
+    """Identify the one active coding harness and installed adapter version."""
+
+    active: HarnessName = HarnessName.CODEX
+    adapter_version: int = 1
+    activated_at: str = Field(default_factory=utc_now)
 
 
 class ActiveState(BaseModel):
@@ -132,6 +151,7 @@ class SmairtConfig(BaseModel):
     data: DataPolicy
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
     git: GitConfig = Field(default_factory=GitConfig)
+    harness: HarnessConfig = Field(default_factory=HarnessConfig)
     safety_mode: str = "standard"
     contributors: list[Contributor] = Field(default_factory=list)
     active_contributor: str | None = None
@@ -142,6 +162,7 @@ class SmairtConfig(BaseModel):
     @field_validator("safety_mode")
     @classmethod
     def valid_safety_mode(cls, value: str) -> str:
+        """Reject safety modes outside the portable Standard/Strict contract."""
         if value not in {"standard", "strict"}:
             raise ValueError("safety_mode must be standard or strict")
         return value
@@ -154,7 +175,7 @@ class SmairtConfig(BaseModel):
     def dump(self, path: Path) -> None:
         """Serialize the validated contract without implicit null fields."""
         data = self.model_dump(mode="json", exclude_none=True)
-        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        atomic_write(path, yaml.safe_dump(data, sort_keys=False))
 
 
 class ReferenceRecord(BaseModel):
@@ -206,6 +227,8 @@ class RunRecord(BaseModel):
 
 
 class ProjectEvent(BaseModel):
+    """Describe one immutable contributor-scoped consequential action."""
+
     id: str
     timestamp: str
     actor: str
@@ -216,6 +239,8 @@ class ProjectEvent(BaseModel):
 
 
 class CorrectionRecord(BaseModel):
+    """Describe an amendment, retraction, or explicit run supersession."""
+
     id: str
     action: str
     target_run: str | None = None
@@ -226,6 +251,8 @@ class CorrectionRecord(BaseModel):
 
 
 class EvidenceCard(BaseModel):
+    """Freeze an accepted run's result, limitations, and paper relevance."""
+
     id: str
     run_id: str
     purpose: str
@@ -237,6 +264,8 @@ class EvidenceCard(BaseModel):
 
 
 class ClaimRecord(BaseModel):
+    """Represent a human-reviewed claim linked to evidence and references."""
+
     id: str
     statement: str
     evidence_ids: list[str]
@@ -245,6 +274,8 @@ class ClaimRecord(BaseModel):
 
 
 class SummaryRecord(BaseModel):
+    """Represent an immutable contributor summary of one source hash."""
+
     id: str
     contributor: str
     source_id: str
@@ -255,6 +286,8 @@ class SummaryRecord(BaseModel):
 
 
 class ContextCapsule(BaseModel):
+    """Describe a token-budgeted set of selected and deferred context files."""
+
     task: str
     token_budget: int
     estimated_tokens: int
@@ -264,6 +297,8 @@ class ContextCapsule(BaseModel):
 
 
 class ValidationFinding(BaseModel):
+    """Represent a stable machine-readable validation finding."""
+
     severity: str
     code: str
     artifact: str
@@ -271,6 +306,8 @@ class ValidationFinding(BaseModel):
 
 
 class NextAction(BaseModel):
+    """Describe one state-aware action offered by `smairt next`."""
+
     id: str
     label: str
     kind: str
@@ -278,6 +315,8 @@ class NextAction(BaseModel):
 
 
 class HumanGate(BaseModel):
+    """Describe an action that cannot proceed without explicit human input."""
+
     id: str
     action: str
     prompt: str
@@ -285,6 +324,8 @@ class HumanGate(BaseModel):
 
 
 class PaperBuild(BaseModel):
+    """Record one versioned manuscript build and its checksums."""
+
     format: str
     manuscript_sha256: str
     output_path: str

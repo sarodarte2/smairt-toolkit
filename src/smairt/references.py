@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import urllib.error
@@ -20,6 +21,7 @@ DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 
 
 def normalize_doi(value: str) -> str:
+    """Normalize and validate DOI strings from common URL and label forms."""
     normalized = value.strip().lower()
     for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
         normalized = normalized.removeprefix(prefix)
@@ -109,6 +111,7 @@ def add_reference(
 
 
 def get_reference(root: Path, identifier: str) -> ReferenceRecord:
+    """Return one indexed reference by stable identifier."""
     record = next((item for item in load_index(root) if item.id == identifier), None)
     if record is None:
         raise ValueError(f"unknown reference: {identifier}")
@@ -118,6 +121,7 @@ def get_reference(root: Path, identifier: str) -> ReferenceRecord:
 def edit_reference(
     root: Path, identifier: str, field: str, value: str, contributor: str
 ) -> ReferenceRecord:
+    """Edit an allowed metadata field and append field-level provenance."""
     records = load_index(root)
     record = next((item for item in records if item.id == identifier), None)
     if record is None:
@@ -145,6 +149,7 @@ def edit_reference(
 
 
 def verify_reference(root: Path, identifier: str, contributor: str) -> ReferenceRecord:
+    """Validate required metadata, DOI, pages, and duplicates before verification."""
     records = load_index(root)
     record = next((item for item in records if item.id == identifier), None)
     if record is None:
@@ -177,9 +182,12 @@ def verify_reference(root: Path, identifier: str, contributor: str) -> Reference
     return record
 
 
-def enrich_reference(root: Path, identifier: str) -> ReferenceRecord:
+def enrich_reference(
+    root: Path, identifier: str, *, confirm_remote: bool = False
+) -> ReferenceRecord:
     """Merge deterministic Crossref DOI metadata and preserve the raw response."""
     records = load_index(root)
+    _require_remote_permission(root, confirm_remote)
     record = next((item for item in records if item.id == identifier), None)
     if record is None or not record.doi:
         raise ValueError("reference enrichment requires a DOI")
@@ -216,6 +224,67 @@ def enrich_reference(root: Path, identifier: str) -> ReferenceRecord:
     record.verification_status = "enriched_unverified"
     save_index(root, records)
     return record
+
+
+def enrich_openalex(
+    root: Path,
+    identifier: str,
+    api_key: str | None = None,
+    *,
+    confirm_remote: bool = False,
+) -> ReferenceRecord:
+    """Optionally enrich a DOI record from OpenAlex without replacing Crossref authority."""
+    records = load_index(root)
+    _require_remote_permission(root, confirm_remote)
+    record = next((item for item in records if item.id == identifier), None)
+    if record is None or not record.doi:
+        raise ValueError("OpenAlex enrichment requires a DOI")
+    key = api_key or os.environ.get("OPENALEX_API_KEY")
+    if not key:
+        raise ValueError("OpenAlex enrichment requires OPENALEX_API_KEY")
+    external_id = urllib.parse.quote(f"doi:{normalize_doi(record.doi)}", safe=":")
+    url = f"https://api.openalex.org/works/{external_id}?" + urllib.parse.urlencode(
+        {"api_key": key}
+    )
+    request = urllib.request.Request(url, headers={"User-Agent": "SMAIRT/0.1"})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            raw = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError(f"OpenAlex unavailable; existing metadata preserved: {exc}") from exc
+    snapshot = (
+        root / "references/provenance" / identifier / f"openalex-{utc_now().replace(':', '')}.json"
+    )
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text(json.dumps(raw, indent=2) + "\n")
+    location = raw.get("primary_location") or {}
+    source = location.get("source") or {}
+    # OpenAlex supplements missing fields. Crossref-derived values remain authoritative.
+    record.publication_date = record.publication_date or raw.get("publication_date")
+    record.venue = record.venue or source.get("display_name")
+    record.url = record.url or location.get("landing_page_url")
+    record.license = record.license or location.get("license")
+    record.identifiers["openalex"] = str(raw.get("id", ""))
+    record.source_provenance.append(
+        {
+            "source": "openalex",
+            "captured_at": utc_now(),
+            "snapshot": str(snapshot.relative_to(root)),
+        }
+    )
+    record.verification_status = "enriched_unverified"
+    save_index(root, records)
+    return record
+
+
+def _require_remote_permission(root: Path, confirmed: bool) -> None:
+    """Require explicit consent before Strict protected-project metadata queries."""
+    from smairt.models import SmairtConfig
+
+    config = SmairtConfig.load(root / "smairt.yaml")
+    protected = config.data.classification.value in {"private", "controlled"}
+    if config.safety_mode == "strict" and protected and not confirmed:
+        raise ValueError("Strict protected projects require --confirm-remote for metadata queries")
 
 
 def export_references(root: Path, format_name: str) -> str:

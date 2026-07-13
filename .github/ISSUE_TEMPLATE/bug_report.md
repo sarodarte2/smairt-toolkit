@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug or issue with the SMAIRT cookiecutter template
+about: Report a bug or issue with the SMAIRT CLI
 title: '[BUG] '
 labels: bug
 assignees: ''
@@ -10,8 +10,8 @@ assignees: ''
 A clear and concise description of what the bug is.
 
 ## Steps to Reproduce
-1. Run `cookiecutter ...`
-2. Enter these values: ...
+1. Run `smairt ...`
+2. Provide these options: ...
 3. See error
 
 ## Expected Behavior
@@ -23,7 +23,8 @@ What actually happened.
 ## Environment
 - OS: [e.g., macOS 14.0, Ubuntu 22.04, Windows 11]
 - Python version: [e.g., 3.11.5]
-- Cookiecutter version: [e.g., 2.4.0]
+- SMAIRT version: [output of `smairt --version`]
+- Active harness and safety mode: [from `smairt status`]
 
 ## Error Output
 ```

@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Button, Footer, Header, Input, Label, Select, Static, Switch
 
-from smairt.models import DataClassification, EnvironmentMode, SmairtConfig
+from smairt.models import DataClassification, EnvironmentMode, HarnessName, SmairtConfig
 from smairt.project import status
 from smairt.scaffold import conda_environments, create_project
 from smairt.utils import slugify
@@ -76,6 +76,24 @@ class NewProjectApp(App[Path | None]):
                 value=EnvironmentMode.NONE.value,
                 id="environment",
             )
+            yield Label("Coding harness")
+            yield Select(
+                [(item.value.title(), item.value) for item in HarnessName],
+                value=HarnessName.CODEX.value,
+                id="harness",
+            )
+            yield Label("Safety mode")
+            yield Select(
+                [
+                    ("Standard — normal private-repository collaboration", "standard"),
+                    ("Strict — local protected summaries and hard visibility gates", "strict"),
+                ],
+                value="standard",
+                id="safety_mode",
+            )
+            with Horizontal():
+                yield Label("Confirm author as the active contributor")
+                yield Switch(value=True, id="confirm_contributor")
             with Horizontal():
                 yield Label("Initialize Git (recommended)")
                 yield Switch(value=True, id="git")
@@ -114,6 +132,9 @@ class NewProjectApp(App[Path | None]):
             "environment_name": environment_name,
             "environment_prefix": environment_prefix,
             "create_environment": create_environment,
+            "harness": HarnessName(str(self.query_one("#harness", Select).value)),
+            "safety_mode": str(self.query_one("#safety_mode", Select).value),
+            "confirm_contributor": self.query_one("#confirm_contributor", Switch).value,
             "allow_existing": self.allow_existing,
         }
 
@@ -147,7 +168,8 @@ class NewProjectApp(App[Path | None]):
                 summary = (
                     f"Create {values['name']!r} at {values['destination']}\n"
                     f"Data: {values['classification'].value}; Environment: "
-                    f"{values['environment_mode'].value}; Git: {values['initialize_git']}\n"
+                    f"{values['environment_mode'].value}; Harness: {values['harness'].value}; "
+                    f"Safety: {values['safety_mode']}; Git: {values['initialize_git']}\n"
                     "No hypothesis will be requested. Review and press Create."
                 )
                 self.query_one("#message", Static).update(summary)

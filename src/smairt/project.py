@@ -6,13 +6,15 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
 from smairt.code_quality import validate_code
+from smairt.model_policy import recommend_model
 from smairt.models import Decision, RunRecord, SmairtConfig
-from smairt.utils import sha256_file
+from smairt.utils import sha256_file, write_json
 
 PROHIBITED_SUFFIXES = {
     ".fast5",
@@ -125,6 +127,16 @@ def validate_project(
             )
     else:
         report.checks["git_safety"] = True
+
+    from smairt.safety import safety_policy_findings
+
+    for finding in safety_policy_findings(root, staged=staged):
+        report.add(
+            finding["severity"],
+            finding["code"],
+            finding["artifact"],
+            "Project safety policy requires attention",
+        )
 
     try:
         references = json.loads("{}")
@@ -331,6 +343,7 @@ def status(root: Path) -> dict[str, object]:
         "schema_version": config.schema_version,
         "safety_mode": config.safety_mode,
         "active_contributor": config.active_contributor,
+        "harness": config.harness.model_dump(mode="json"),
         "active": config.active.model_dump(mode="json", exclude_none=True),
         "counts": {
             "proposal_sets": len(proposals),
@@ -377,8 +390,42 @@ def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object
     current = status(root)
     included = []
     deferred = []
-    used = 0
-    for relative in CONTEXT_MAP[task]:
+    status_tokens = max(1, len(json.dumps(current, default=str)) // 4)
+    used = status_tokens
+    candidates: list[tuple[int, str, str]] = [
+        (30, relative, f"default {task} context") for relative in CONTEXT_MAP[task]
+    ]
+    config = SmairtConfig.load(root / "smairt.yaml")
+    if config.active.hypothesis:
+        hypothesis = next((root / "hypotheses").glob(f"{config.active.hypothesis}_*.md"), None)
+        if hypothesis:
+            candidates.append((5, str(hypothesis.relative_to(root)), "active hypothesis"))
+    if config.active.experiment and config.active.iteration:
+        experiment = next((root / "experiments").glob(f"{config.active.experiment}_*"), None)
+        if experiment:
+            iteration = experiment / "iterations" / config.active.iteration
+            for path in sorted(iteration.glob("*")):
+                if path.is_file() and path.suffix in {".py", ".yaml", ".md"}:
+                    candidates.append((10, str(path.relative_to(root)), "active iteration"))
+    if task in {"interpretation", "paper"}:
+        for path in sorted((root / "paper/evidence").glob("*.json")):
+            candidates.append((12, str(path.relative_to(root)), "current paper evidence"))
+        for path in sorted((root / "paper/claims").glob("*.json")):
+            candidates.append((14, str(path.relative_to(root)), "paper claim"))
+    from smairt.summaries import list_summaries
+
+    canonical_ids = {
+        json.loads(path.read_text()).get("summary_id")
+        for path in (root / "summaries/canonical").glob("*.json")
+    }
+    for summary in list_summaries(root):
+        if summary["id"] in canonical_ids and summary["fresh"]:
+            candidates.append((8, str(summary["artifact_path"]), "fresh canonical summary"))
+    seen: set[str] = set()
+    for _, relative, reason in sorted(candidates):
+        if relative in seen:
+            continue
+        seen.add(relative)
         path = root / relative
         if not path.exists():
             continue
@@ -386,7 +433,7 @@ def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object
         item = {
             "path": relative,
             "estimated_tokens": estimated,
-            "reason": f"default {task} context",
+            "reason": reason,
             "sha256": sha256_file(path),
         }
         if used + estimated <= token_budget:
@@ -399,9 +446,19 @@ def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object
         "status": current,
         "token_budget": token_budget,
         "estimated_tokens": used,
+        "status_estimated_tokens": status_tokens,
         "estimated_cost": None,
+        "model_recommendation": recommend_model(root, task),
         "read": [item["path"] for item in included],
         "included": included,
         "deferred": deferred,
         "rule": "Read only these files initially; load logs, PDFs, and older iterations on demand.",
     }
+
+
+def save_context_capsule(root: Path, payload: dict[str, object]) -> Path:
+    """Save a disposable context selection under the Git-ignored local state tree."""
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    path = root / ".smairt/local/context" / f"{payload['task']}-{stamp}.json"
+    write_json(path, payload)
+    return path

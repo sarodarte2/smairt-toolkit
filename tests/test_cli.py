@@ -29,6 +29,7 @@ def test_version_and_noninteractive_creation(tmp_path: Path) -> None:
             "--classification",
             "unpublished",
             "--no-git",
+            "--confirm-contributor",
         ],
     )
     assert result.exit_code == 0, result.stdout
@@ -51,6 +52,7 @@ def test_status_json_from_project(tmp_path: Path, monkeypatch) -> None:
             "--author",
             "Researcher",
             "--no-git",
+            "--confirm-contributor",
         ],
     )
     assert created.exit_code == 0

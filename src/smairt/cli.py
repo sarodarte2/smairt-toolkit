@@ -12,32 +12,43 @@ import typer
 import yaml
 from rich.console import Console
 from rich.prompt import Confirm, IntPrompt, Prompt
+from typer.core import _click as click
 
 from smairt import __version__
 from smairt.code_quality import build_code_index, validate_code
 from smairt.contracts import check_contracts, export_contracts
 from smairt.corrections import amend_artifact, correct_run
 from smairt.guidance import next_guidance
-from smairt.harnesses import harness_status, install_harness, list_harnesses
+from smairt.harnesses import (
+    harness_status,
+    install_harness,
+    list_harnesses,
+    select_harness,
+    switch_plan,
+)
 from smairt.integrity import verify_run
 from smairt.migrations import apply_migration, detect_scaffold, migration_plan, rollback_migration
-from smairt.models import DataClassification, Decision, EnvironmentMode, SmairtConfig
+from smairt.model_policy import recommend_model
+from smairt.models import DataClassification, Decision, EnvironmentMode, HarnessName, SmairtConfig
 from smairt.paper import (
     begin_paper,
     build_paper,
     create_claim,
     create_evidence_card,
+    create_outline,
+    draft_section,
     review_claim,
     review_section,
     validate_paper,
 )
 from smairt.project import context as build_context
-from smairt.project import find_project, validate_project
+from smairt.project import find_project, save_context_capsule, validate_project
 from smairt.project import status as project_status
 from smairt.provenance import add_contributor, generate_history, load_events, use_contributor
 from smairt.references import (
     add_reference,
     edit_reference,
+    enrich_openalex,
     enrich_reference,
     export_references,
     get_reference,
@@ -57,17 +68,37 @@ from smairt.research import (
     validate_proposal_set,
 )
 from smairt.runner import run_experiment
-from smairt.safety import release_check, safety_status, set_safety_mode
+from smairt.safety import attest_repository, release_check, safety_status, set_safety_mode
 from smairt.scaffold import conda_environments, create_project
-from smairt.summaries import create_summary, list_summaries, promote_summary
+from smairt.summaries import create_summary, list_summaries, promote_summary, supersede_summary
 from smairt.tui import run_new_project, run_project_menu
 from smairt.upgrade import upgrade_project
 
 console = Console()
+
+
+class ProjectUsageError(click.ClickException):
+    """Represent a stable usage or project-state failure."""
+
+    exit_code = 2
+
+
+class FriendlyGroup(typer.core.TyperGroup):
+    """Render expected domain failures without exposing implementation tracebacks."""
+
+    def invoke(self, ctx: click.Context) -> object:
+        """Convert domain exceptions into stable usage-or-project errors."""
+        try:
+            return super().invoke(ctx)
+        except (FileNotFoundError, ValueError) as exc:
+            raise ProjectUsageError(str(exc)) from exc
+
+
 app = typer.Typer(
     help="Scientific Method with AI Research Toolkit",
     no_args_is_help=True,
     invoke_without_command=True,
+    cls=FriendlyGroup,
 )
 start_app = typer.Typer(help="Friendly project-start aliases")
 reference_app = typer.Typer(help="Manage local scholarly references")
@@ -86,6 +117,7 @@ contract_app = typer.Typer(help="Export and check portable harness contracts")
 harness_app = typer.Typer(help="Install and inspect coding-harness adapters")
 migrate_app = typer.Typer(help="Plan, apply, and roll back schema migrations")
 summary_app = typer.Typer(help="Manage contributor-scoped source summaries")
+model_app = typer.Typer(help="Recommend economical model capability tiers")
 paper_section_app = typer.Typer(help="Draft and review manuscript sections")
 paper_evidence_app = typer.Typer(help="Manage immutable paper evidence cards")
 paper_claim_app = typer.Typer(help="Manage human-reviewed manuscript claims")
@@ -107,6 +139,7 @@ app.add_typer(contract_app, name="contract")
 app.add_typer(harness_app, name="harness")
 app.add_typer(migrate_app, name="migrate")
 app.add_typer(summary_app, name="summary")
+app.add_typer(model_app, name="model")
 paper_app.add_typer(paper_evidence_app, name="evidence")
 paper_app.add_typer(paper_claim_app, name="claim")
 paper_app.add_typer(paper_section_app, name="section")
@@ -205,6 +238,18 @@ def safety_release_check(as_json: Annotated[bool, typer.Option("--json")] = Fals
         raise typer.Exit(1)
 
 
+@safety_app.command("attest")
+def safety_attest(
+    visibility: Annotated[str, typer.Option()],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    if not yes and not Confirm.ask(
+        f"Confirm repository visibility is {visibility}?", default=False
+    ):
+        raise typer.Exit()
+    _emit(attest_repository(_root(), visibility), False)
+
+
 @app.command("verify")
 def verify_command(
     run: Annotated[str | None, typer.Option()] = None,
@@ -238,7 +283,7 @@ def harness_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> No
 
 @harness_app.command("status")
 def harness_status_command(
-    harness: Annotated[str, typer.Argument()],
+    harness: Annotated[str | None, typer.Argument()] = None,
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     _emit(harness_status(_root(), harness), as_json)
@@ -252,6 +297,21 @@ def harness_install(harness: Annotated[str, typer.Argument()]) -> None:
 @harness_app.command("upgrade")
 def harness_upgrade(harness: Annotated[str, typer.Argument()]) -> None:
     _emit(install_harness(_root(), harness, upgrade=True), False)
+
+
+@harness_app.command("select")
+def harness_select(
+    harness: Annotated[str, typer.Argument()],
+    dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
+    backup_and_switch: Annotated[bool, typer.Option("--backup-and-switch")] = False,
+) -> None:
+    """Preview or apply an authoritative, conflict-aware harness switch."""
+    payload = (
+        switch_plan(_root(), harness)
+        if dry_run
+        else select_harness(_root(), harness, backup_and_switch=backup_and_switch)
+    )
+    _emit(payload, False)
 
 
 @migrate_app.command("plan")
@@ -326,6 +386,9 @@ def _new_project(
     git: bool,
     environment_mode: EnvironmentMode,
     environment_name: str | None,
+    harness: HarnessName = HarnessName.CODEX,
+    safety_mode: str = "standard",
+    confirm_contributor: bool = False,
     allow_existing: bool = False,
 ) -> None:
     """Share interactive and non-interactive creation behavior across aliases."""
@@ -345,6 +408,9 @@ def _new_project(
         initialize_git=git,
         environment_mode=environment_mode,
         environment_name=environment_name,
+        harness=harness,
+        safety_mode=safety_mode,
+        confirm_contributor=confirm_contributor,
         create_environment=environment_mode is EnvironmentMode.NEW_CONDA,
         allow_existing=allow_existing,
     )
@@ -363,6 +429,9 @@ def new_command(
     git: Annotated[bool, typer.Option("--git/--no-git")] = True,
     environment: Annotated[EnvironmentMode, typer.Option()] = EnvironmentMode.NONE,
     environment_name: Annotated[str | None, typer.Option()] = None,
+    harness: Annotated[HarnessName, typer.Option()] = HarnessName.CODEX,
+    safety_mode: Annotated[str, typer.Option()] = "standard",
+    confirm_contributor: Annotated[bool, typer.Option("--confirm-contributor")] = False,
 ) -> None:
     """Create a new project; opens the TUI when name/author are omitted."""
     _new_project(
@@ -375,6 +444,9 @@ def new_command(
         git,
         environment,
         environment_name,
+        harness,
+        safety_mode,
+        confirm_contributor,
         False,
     )
 
@@ -394,6 +466,9 @@ def start_project(
         True,
         EnvironmentMode.NONE,
         None,
+        HarnessName.CODEX,
+        "standard",
+        False,
         False,
     )
 
@@ -415,6 +490,9 @@ def init_command(
         True,
         EnvironmentMode.NONE,
         None,
+        HarnessName.CODEX,
+        "standard",
+        False,
         True,
     )
 
@@ -484,11 +562,23 @@ def validate_command(
 def context_command(
     task: Annotated[str, typer.Option(help="planning, code, run, interpretation, or paper")],
     token_budget: Annotated[int, typer.Option("--token-budget", min=1)] = 8000,
+    save: Annotated[bool, typer.Option("--save")] = False,
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Return only the initial files relevant to the requested research task."""
     payload = build_context(_root(), task, token_budget)
+    if save:
+        payload["capsule_path"] = str(save_context_capsule(_root(), payload).relative_to(_root()))
     _emit(payload, as_json)
+
+
+@model_app.command("recommend")
+def model_recommend(
+    task: Annotated[str, typer.Option()],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Recommend a provider-neutral model tier for a research task."""
+    _emit(recommend_model(_root(), task), as_json)
 
 
 @app.command("next")
@@ -554,8 +644,30 @@ def reference_inspect(identifier: Annotated[str, typer.Argument()]) -> None:
 
 
 @reference_app.command("enrich")
-def reference_enrich(identifier: Annotated[str, typer.Argument()]) -> None:
-    _emit(enrich_reference(_root(), identifier).model_dump(mode="json", exclude_none=True), False)
+def reference_enrich(
+    identifier: Annotated[str, typer.Argument()],
+    confirm_remote: Annotated[bool, typer.Option("--confirm-remote")] = False,
+) -> None:
+    _emit(
+        enrich_reference(_root(), identifier, confirm_remote=confirm_remote).model_dump(
+            mode="json", exclude_none=True
+        ),
+        False,
+    )
+
+
+@reference_app.command("enrich-openalex")
+def reference_enrich_openalex(
+    identifier: Annotated[str, typer.Argument()],
+    api_key: Annotated[str | None, typer.Option(envvar="OPENALEX_API_KEY", hidden=True)] = None,
+    confirm_remote: Annotated[bool, typer.Option("--confirm-remote")] = False,
+) -> None:
+    _emit(
+        enrich_openalex(_root(), identifier, api_key, confirm_remote=confirm_remote).model_dump(
+            mode="json", exclude_none=True
+        ),
+        False,
+    )
 
 
 @reference_app.command("edit")
@@ -904,6 +1016,22 @@ def paper_begin(title: Annotated[str, typer.Option()]) -> None:
     console.print(begin_paper(_root(), title))
 
 
+@paper_app.command("outline")
+def paper_outline() -> None:
+    """Create a claim-linked manuscript outline."""
+    console.print(create_outline(_root()))
+
+
+@paper_section_app.command("draft")
+def paper_section_draft(
+    section: Annotated[str, typer.Argument()],
+    text: Annotated[str, typer.Option()],
+    claim: Annotated[list[str], typer.Option()],
+) -> None:
+    """Draft one canonical section from approved claims."""
+    console.print(draft_section(_root(), section, text, claim))
+
+
 @paper_section_app.command("review")
 def paper_section_review(
     section: Annotated[str, typer.Argument()],
@@ -916,8 +1044,14 @@ def paper_section_review(
 
 
 @paper_app.command("build")
-def paper_build(format_name: Annotated[str, typer.Option("--format")]) -> None:
-    console.print(build_paper(_root(), format_name))
+def paper_build(
+    format_name: Annotated[str, typer.Option("--format")],
+    template: Annotated[Path | None, typer.Option()] = None,
+    line_numbering: Annotated[bool, typer.Option("--line-numbering")] = False,
+) -> None:
+    console.print(
+        build_paper(_root(), format_name, template=template, line_numbering=line_numbering)
+    )
 
 
 @summary_app.command("create")
@@ -951,6 +1085,14 @@ def summary_compare(source_id: Annotated[str, typer.Argument()]) -> None:
 @summary_app.command("promote")
 def summary_promote(identifier: Annotated[str, typer.Argument()]) -> None:
     console.print(promote_summary(_root(), identifier))
+
+
+@summary_app.command("supersede")
+def summary_supersede(
+    previous: Annotated[str, typer.Argument()], replacement: Annotated[str, typer.Argument()]
+) -> None:
+    """Link an older summary to its fresh replacement."""
+    console.print(supersede_summary(_root(), previous, replacement))
 
 
 @env_app.command("status")

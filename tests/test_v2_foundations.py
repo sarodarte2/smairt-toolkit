@@ -7,15 +7,16 @@ import yaml
 
 from smairt.contracts import check_contracts, export_contracts
 from smairt.corrections import correct_run
-from smairt.harnesses import harness_status, install_harness
+from smairt.harnesses import install_harness, select_harness
 from smairt.integrity import verify_run
 from smairt.migrations import apply_migration, migration_plan, rollback_migration
+from smairt.model_policy import recommend_model
 from smairt.models import DataClassification, EnvironmentMode, ReferenceRecord, SmairtConfig
-from smairt.paper import begin_paper, build_paper
+from smairt.paper import begin_paper, build_paper, review_section
 from smairt.provenance import add_contributor, load_events, record_event, use_contributor
 from smairt.references import edit_reference, normalize_doi, save_index, verify_reference
 from smairt.runner import run_experiment
-from smairt.safety import set_safety_mode
+from smairt.safety import attest_repository, set_safety_mode
 from smairt.scaffold import create_project
 from smairt.summaries import create_summary, list_summaries, promote_summary
 
@@ -42,6 +43,7 @@ def test_contributors_events_and_safety_are_explicit(tmp_path: Path) -> None:
     assert load_events(root)[0]["actor"] == contributor.id
     assert (root / "docs/PROJECT_HISTORY.md").exists()
     assert set_safety_mode(root, "strict")["mode"] == "strict"
+    assert attest_repository(root, "private")["repository_visibility"] == "private"
 
 
 def test_run_manifest_detects_mutation_and_contracts_export(tmp_path: Path) -> None:
@@ -62,8 +64,14 @@ def test_run_manifest_detects_mutation_and_contracts_export(tmp_path: Path) -> N
     artifact.write_text("changed")
     assert not verify_run(root, run.run_id)["ok"]
 
+    # Restoring the artifact does not hide mutation of the immutable run record.
+    artifact.write_text("original")
+    run_record = root / run.results_directory / "run.json"
+    run_record.write_text(run_record.read_text().replace('"exit_code": 0', '"exit_code": 1'))
+    assert not verify_run(root, run.run_id)["ok"]
+
     destination = root / ".smairt/contracts/v1"
-    assert len(export_contracts(destination)) == 14
+    assert len(export_contracts(destination)) == 17
     assert check_contracts(destination)["ok"]
 
 
@@ -71,19 +79,33 @@ def test_zoo_and_cline_adapters_preserve_local_edits(tmp_path: Path) -> None:
     root = project(tmp_path)
     assert install_harness(root, "zoo")["installed"]
     assert (root / ".roo/rules-code/01-research-code.md").exists()
-    assert install_harness(root, "cline")["installed"]
-    assert (root / ".clinerules/research-code.md").exists()
-    assert (root / ".cline/workflows/smairt-next.md").exists()
-
+    custom = root / ".roo/rules/custom-lab-policy.md"
+    custom.write_text("Researcher policy.\n")
     managed = root / ".roo/rules/01-smairt.md"
     managed.write_text(managed.read_text() + "Local policy.\n")
-    assert ".roo/rules/01-smairt.md" in harness_status(root, "zoo")["modified"]
     try:
-        install_harness(root, "zoo", upgrade=True)
+        install_harness(root, "cline")
     except ValueError as exc:
-        assert "locally modified" in str(exc)
+        assert "backup-and-switch" in str(exc)
     else:
-        raise AssertionError("adapter upgrade overwrote a local edit")
+        raise AssertionError("adapter switch ignored a local managed edit")
+    assert select_harness(root, "cline", backup_and_switch=True)["installed"]
+    assert (root / ".clinerules/research-code.md").exists()
+    assert (root / ".cline/workflows/smairt-next.md").exists()
+    assert (root / ".smairt/contracts/v1/fixtures/cline.json").exists()
+    assert custom.exists()
+
+
+def test_harness_switch_preserves_shared_agents_custom_text(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    agents = root / "AGENTS.md"
+    agents.write_text(agents.read_text() + "\n# Laboratory policy\nKeep this text.\n")
+    preview = select_harness(root, "zoo", dry_run=True)
+    assert preview["to"] == "zoo"
+    select_harness(root, "zoo")
+    select_harness(root, "cline")
+    assert "Keep this text." in agents.read_text()
+    assert SmairtConfig.load(root / "smairt.yaml").harness.active.value == "cline"
 
 
 def test_v1_migration_preview_apply_and_safe_rollback(tmp_path: Path) -> None:
@@ -113,6 +135,21 @@ def test_summaries_are_hash_scoped_and_promotable(tmp_path: Path) -> None:
     assert summary_path.exists()
 
 
+def test_context_uses_canonical_summary_and_model_tier(tmp_path: Path) -> None:
+    from smairt.project import context
+
+    root = project(tmp_path)
+    contributor = add_contributor(root, "Context Author")
+    use_contributor(root, contributor.id)
+    source = root / "background/project_description.md"
+    summary = create_summary(root, source, "Canonical context.")
+    promote_summary(root, summary.stem)
+    capsule = context(root, "planning", token_budget=20_000)
+    assert any(item["reason"] == "fresh canonical summary" for item in capsule["included"])
+    assert capsule["model_recommendation"]["tier"] == "strong"
+    assert recommend_model(root, "metadata")["tier"] == "cheap"
+
+
 def test_paper_markdown_and_docx_builds_are_versioned(tmp_path: Path) -> None:
     root = project(tmp_path)
     contributor = add_contributor(root, "Paper Author")
@@ -123,6 +160,8 @@ def test_paper_markdown_and_docx_builds_are_versioned(tmp_path: Path) -> None:
     )
     manuscript = begin_paper(root, "A Reproducible Study")
     assert manuscript.exists()
+    for section in ("Abstract", "Introduction", "Methods", "Results", "Discussion", "References"):
+        review_section(root, section, ["claim-ready"])
     markdown = build_paper(root, "md")
     docx = build_paper(root, "docx")
     assert markdown.read_text().startswith("# A Reproducible Study")

@@ -5,16 +5,20 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from importlib.resources import files
 from pathlib import Path
 
 import yaml
 
 from smairt.models import (
+    Contributor,
     DataClassification,
     DataPolicy,
     EnvironmentConfig,
     EnvironmentMode,
     GitConfig,
+    HarnessConfig,
+    HarnessName,
     ProjectInfo,
     SmairtConfig,
 )
@@ -29,6 +33,7 @@ DIRECTORIES = (
     ".smairt/contracts",
     ".smairt/corrections",
     ".smairt/local/summaries",
+    ".smairt/run-manifests",
     "docs",
     "prompts",
     "environment",
@@ -118,51 +123,8 @@ Do not activate or finalize a hypothesis without an explicit human decision.
 """
 
 
-SKILL = """---
-name: smairt-research
-description: >
-  Use for planning, executing, interpreting, or documenting research
-  in this SMAIRT project.
----
-
-# SMAIRT Research Workflow
-
-1. Run `smairt status --json` and identify the current task.
-2. Run `smairt next --json`; treat its state and artifact paths as authoritative.
-3. Run `smairt context --task <planning|code|run|interpretation|paper>`.
-4. Read only the returned files.
-5. Use SMAIRT commands to create hypotheses, experiments, iterations, runs, and decisions.
-6. For an initial background, use indexed local references first. Ask before academic web
-   research and index every added source.
-7. When asked for hypotheses, create exactly three meaningfully distinct options in a proposal
-   set. Explain rationale, falsifiable prediction, competing explanation, required data,
-   feasibility, confounders, and differences. Never activate one without human selection.
-8. At human gates, use interactive choices when supported; otherwise show concise numbered
-   choices, including an option to read the artifact or provide a custom response.
-9. Before experiment creation, offer three distinct experimental routes grounded in the active
-   hypothesis, with tradeoffs, required data, controls, and expected evidence.
-10. Record human choices in `prompts/intellectual_contribution.md`.
-11. Validate before claiming an artifact is complete or accepted.
-12. Finish with a compact Completed / Recommended next / Alternatives section from `smairt next`.
-
-See `references/workflow.md` for the artifact chain and correction rules.
-"""
-
-
-SKILL_REFERENCE = """# Workflow Reference
-
-```text
-question + references -> initial background -> three proposal options
--> human-selected hypothesis -> experiment -> iteration -> run
--> interpretation -> ACCEPT | REVISE | ABANDON | BLOCKED
-```
-
-- Failed identical execution: create a new run in the same iteration.
-- Changed method, data, split, code logic, or parameters: create a new iteration.
-- Metadata correction: append an amendment.
-- Invalid accepted evidence: supersede or retract it; never erase it.
-- Paper elements may reference only accepted, non-retracted runs.
-"""
+SKILL = files("smairt.resources").joinpath("smairt-research.md").read_text(encoding="utf-8")
+SKILL_REFERENCE = files("smairt.resources").joinpath("workflow.md").read_text(encoding="utf-8")
 
 
 CODE_CONVENTIONS = """# Code Conventions
@@ -381,6 +343,9 @@ def create_project(
     environment_prefix: str | None = None,
     create_environment: bool = False,
     allow_existing: bool = False,
+    harness: HarnessName = HarnessName.CODEX,
+    safety_mode: str = "standard",
+    confirm_contributor: bool = False,
 ) -> SmairtConfig:
     """Create a safe project scaffold while preserving reviewed existing work."""
     destination = destination.expanduser().resolve()
@@ -403,6 +368,7 @@ def create_project(
 
     git_exists = (destination / ".git").exists()
     git_enabled = initialize_git or git_exists
+    contributor = Contributor(id=slugify(author), name=author) if confirm_contributor else None
     config = SmairtConfig(
         project=ProjectInfo(
             name=name,
@@ -416,16 +382,18 @@ def create_project(
             mode=environment_mode, name=environment_name, prefix=environment_prefix
         ),
         git=GitConfig(enabled=git_enabled, managed_hooks=git_enabled),
+        harness=HarnessConfig(active=harness),
+        safety_mode=safety_mode,
+        contributors=[contributor] if contributor else [],
+        active_contributor=contributor.id if contributor else None,
     )
     config.dump(destination / "smairt.yaml")
 
     files = {
         ".gitignore": GITIGNORE,
-        "AGENTS.md": AGENTS,
+        "AGENTS.md": "",
         ".agents/skills/smairt-research/SKILL.md": SKILL,
         ".agents/skills/smairt-research/references/workflow.md": SKILL_REFERENCE,
-        ".codex/config.toml": 'model_instructions_file = "../AGENTS.md"\n',
-        ".codex/hooks.json": json.dumps(CODEX_HOOKS, indent=2),
         ".githooks/pre-commit": HOOK,
         "docs/PHILOSOPHY.md": PHILOSOPHY,
         "docs/WORKFLOW.md": WORKFLOW,
@@ -494,11 +462,8 @@ def create_project(
     # Managed-file hashes let later upgrades distinguish framework guidance
     # from researcher-authored scientific artifacts, which are never replaced.
     managed = {
-        "AGENTS.md": AGENTS,
         ".agents/skills/smairt-research/SKILL.md": SKILL,
         ".agents/skills/smairt-research/references/workflow.md": SKILL_REFERENCE,
-        ".codex/config.toml": files[".codex/config.toml"],
-        ".codex/hooks.json": files[".codex/hooks.json"],
         "prompts/CODE_CONVENTIONS.md": CODE_CONVENTIONS,
     }
     framework_manifest = {
@@ -512,6 +477,10 @@ def create_project(
         ".smairt/framework.yaml",
         yaml.safe_dump(framework_manifest, sort_keys=False),
     )
+
+    from smairt.harnesses import select_harness
+
+    select_harness(destination, harness.value)
 
     hook = destination / ".githooks/pre-commit"
     hook.chmod(0o755)

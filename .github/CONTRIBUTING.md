@@ -1,67 +1,36 @@
-# Contributing to SMAIRT Cookiecutter
+# Contributing to SMAIRT
 
-Thank you for your interest in contributing to SMAIRT! This document provides guidelines for contributing to the project.
+SMAIRT is a Python CLI for rigorous, AI-assisted research workflows. User documentation starts
+in the main `README.md`; this file covers changes to the CLI itself.
 
-Note that if you want to *use* the SMAIRT template for your own project please see the main README.
-
-## Ways to Contribute
-
-### Reporting Issues
-
-- **Bug Reports**: If you find a bug, please create an issue using the Bug Report template
-- **Feature Requests**: Have an idea for improvement? Use the Feature Request template
-- **Questions**: Not sure about something? Use the Question template
-
-### Code Contributions
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/your-feature-name`
-3. **Make your changes**
-4. **Test your changes**: Generate a project using the template and verify it works
-5. **Commit your changes**: Use clear, descriptive commit messages
-6. **Push to your fork**: `git push origin feature/your-feature-name`
-7. **Open a Pull Request**: Describe your changes and link any related issues
-
-### Documentation Improvements
-
-Documentation improvements are always welcome! This includes:
-- Fixing typos or unclear explanations
-- Adding examples
-- Improving the README
-- Enhancing the generated project documentation
-
-## Development Setup
+## Development setup
 
 ```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/smairt-cookiecutter.git
-cd smairt-cookiecutter
-
-# Install cookiecutter for testing
-pip install cookiecutter
-
-# Test the template locally
-cookiecutter . --no-input
+git clone https://github.com/YOUR_USERNAME/smairt-template.git
+cd smairt-template
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[dev]'
 ```
 
-## Testing Changes
+Create a focused branch, follow the existing typed Python and docstring conventions, and include
+tests for behavior changes. Harness changes must test installation, modified managed files, safe
+switching, and preservation of user-owned files.
 
-Before submitting a PR, please test your changes:
+Before opening a pull request, run:
 
-1. Generate a new project from the template
-2. Verify the project structure is correct
-3. Check that all placeholder variables are properly substituted
-4. Test any hooks (pre/post generation scripts)
+```bash
+ruff check src tests
+pytest
+python -m coverage run -m pytest
+python -m coverage report
+git diff --check
+```
 
-## Code Style
+Documentation changes are expected when commands, generated files, safety behavior, harness
+ownership, or user journeys change. Keep `README.md`, `REPO_MAP.md`, and the focused documents in
+`docs/` consistent with the executable behavior.
 
-- Use clear, descriptive names
-- Add comments for complex logic
-- Follow existing patterns in the codebase
-- Keep the template structure intuitive
-
-## Questions?
-
-If you have questions about contributing, feel free to open an issue with the Question template.
-
-Thank you for helping improve SMAIRT!
+Use the issue templates for bugs and feature requests. Bug reports are most useful when they
+include the exact command, SMAIRT version, active harness, safety mode, and a minimal reproduction
+that contains no protected research data or credentials.

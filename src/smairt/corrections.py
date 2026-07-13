@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import yaml
 
+from smairt.integrity import verify_run
 from smairt.models import SmairtConfig, utc_now
 from smairt.provenance import git_state, record_event, require_contributor
-from smairt.utils import sha256_file
+from smairt.utils import sha256_file, write_json
 
 
 def _run_path(root: Path, run_id: str) -> Path:
@@ -37,7 +39,9 @@ def correct_run(
         _run_path(root, replacement_run)
         if replacement_run == target_run:
             raise ValueError("replacement run must differ from target run")
-    correction_id = f"correction-{utc_now().replace(':', '').replace('+', '_')}"
+        if not verify_run(root, replacement_run)["ok"]:
+            raise ValueError("replacement run failed integrity verification")
+    correction_id = f"correction-{uuid4().hex}"
     payload = {
         "schema_version": 1,
         "id": correction_id,
@@ -52,12 +56,13 @@ def correct_run(
     }
     path = root / ".smairt/corrections" / contributor.id / f"{correction_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n")
+    write_json(path, payload)
+    corrected_status = {"retract": "RETRACTED", "supersede": "SUPERSEDED"}[action]
     for selection in (root / "analysis").glob("*/selection.yaml"):
         selected = yaml.safe_load(selection.read_text()) or {}
         if selected.get("run_id") == target_run and selected.get("status") == "ACCEPTED":
             selected.update(
-                status=action.upper() + "D", status_reason=reason, replacement_run=replacement_run
+                status=corrected_status, status_reason=reason, replacement_run=replacement_run
             )
             selection.write_text(yaml.safe_dump(selected, sort_keys=False))
     config = SmairtConfig.load(root / "smairt.yaml")
@@ -86,10 +91,11 @@ def correct_run(
 def amend_artifact(
     root: Path, target: Path, field: str, previous: str, corrected: str, reason: str
 ) -> Path:
+    """Append a contributor-attributed correction without mutating its target."""
     contributor = require_contributor(root)
     target = target.resolve()
     target.relative_to(root.resolve())
-    identifier = f"amendment-{utc_now().replace(':', '').replace('+', '_')}"
+    identifier = f"amendment-{uuid4().hex}"
     payload = {
         "schema_version": 1,
         "id": identifier,
@@ -106,7 +112,7 @@ def amend_artifact(
     }
     path = root / ".smairt/corrections" / contributor.id / f"{identifier}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n")
+    write_json(path, payload)
     record_event(
         root,
         "artifact.amended",

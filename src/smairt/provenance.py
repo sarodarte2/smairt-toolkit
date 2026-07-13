@@ -6,12 +6,14 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from smairt.models import Contributor, SmairtConfig, utc_now
-from smairt.utils import sha256_file, slugify
+from smairt.utils import atomic_write, sha256_file, slugify
 
 
 def git_state(root: Path) -> dict[str, Any]:
+    """Capture current Git commit and working-tree cleanliness."""
     if not (root / ".git").exists():
         return {"commit": None, "dirty": False}
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True)
@@ -27,6 +29,7 @@ def git_state(root: Path) -> dict[str, Any]:
 def add_contributor(
     root: Path, name: str, email: str | None = None, *, source: str = "manual"
 ) -> Contributor:
+    """Register an explicitly supplied contributor identity."""
     config = SmairtConfig.load(root / "smairt.yaml")
     identifier = slugify(name)
     if any(item.id == identifier for item in config.contributors):
@@ -38,6 +41,7 @@ def add_contributor(
 
 
 def use_contributor(root: Path, identifier: str) -> Contributor:
+    """Select a registered contributor for consequential project actions."""
     config = SmairtConfig.load(root / "smairt.yaml")
     contributor = next((item for item in config.contributors if item.id == identifier), None)
     if contributor is None:
@@ -48,6 +52,7 @@ def use_contributor(root: Path, identifier: str) -> Contributor:
 
 
 def require_contributor(root: Path) -> Contributor:
+    """Return the confirmed active contributor or reject the action."""
     config = SmairtConfig.load(root / "smairt.yaml")
     contributor = next((c for c in config.contributors if c.id == config.active_contributor), None)
     if contributor is None:
@@ -64,11 +69,12 @@ def record_event(
     supersedes: str | None = None,
     details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Append an immutable contributor-scoped event and refresh project history."""
     actor = require_contributor(root)
     stamp = utc_now()
     events = root / ".smairt/events" / actor.id
     events.mkdir(parents=True, exist_ok=True)
-    event_id = f"event-{stamp.replace(':', '').replace('+', '_')}"
+    event_id = f"event-{uuid4().hex}"
     payload = {
         "schema_version": 1,
         "id": event_id,
@@ -81,12 +87,13 @@ def record_event(
         "supersedes": supersedes,
         "details": details or {},
     }
-    (events / f"{event_id}.json").write_text(json.dumps(payload, indent=2) + "\n")
+    atomic_write(events / f"{event_id}.json", json.dumps(payload, indent=2) + "\n")
     generate_history(root)
     return payload
 
 
 def load_events(root: Path) -> list[dict[str, Any]]:
+    """Load all contributor event streams in timestamp order."""
     return sorted(
         (json.loads(p.read_text()) for p in (root / ".smairt/events").glob("*/*.json")),
         key=lambda item: item["timestamp"],
@@ -94,6 +101,7 @@ def load_events(root: Path) -> list[dict[str, Any]]:
 
 
 def generate_history(root: Path) -> Path:
+    """Regenerate the readable project history from machine event records."""
     path = root / "docs/PROJECT_HISTORY.md"
     lines = ["# Project History", "", "Generated from immutable contributor-scoped events.", ""]
     for event in load_events(root):
@@ -108,9 +116,10 @@ def generate_history(root: Path) -> Path:
             "",
         ]
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines), encoding="utf-8")
+    atomic_write(path, "\n".join(lines))
     return path
 
 
 def artifact_hashes(root: Path, paths: list[Path]) -> dict[str, str]:
+    """Return root-relative checksums for existing artifact paths."""
     return {str(path.relative_to(root)): sha256_file(path) for path in paths if path.is_file()}

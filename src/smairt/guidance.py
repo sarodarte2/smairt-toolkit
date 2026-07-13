@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,39 @@ def next_guidance(root: Path) -> dict[str, Any]:
     background = root / "background/initial_background.md"
     proposals = sorted((root / "hypotheses/proposals").glob("PROPOSAL_SET_*.md"))
     experiments = sorted((root / "experiments").glob("EXPERIMENT_*"))
+    if not config.active_contributor:
+        return _guidance(
+            "contributor_confirmation",
+            "The project exists, but no contributor is confirmed as active.",
+            [
+                _action(
+                    "confirm_contributor",
+                    "Confirm and select the active contributor",
+                    kind="human_choice",
+                    recommended=True,
+                    requires_human=True,
+                    command="smairt contributor add --name '<name>'",
+                )
+            ],
+        )
+    if (
+        config.data.classification.value in {"private", "controlled"}
+        and not config.repository_attestation.acknowledged
+    ):
+        return _guidance(
+            "repository_attestation",
+            "Protected collaboration requires a repository visibility acknowledgment.",
+            [
+                _action(
+                    "attest_repository",
+                    "Confirm the repository visibility and collaboration practice",
+                    kind="human_choice",
+                    recommended=True,
+                    requires_human=True,
+                    command="smairt safety attest --visibility private",
+                )
+            ],
+        )
     if experiments:
         hypothesis = (
             find_hypothesis(root, config.active.hypothesis) if config.active.hypothesis else None
@@ -356,6 +390,10 @@ def _active_experiment_guidance(
                 ),
             ],
         )
+    if config.active.accepted_run:
+        paper_guidance = _paper_guidance(root, config.active.accepted_run)
+        if paper_guidance:
+            return paper_guidance
     return _guidance(
         "decision_recorded",
         f"A research decision is recorded for {metadata['id']}.",
@@ -383,6 +421,108 @@ def _active_experiment_guidance(
                     "paper manifest."
                 ),
             ),
+        ],
+    )
+
+
+def _paper_guidance(root: Path, accepted_run: str) -> dict[str, Any] | None:
+    """Recommend evidence, claim, drafting, review, and build steps when ready."""
+    evidence = [json.loads(path.read_text()) for path in (root / "paper/evidence").glob("*.json")]
+    current = [
+        item
+        for item in evidence
+        if item.get("run_id") == accepted_run and item.get("status") == "current"
+    ]
+    if not current:
+        return _guidance(
+            "evidence_review",
+            f"{accepted_run} is accepted and ready for evidence review.",
+            [
+                _action(
+                    "create_evidence_card",
+                    "Review and freeze an evidence card",
+                    kind="human_choice",
+                    recommended=True,
+                    requires_human=True,
+                    command=f"smairt paper evidence review --run {accepted_run}",
+                )
+            ],
+        )
+    claims = [json.loads(path.read_text()) for path in (root / "paper/claims").glob("*.json")]
+    proposed = [claim for claim in claims if claim.get("status") == "proposed"]
+    approved = [claim for claim in claims if claim.get("status") == "approved"]
+    if proposed:
+        return _guidance(
+            "claim_review",
+            f"{len(proposed)} proposed claim(s) require human review.",
+            [
+                _action(
+                    "review_claims",
+                    "Approve or reject proposed claims",
+                    kind="human_choice",
+                    recommended=True,
+                    requires_human=True,
+                    read=["paper/claims/"],
+                )
+            ],
+        )
+    if not approved:
+        return _guidance(
+            "claim_proposal",
+            "Current evidence is reviewed but no claim is approved.",
+            [
+                _action(
+                    "propose_claim",
+                    "Propose a claim grounded in the evidence card",
+                    kind="prompt",
+                    recommended=True,
+                    read=["paper/evidence/"],
+                )
+            ],
+        )
+    manuscript = root / "paper/manuscript.md"
+    if not manuscript.exists():
+        return _guidance(
+            "paper_ready",
+            f"{len(approved)} claim(s) are approved; drafting may begin.",
+            [
+                _action(
+                    "begin_paper",
+                    "Begin the canonical Markdown manuscript",
+                    kind="command",
+                    recommended=True,
+                    command="smairt paper begin --title '<title>'",
+                )
+            ],
+        )
+    sections_path = root / "paper/sections.yaml"
+    sections = (yaml.safe_load(sections_path.read_text()) or {}).get("sections", {})
+    drafts = [name for name, value in sections.items() if value.get("status") != "reviewed"]
+    if drafts:
+        return _guidance(
+            "paper_drafting",
+            "The canonical manuscript exists and contains draft sections.",
+            [
+                _action(
+                    "draft_review_section",
+                    f"Draft and review {drafts[0]}",
+                    kind="prompt",
+                    recommended=True,
+                    read=["paper/manuscript.md", "paper/claims/"],
+                )
+            ],
+        )
+    return _guidance(
+        "paper_reviewed",
+        "All manuscript sections are explicitly reviewed.",
+        [
+            _action(
+                "build_paper",
+                "Build versioned Markdown and DOCX snapshots",
+                kind="command",
+                recommended=True,
+                command="smairt paper build --format docx",
+            )
         ],
     )
 

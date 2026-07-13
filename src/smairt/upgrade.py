@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,18 +10,17 @@ from typing import Any
 import yaml
 
 from smairt import __version__
-from smairt.scaffold import AGENTS, CODE_CONVENTIONS, CODEX_HOOKS, SKILL, SKILL_REFERENCE
+from smairt.harnesses import select_harness, switch_plan
+from smairt.models import SmairtConfig
+from smairt.scaffold import CODE_CONVENTIONS, SKILL, SKILL_REFERENCE
 from smairt.utils import atomic_write, sha256_text
 
 
 def managed_files() -> dict[str, str]:
     """Return the authoritative framework-owned files for generated projects."""
     return {
-        "AGENTS.md": AGENTS,
         ".agents/skills/smairt-research/SKILL.md": SKILL,
         ".agents/skills/smairt-research/references/workflow.md": SKILL_REFERENCE,
-        ".codex/config.toml": 'model_instructions_file = "../AGENTS.md"\n',
-        ".codex/hooks.json": json.dumps(CODEX_HOOKS, indent=2),
         "prompts/CODE_CONVENTIONS.md": CODE_CONVENTIONS,
     }
 
@@ -39,8 +37,13 @@ def upgrade_project(root: Path, *, apply: bool = False) -> dict[str, Any]:
                 {"path": relative, "status": "update" if current is not None else "create"}
             )
     result: dict[str, Any] = {"version": __version__, "applied": apply, "changes": changes}
+    config = SmairtConfig.load(root / "smairt.yaml")
+    harness_plan = switch_plan(root, config.harness.active.value)
+    result["harness"] = harness_plan
     if not apply:
         return result
+    if harness_plan["modified_managed"] or harness_plan["conflicts"]:
+        raise ValueError("harness-managed files must be reconciled before upgrade")
 
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     backup_root = root / ".smairt/backups" / timestamp
@@ -58,6 +61,7 @@ def upgrade_project(root: Path, *, apply: bool = False) -> dict[str, Any]:
     }
     manifest = {"framework_version": __version__, "managed_files": hashes}
     atomic_write(root / ".smairt/framework.yaml", yaml.safe_dump(manifest, sort_keys=False))
+    select_harness(root, config.harness.active.value)
     result["backup"] = (
         str(backup_root.relative_to(root))
         if any(item["status"] == "update" for item in changes)
