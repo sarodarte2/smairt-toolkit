@@ -6,7 +6,11 @@ was removed after the v2 migration.
 
 ## Runtime
 
-- `src/smairt/cli.py` — Typer command tree and user-facing diagnostics.
+- `src/smairt/cli.py` — root Typer command tree, project lifecycle, and diagnostics.
+- `src/smairt/cli_research.py` — background, hypotheses, experiments, runs, and corrections.
+- `src/smairt/cli_publication.py` — evidence, claims, manuscript builds, and summaries.
+- `src/smairt/cli_references.py`, `cli_harness.py`, `cli_safety.py` — focused command domains.
+- `src/smairt/cli_shared.py` — consistent project resolution and output rendering.
 - `src/smairt/scaffold.py` — project creation and guided setup.
 - `src/smairt/models.py` — persisted project configuration and typed records.
 - `src/smairt/harnesses.py` — exclusive Codex, Zoo, and Cline adapter installation and switching.

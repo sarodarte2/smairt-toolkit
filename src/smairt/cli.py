@@ -16,45 +16,30 @@ from typer.core import _click as click
 
 from smairt import __version__
 from smairt.cli_harness import harness_app
+from smairt.cli_publication import paper_app, summary_app
 from smairt.cli_references import reference_app
+from smairt.cli_research import (
+    background_app,
+    decision_app,
+    experiment_app,
+    hypothesis_app,
+    iteration_app,
+    register_root_commands,
+)
 from smairt.cli_safety import safety_app
 from smairt.code_quality import build_code_index, validate_code
 from smairt.contracts import check_contracts, export_contracts
-from smairt.corrections import amend_artifact, correct_run
 from smairt.guidance import next_guidance
 from smairt.harnesses import list_harnesses
 from smairt.integrity import verify_run
 from smairt.migrations import apply_migration, detect_scaffold, migration_plan, rollback_migration
 from smairt.model_policy import recommend_model
-from smairt.models import DataClassification, Decision, EnvironmentMode, HarnessName, SmairtConfig
-from smairt.paper import (
-    begin_paper,
-    build_paper,
-    create_claim,
-    create_evidence_card,
-    create_outline,
-    draft_section,
-    review_claim,
-    review_section,
-    validate_paper,
-)
+from smairt.models import DataClassification, EnvironmentMode, HarnessName, SmairtConfig
 from smairt.project import context as build_context
 from smairt.project import find_project, save_context_capsule, validate_project
 from smairt.project import status as project_status
 from smairt.provenance import add_contributor, generate_history, load_events, use_contributor
-from smairt.research import (
-    activate_hypothesis,
-    create_background,
-    create_experiment,
-    create_proposal_set,
-    new_iteration,
-    record_decision,
-    validate_background,
-    validate_proposal_set,
-)
-from smairt.runner import run_experiment
 from smairt.scaffold import conda_environments, create_project
-from smairt.summaries import create_summary, list_summaries, promote_summary, supersede_summary
 from smairt.tui import run_new_project, run_project_menu
 from smairt.upgrade import upgrade_project
 
@@ -85,29 +70,17 @@ app = typer.Typer(
     cls=FriendlyGroup,
 )
 start_app = typer.Typer(help="Friendly project-start aliases")
-background_app = typer.Typer(help="Manage source-grounded project background")
-hypothesis_app = typer.Typer(help="Manage proposal sets and human-selected hypotheses")
-proposal_app = typer.Typer(help="Create and validate three-option proposal sets")
-experiment_app = typer.Typer(help="Manage experiments")
-iteration_app = typer.Typer(help="Manage immutable research iterations")
-decision_app = typer.Typer(help="Record human research decisions")
-paper_app = typer.Typer(help="Manage paper evidence provenance")
 env_app = typer.Typer(help="Inspect and enter the project environment")
 code_app = typer.Typer(help="Index and validate readable research code")
 contributor_app = typer.Typer(help="Manage confirmed project contributors")
 contract_app = typer.Typer(help="Export and check portable harness contracts")
 migrate_app = typer.Typer(help="Plan, apply, and roll back schema migrations")
-summary_app = typer.Typer(help="Manage contributor-scoped source summaries")
 model_app = typer.Typer(help="Recommend economical model capability tiers")
-paper_section_app = typer.Typer(help="Draft and review manuscript sections")
-paper_evidence_app = typer.Typer(help="Manage immutable paper evidence cards")
-paper_claim_app = typer.Typer(help="Manage human-reviewed manuscript claims")
 
 app.add_typer(start_app, name="start")
 app.add_typer(reference_app, name="reference")
 app.add_typer(background_app, name="background")
 app.add_typer(hypothesis_app, name="hypothesis")
-hypothesis_app.add_typer(proposal_app, name="proposals")
 app.add_typer(experiment_app, name="experiment")
 app.add_typer(iteration_app, name="iteration")
 app.add_typer(decision_app, name="decision")
@@ -121,9 +94,7 @@ app.add_typer(harness_app, name="harness")
 app.add_typer(migrate_app, name="migrate")
 app.add_typer(summary_app, name="summary")
 app.add_typer(model_app, name="model")
-paper_app.add_typer(paper_evidence_app, name="evidence")
-paper_app.add_typer(paper_claim_app, name="claim")
-paper_app.add_typer(paper_section_app, name="section")
+register_root_commands(app)
 
 
 @contributor_app.command("add")
@@ -540,362 +511,6 @@ def code_validate(
         {"ok": not any(item["severity"] == "error" for item in findings), "findings": findings},
         as_json,
     )
-
-
-@background_app.command("create")
-def background_create() -> None:
-    """Create the initial-background synthesis workspace and show what follows."""
-    root = _root()
-    console.print(create_background(root))
-    _show_guidance(root)
-
-
-@background_app.command("validate")
-def background_validate() -> None:
-    """Check background structure and grounding against indexed references."""
-    errors = validate_background(_root())
-    _emit({"ok": not errors, "errors": errors}, False)
-    if errors:
-        raise typer.Exit(1)
-
-
-@proposal_app.command("new")
-def proposal_new() -> None:
-    """Create a retained three-option hypothesis proposal set."""
-    root = _root()
-    console.print(create_proposal_set(root))
-    _show_guidance(root)
-
-
-@proposal_app.command("validate")
-def proposal_validate(path: Annotated[Path, typer.Argument()]) -> None:
-    """Validate proposal completeness before a researcher chooses an option."""
-    errors = validate_proposal_set(path)
-    _emit({"ok": not errors, "errors": errors}, False)
-    if errors:
-        raise typer.Exit(1)
-
-
-@hypothesis_app.command("activate")
-def hypothesis_activate(
-    proposal_set: Annotated[Path, typer.Option()],
-    option: Annotated[str, typer.Option()],
-    title: Annotated[str, typer.Option()],
-    statement: Annotated[str, typer.Option()],
-    selected_by: Annotated[str, typer.Option()],
-    rationale: Annotated[str, typer.Option()],
-) -> None:
-    """Record the researcher's explicit hypothesis selection and rationale."""
-    root = _root()
-    console.print(
-        activate_hypothesis(
-            root,
-            proposal_set,
-            option,
-            title=title,
-            statement=statement,
-            selected_by=selected_by,
-            rationale=rationale,
-        )
-    )
-    _show_guidance(root)
-
-
-@experiment_app.command("new")
-def experiment_new(
-    title: Annotated[str, typer.Option()],
-    hypothesis: Annotated[str | None, typer.Option()] = None,
-    purpose: Annotated[str | None, typer.Option()] = None,
-) -> None:
-    """Create a linked or exploratory experiment with a readable entrypoint."""
-    root = _root()
-    console.print(create_experiment(root, title=title, hypothesis_id=hypothesis, purpose=purpose))
-    build_code_index(root)
-    _show_guidance(root)
-
-
-@iteration_app.command("new")
-def iteration_new(
-    experiment: Annotated[str, typer.Option()],
-    from_iteration: Annotated[str, typer.Option("--from")],
-) -> None:
-    """Fork a method into a new immutable iteration for a meaningful change."""
-    root = _root()
-    console.print(new_iteration(root, experiment, from_iteration))
-    build_code_index(root)
-    _show_guidance(root)
-
-
-@app.command("run", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def run_command(
-    ctx: typer.Context,
-    experiment: Annotated[str, typer.Option()],
-    iteration: Annotated[str, typer.Option()],
-) -> None:
-    """Execute an iteration through SMAIRT's provenance-capturing runner."""
-    command = list(ctx.args)
-    if command and command[0] == "--":
-        command = command[1:]
-    record = run_experiment(
-        _root(), experiment_id=experiment, iteration_id=iteration, command=command
-    )
-    _emit(record.model_dump(mode="json", exclude_none=True), False)
-    if record.exit_code:
-        raise typer.Exit(record.exit_code)
-    _show_guidance(_root())
-
-
-@decision_app.command("record")
-def decision_record(
-    experiment: Annotated[str, typer.Option()],
-    iteration: Annotated[str, typer.Option()],
-    run: Annotated[str, typer.Option()],
-    decision: Annotated[Decision, typer.Option()],
-    rationale: Annotated[str, typer.Option()],
-    decided_by: Annotated[str, typer.Option()],
-) -> None:
-    """Append an explicit human interpretation decision for one run."""
-    root = _root()
-    console.print(
-        record_decision(
-            root,
-            experiment_id=experiment,
-            iteration_id=iteration,
-            run_id=run,
-            decision=decision,
-            rationale=rationale,
-            decided_by=decided_by,
-        )
-    )
-    _show_guidance(root)
-
-
-@app.command("amend")
-def amend_command(
-    record: Annotated[Path, typer.Option()],
-    field: Annotated[str, typer.Option()],
-    previous: Annotated[str, typer.Option()],
-    corrected: Annotated[str, typer.Option()],
-    reason: Annotated[str, typer.Option()],
-) -> None:
-    """Append a contributor-attributed correction without changing its target."""
-    root = _root()
-    console.print(amend_artifact(root, record, field, previous, corrected, reason))
-
-
-def _change_selection_status(experiment: str, status: str, reason: str) -> None:
-    """Invalidate a current accepted selection while preserving its history."""
-    path = _root() / "analysis" / experiment / "selection.yaml"
-    if not path.exists():
-        raise typer.BadParameter("experiment has no accepted selection")
-    payload = yaml.safe_load(path.read_text())
-    payload["status"] = status
-    payload["status_reason"] = reason
-    path.write_text(yaml.safe_dump(payload, sort_keys=False))
-
-
-@app.command("retract")
-def retract_command(
-    run: Annotated[str, typer.Option()],
-    reason: Annotated[str, typer.Option()],
-) -> None:
-    """Retract accepted evidence and invalidate dependent records."""
-    console.print(correct_run(_root(), "retract", run, reason))
-
-
-@app.command("supersede")
-def supersede_command(
-    run: Annotated[str, typer.Option()],
-    replacement_run: Annotated[str, typer.Option("--replacement-run")],
-    reason: Annotated[str, typer.Option()],
-) -> None:
-    """Link old evidence to a verified replacement and invalidate dependents."""
-    console.print(correct_run(_root(), "supersede", run, reason, replacement_run))
-
-
-@paper_app.command("validate")
-def paper_validate() -> None:
-    """Reject paper elements not backed by current accepted run evidence."""
-    errors = validate_paper(_root())
-    _emit({"ok": not errors, "errors": errors}, False)
-    if errors:
-        raise typer.Exit(1)
-
-
-@paper_app.command("status")
-def paper_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    """Summarize evidence, claim-review, and manuscript state."""
-    root = _root()
-    claims = [
-        json.loads(path.read_text()) for path in sorted((root / "paper/claims").glob("*.json"))
-    ]
-    payload = {
-        "evidence_cards": len(list((root / "paper/evidence").glob("*.json"))),
-        "claims": {
-            state: sum(c.get("status") == state for c in claims)
-            for state in ("proposed", "approved", "rejected", "superseded", "retracted")
-        },
-        "manuscript_started": (root / "paper/manuscript.md").exists(),
-    }
-    _emit(payload, as_json)
-
-
-@paper_evidence_app.command("list")
-def paper_evidence_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    """List immutable manuscript evidence cards."""
-    root = _root()
-    items = [
-        json.loads(path.read_text()) for path in sorted((root / "paper/evidence").glob("*.json"))
-    ]
-    _emit(items, as_json)
-
-
-@paper_evidence_app.command("review")
-def paper_evidence_review(
-    run: Annotated[str, typer.Option()],
-    purpose: Annotated[str, typer.Option()],
-    observed_result: Annotated[str, typer.Option()],
-    limitations: Annotated[str, typer.Option()],
-    decision: Annotated[str, typer.Option()],
-    relevance: Annotated[str, typer.Option()] = "",
-) -> None:
-    """Create an evidence card from a verified research run."""
-    console.print(
-        create_evidence_card(
-            _root(),
-            run,
-            purpose=purpose,
-            observed_result=observed_result,
-            limitations=limitations,
-            decision=decision,
-            relevance=relevance,
-        )
-    )
-
-
-@paper_claim_app.command("propose")
-def paper_claim_propose(
-    statement: Annotated[str, typer.Option()],
-    evidence: Annotated[list[str], typer.Option()],
-    reference: Annotated[list[str] | None, typer.Option()] = None,
-) -> None:
-    """Propose a claim linked to project evidence and references."""
-    console.print(create_claim(_root(), statement, evidence, reference))
-
-
-def _claim_review_command(identifier: str, status: str, yes: bool) -> None:
-    if not yes and not Confirm.ask(f"Mark {identifier} {status}?", default=False):
-        raise typer.Exit()
-    _emit(review_claim(_root(), identifier, status), False)
-
-
-@paper_claim_app.command("approve")
-def paper_claim_approve(
-    identifier: Annotated[str, typer.Argument()],
-    yes: Annotated[bool, typer.Option("--yes")] = False,
-) -> None:
-    """Approve a currently supported manuscript claim."""
-    _claim_review_command(identifier, "approved", yes)
-
-
-@paper_claim_app.command("reject")
-def paper_claim_reject(
-    identifier: Annotated[str, typer.Argument()],
-    yes: Annotated[bool, typer.Option("--yes")] = False,
-) -> None:
-    """Reject a proposed manuscript claim with human confirmation."""
-    _claim_review_command(identifier, "rejected", yes)
-
-
-@paper_app.command("begin")
-def paper_begin(title: Annotated[str, typer.Option()]) -> None:
-    """Initialize canonical manuscript files."""
-    console.print(begin_paper(_root(), title))
-
-
-@paper_app.command("outline")
-def paper_outline() -> None:
-    """Create a claim-linked manuscript outline."""
-    console.print(create_outline(_root()))
-
-
-@paper_section_app.command("draft")
-def paper_section_draft(
-    section: Annotated[str, typer.Argument()],
-    text: Annotated[str, typer.Option()],
-    claim: Annotated[list[str], typer.Option()],
-) -> None:
-    """Draft one canonical section from approved claims."""
-    console.print(draft_section(_root(), section, text, claim))
-
-
-@paper_section_app.command("review")
-def paper_section_review(
-    section: Annotated[str, typer.Argument()],
-    claim: Annotated[list[str], typer.Option()],
-    yes: Annotated[bool, typer.Option("--yes")] = False,
-) -> None:
-    """Mark a drafted section reviewed against approved claims."""
-    if not yes and not Confirm.ask(f"Mark {section} reviewed?", default=False):
-        raise typer.Exit()
-    _emit(review_section(_root(), section, claim), False)
-
-
-@paper_app.command("build")
-def paper_build(
-    format_name: Annotated[str, typer.Option("--format")],
-    template: Annotated[Path | None, typer.Option()] = None,
-    line_numbering: Annotated[bool, typer.Option("--line-numbering")] = False,
-) -> None:
-    """Build a versioned manuscript after evidence validation."""
-    console.print(
-        build_paper(_root(), format_name, template=template, line_numbering=line_numbering)
-    )
-
-
-@summary_app.command("create")
-def summary_create(
-    source: Annotated[Path, typer.Argument()],
-    content: Annotated[str, typer.Option()],
-    shareable: Annotated[bool, typer.Option("--shareable")] = False,
-    redaction_confirmed: Annotated[bool, typer.Option("--redaction-confirmed")] = False,
-) -> None:
-    """Create an immutable contributor-scoped source summary."""
-    console.print(
-        create_summary(
-            _root(),
-            source,
-            content,
-            shareable=shareable,
-            redaction_confirmed=redaction_confirmed,
-        )
-    )
-
-
-@summary_app.command("list")
-def summary_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    """List current summary records and canonical state."""
-    _emit(list_summaries(_root()), as_json)
-
-
-@summary_app.command("compare")
-def summary_compare(source_id: Annotated[str, typer.Argument()]) -> None:
-    """Compare contributor summaries for one source."""
-    _emit([item for item in list_summaries(_root()) if item["source_id"] == source_id], False)
-
-
-@summary_app.command("promote")
-def summary_promote(identifier: Annotated[str, typer.Argument()]) -> None:
-    """Promote a fresh summary to the shared canonical pointer."""
-    console.print(promote_summary(_root(), identifier))
-
-
-@summary_app.command("supersede")
-def summary_supersede(
-    previous: Annotated[str, typer.Argument()], replacement: Annotated[str, typer.Argument()]
-) -> None:
-    """Link an older summary to its fresh replacement."""
-    console.print(supersede_summary(_root(), previous, replacement))
 
 
 @env_app.command("status")
