@@ -2,27 +2,42 @@
 
 from __future__ import annotations
 
+import importlib
+import os
+import time
 from contextlib import suppress
 from pathlib import Path
-from typing import TypedDict, TypeVar
+from typing import Any, TypedDict, TypeVar, cast
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from prompt_toolkit.shortcuts.choice_input import ChoiceInput
+from prompt_toolkit.widgets import RadioList
+from rich.columns import Columns
 from rich.console import Console
 from rich.panel import Panel
 
-from smairt.credentials import delete_credential, set_credential
+from smairt.credentials import delete_credential, keyring_health, set_credential
 from smairt.diagnostics import doctor, setup_doctor
-from smairt.guidance import next_guidance
-from smairt.harnesses import configure_mcp, mcp_status
+from smairt.guidance import next_guidance, render_suggested_prompt
+from smairt.harnesses import configure_mcp, install_harness, list_harnesses, select_harness
 from smairt.integrations import (
     configure_openalex,
     configure_zotero,
     integration_health,
 )
-from smairt.migrations import apply_migration
+from smairt.local_setup import (
+    ConnectionProfile,
+    ProviderName,
+    configure_profile,
+    delete_profile,
+    discover_zotero_libraries,
+    load_bindings,
+    load_user_setup,
+    test_profile,
+)
+from smairt.migrations import apply_migration, migration_plan
 from smairt.models import (
     DataClassification,
     EnvironmentMode,
@@ -33,22 +48,34 @@ from smairt.models import (
     ZoteroLibraryType,
     ZoteroMode,
 )
-from smairt.project import status
+from smairt.project import find_project, status
 from smairt.provenance import add_contributor, use_contributor
 from smairt.references import (
     add_doi_reference,
+    add_reference,
     attach_reference,
     copy_zotero_attachment,
+    edit_reference,
     import_zotero_collection,
     import_zotero_item,
+    inspect_pdf,
     load_index,
+    verify_reference,
 )
+from smairt.safety import release_check, safety_status, set_safety_mode
 from smairt.scaffold import conda_environments, create_project
 from smairt.settings import select_environment, update_project_settings
+from smairt.upgrade import upgrade_project
 from smairt.utils import slugify
-from smairt.zotero import ZoteroProvider
 
 ORANGE = "#f28c28"
+CYAN = "#62d6e8"
+SMAIRT_LOGO = r"""  _____ __  __    _    ___ ____ _____
+ / ___/|  \/  |  / \  |_ _|  _ \_   _|
+ \___ \| |\/| | / _ \  | || |_) || |
+  ___) | |  | |/ ___ \ | ||  _ < | |
+ |____/|_|  |_/_/   \_\___|_| \_\|_|"""
+_ANIMATED_TITLES: set[str] = set()
 FIELD_SUGGESTIONS = (
     "Machine learning, Data science, Computational biology, Physics, Chemistry, Engineering"
 )
@@ -60,6 +87,9 @@ class WizardValues(TypedDict):
     """Retained values for every creation step."""
 
     destination: str
+    creation_mode: str
+    parent: str
+    folder: str
     name: str
     author: str
     email: str
@@ -81,6 +111,28 @@ class BackNavigation(Exception):
     """Signal Escape without treating ordinary navigation as an error."""
 
 
+class _WrappingRadioList(RadioList[T]):
+    """Provide circular arrow navigation for Prompt Toolkit choice menus."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        bindings = cast(KeyBindings, self.control.key_bindings)
+
+        @bindings.add("up", eager=True)
+        @bindings.add("k", eager=True)
+        def move_up(event: KeyPressEvent) -> None:
+            del event
+            self._selected_index = (self._selected_index - 1) % len(self.values)
+            self._handle_enter()
+
+        @bindings.add("down", eager=True)
+        @bindings.add("j", eager=True)
+        def move_down(event: KeyPressEvent) -> None:
+            del event
+            self._selected_index = (self._selected_index + 1) % len(self.values)
+            self._handle_enter()
+
+
 def _back_bindings() -> KeyBindings:
     """Bind Escape to a typed navigation signal for every prompt."""
     bindings = KeyBindings()
@@ -93,7 +145,7 @@ def _back_bindings() -> KeyBindings:
 
 
 def _select(message: str, options: list[tuple[T, str]], default: T | None = None) -> T:
-    """Select one inline option using arrows and Enter, with Escape as back."""
+    """Select one inline option with circular arrows, Enter, and Escape."""
     chooser = ChoiceInput(
         message=message,
         options=options,
@@ -101,7 +153,16 @@ def _select(message: str, options: list[tuple[T, str]], default: T | None = None
         symbol=">",
         key_bindings=_back_bindings(),
     )
-    application = chooser._create_application()
+    # ChoiceInput does not expose a radio-list factory.  Swap the module-level
+    # class only while constructing this single-threaded terminal application;
+    # the resulting instance keeps the circular bindings after restoration.
+    choice_module = importlib.import_module("prompt_toolkit.shortcuts.choice_input")
+    original_radio_list = choice_module.RadioList
+    choice_module.RadioList = _WrappingRadioList  # type: ignore[attr-defined]
+    try:
+        application = chooser._create_application()
+    finally:
+        choice_module.RadioList = original_radio_list  # type: ignore[attr-defined]
     application.ttimeoutlen = 0.05
     return application.run()
 
@@ -135,11 +196,57 @@ def _pause() -> None:
 
 
 def _header(title: str, subtitle: str = "") -> None:
-    """Render a compact terminal-native heading without clearing scrollback."""
-    body = f"[bold {ORANGE}]{title}[/]"
+    """Render a responsive, anchored terminal frame without an alternate screen."""
+    width, height = console.size
+    if console.is_terminal:
+        # Erasing the visible screen prevents each nested menu from walking down
+        # the terminal while keeping the terminal's normal scrollback buffer.
+        console.clear(home=True)
+    motion = (
+        console.is_terminal
+        and title not in _ANIMATED_TITLES
+        and load_user_setup().motion == "automatic"
+        and os.environ.get("SMAIRT_REDUCED_MOTION") != "1"
+        and not os.environ.get("CI")
+        and os.environ.get("TERM") != "dumb"
+        and width >= 72
+        and height >= 20
+    )
+    if motion:
+        with console.status(f"[bold {ORANGE}]Waking SMAIRT…[/]", spinner="dots12"):
+            time.sleep(0.16)
+        _ANIMATED_TITLES.add(title)
+    identity = f"[bold {ORANGE}]{title}[/]"
     if subtitle:
-        body += f"\n[dim]{subtitle}[/dim]"
-    console.print(Panel.fit(body, border_style=ORANGE, padding=(0, 2)))
+        identity += f"\n[dim]{subtitle}[/dim]"
+    if width >= 110 and height >= 24:
+        console.print(
+            Columns(
+                [
+                    Panel(
+                        f"[bold {ORANGE}]{SMAIRT_LOGO}[/]",
+                        border_style=ORANGE,
+                        padding=(0, 1),
+                    ),
+                    Panel(
+                        identity + f"\n\n[bold {CYAN}]Scientific Method[/]\n"
+                        "[dim]AI-assisted · researcher governed[/]",
+                        title="Research workspace",
+                        border_style=CYAN,
+                        padding=(1, 2),
+                    ),
+                ],
+                expand=True,
+                equal=True,
+            )
+        )
+    elif width >= 72:
+        console.print(Panel(identity, title="◆ SMAIRT", border_style=ORANGE, expand=True))
+    else:
+        compact = f"[bold {ORANGE}]◆ SMAIRT · {title}[/]"
+        if subtitle and height >= 16:
+            compact += f"\n[dim]{subtitle}[/dim]"
+        console.print(Panel(compact, border_style=ORANGE, expand=True, padding=(0, 1)))
 
 
 def _preflight_destination(destination: Path, *, allow_existing: bool) -> None:
@@ -163,7 +270,10 @@ def run_new_project(
 ) -> Path | None:
     """Run a retained-state creation workflow directly in the shell transcript."""
     values: WizardValues = {
-        "destination": str(destination or Path.cwd()),
+        "destination": "",
+        "creation_mode": "initialize" if allow_existing else "new",
+        "parent": str(destination or Path.cwd()),
+        "folder": "",
         "name": "",
         "author": "",
         "email": "",
@@ -184,14 +294,48 @@ def run_new_project(
     while True:
         try:
             if step == 0:
+                _header("SMAIRT · New Project", "Choose where the project will live")
+                values["creation_mode"] = _select(
+                    "Creation mode",
+                    [
+                        ("new", "Create a new folder inside a parent directory"),
+                        ("initialize", "Initialize an existing folder in place"),
+                        ("cancel", "Cancel"),
+                    ],
+                    values["creation_mode"],
+                )
+                if values["creation_mode"] == "cancel":
+                    return None
+                step = 1
+            elif step == 1:
                 _header("SMAIRT · New Project", "Step 1 of 5 · Location")
-                values["destination"] = _text("Destination", str(values["destination"]))
                 values["name"] = _text("Project name", str(values["name"]))
                 if not values["name"]:
                     raise ValueError("project name is required")
-                _preflight_destination(Path(values["destination"]), allow_existing=allow_existing)
-                step = 1
-            elif step == 1:
+                if values["creation_mode"] == "new":
+                    values["parent"] = _text("Parent directory", str(values["parent"]))
+                    values["folder"] = _text(
+                        "Project folder", str(values["folder"] or slugify(values["name"]))
+                    )
+                    if not values["folder"] or Path(values["folder"]).name != values["folder"]:
+                        raise ValueError("project folder must be one folder name")
+                    target = Path(values["parent"]).expanduser() / values["folder"]
+                    try:
+                        ancestor = find_project(Path(values["parent"]).expanduser())
+                    except FileNotFoundError:
+                        ancestor = None
+                    if ancestor is not None and not _yes_no(
+                        f"Create a separate nested project under {ancestor}?", False
+                    ):
+                        continue
+                    _preflight_destination(target, allow_existing=False)
+                else:
+                    existing_default = values["destination"] or str(destination or Path.cwd())
+                    target = Path(_text("Existing folder", existing_default)).expanduser()
+                    _preflight_destination(target, allow_existing=True)
+                values["destination"] = str(target.resolve())
+                step = 2
+            elif step == 2:
                 _header("SMAIRT · New Project", "Step 2 of 5 · Research identity")
                 values["question"] = _text(
                     "Initial research question (optional)", values["question"]
@@ -203,8 +347,8 @@ def run_new_project(
                 values["fields"] = _text(
                     "Fields of study, comma separated (optional)", str(values["fields"])
                 )
-                step = 2
-            elif step == 2:
+                step = 3
+            elif step == 3:
                 _header("SMAIRT · New Project", "Step 3 of 5 · People")
                 values["author"] = _text("Primary researcher", str(values["author"]))
                 if not values["author"]:
@@ -226,8 +370,8 @@ def run_new_project(
                         raise ValueError("collaborator names must be unique")
                     collaborators.append((collaborator_name, collaborator_email or None))
                 values["collaborators"] = collaborators
-                step = 3
-            elif step == 3:
+                step = 4
+            elif step == 4:
                 _header("SMAIRT · New Project", "Step 4 of 5 · Policy and tools")
                 values["classification"] = _select(
                     "Data classification",
@@ -248,9 +392,7 @@ def run_new_project(
                     values["environment"],
                 )
                 if values["environment"] is EnvironmentMode.NEW_CONDA:
-                    default_name = values["environment_name"] or (
-                        f"smairt-{slugify(values['name'])}"
-                    )
+                    default_name = values["environment_name"] or slugify(values["name"])
                     values["environment_name"] = _text("Conda environment name", default_name)
                 values["harness"] = _select(
                     "Coding harness",
@@ -263,7 +405,7 @@ def run_new_project(
                     values["safety_mode"],
                 )
                 values["git"] = _yes_no("Initialize Git?", bool(values["git"]))
-                step = 4
+                step = 5
             else:
                 _header("SMAIRT · New Project", "Step 5 of 5 · Review")
                 console.print(
@@ -287,7 +429,7 @@ def run_new_project(
                 if action == "cancel":
                     return None
                 if action == "back":
-                    step = 3
+                    step = 4
                     continue
                 target = Path(values["destination"]).expanduser().resolve()
                 fields = [item.strip() for item in str(values["fields"]).split(",") if item.strip()]
@@ -309,12 +451,12 @@ def run_new_project(
                         harness=values["harness"],
                         safety_mode=values["safety_mode"].value,
                         confirm_contributor=bool(values["confirm_contributor"]),
-                        allow_existing=allow_existing,
+                        allow_existing=values["creation_mode"] == "initialize",
                     )
                 for saved_name, saved_email in values["collaborators"]:
                     add_contributor(target, saved_name, saved_email)
                 _header("Project created", str(target))
-                console.print(f"Resume later with: [bold]cd {target} && smairt[/bold]")
+                console.print(f"Resume later with: [bold]cd {target} && smairt menu[/bold]")
                 if _select(
                     "Next",
                     [(True, "Open project dashboard"), (False, "Return to shell")],
@@ -337,7 +479,18 @@ def _show_guidance(root: Path, section: str) -> None:
     _header(f"{section}", "Status and command handoff")
     if isinstance(recommended, dict):
         console.print(f"[bold]Recommended:[/] {recommended.get('label')}")
-        console.print(f"[cyan]{recommended.get('command') or 'smairt next --json'}[/cyan]")
+        if recommended.get("read"):
+            console.print("[bold]Read first:[/] " + " · ".join(recommended["read"]))
+        if recommended.get("command"):
+            console.print(f"[cyan]{recommended['command']}[/cyan]")
+        console.print(
+            Panel(
+                render_suggested_prompt(root, guidance),
+                title="Suggested Prompt",
+                border_style=ORANGE,
+            )
+        )
+        console.print("[dim]Copy again with: smairt next --prompt[/dim]")
     else:
         console.print("[cyan]smairt next --json[/cyan]")
     _pause()
@@ -459,7 +612,32 @@ def _environment_menu(root: Path) -> None:
         if selected == "none":
             select_environment(root, mode=EnvironmentMode.NONE)
         elif selected == "new":
-            name = _text("New Conda environment name", f"smairt-{config.project.slug}")
+            name = _text("New Conda environment name", config.project.slug)
+            existing_names = {str(item["name"]) for item in environments}
+            if name in existing_names:
+                collision = _select(
+                    "That environment already exists",
+                    [
+                        ("use", "Use the existing environment"),
+                        ("rename", "Choose another name"),
+                        ("cancel", "Cancel"),
+                    ],
+                )
+                if collision == "cancel":
+                    return
+                if collision == "use":
+                    selected_environment = next(
+                        item for item in environments if str(item["name"]) == name
+                    )
+                    select_environment(
+                        root,
+                        mode=EnvironmentMode.EXISTING_CONDA,
+                        name=name,
+                        prefix=str(selected_environment["prefix"]),
+                    )
+                    console.print("[green]Existing environment selected.[/green]")
+                    return
+                name = _text("Different Conda environment name", f"{config.project.slug}-2")
             with console.status("Creating Conda environment…", spinner="dots"):
                 select_environment(root, mode=EnvironmentMode.NEW_CONDA, name=name, create=True)
         else:
@@ -478,108 +656,170 @@ def _environment_menu(root: Path) -> None:
 
 
 def _integrations_menu(root: Path) -> None:
-    """Configure non-secret integration state and masked credential profiles."""
+    """Bind user-local connections and explain project-specific permissions."""
     while True:
         config = SmairtConfig.load(root / "smairt.yaml")
-        _header("Integrations & API keys", f"Zotero: {config.integrations.zotero.mode.value}")
+        health = integration_health(root) if config.schema_version >= 4 else {}
+        _header(
+            "Project Integrations",
+            "Connections are local to this machine; agent access is a separate project permission",
+        )
+        if health:
+            zotero_health = cast(dict[str, object], health["zotero"])
+            openalex_health = cast(dict[str, object], health["openalex"])
+            console.print(
+                Columns(
+                    [
+                        Panel(
+                            "Ready" if zotero_health.get("ready") else "Not connected",
+                            title="Zotero",
+                            border_style=ORANGE,
+                        ),
+                        Panel(
+                            "Ready" if openalex_health.get("ready") else "Not connected",
+                            title="OpenAlex",
+                            border_style=ORANGE,
+                        ),
+                    ],
+                    equal=True,
+                    expand=True,
+                )
+            )
         try:
             action = _select(
                 "Integrations",
                 [
-                    ("status", "Show backend and non-secret status"),
-                    ("zotero", "Configure read-only Zotero"),
-                    ("openalex", "Configure OpenAlex profile"),
-                    ("credential", "Set or delete a masked API key"),
-                    ("test", "Explicitly test Zotero connection"),
-                    ("mcp", "Configure read-only agent access"),
+                    ("status", "Connection summary · no network request"),
+                    ("zotero", "Connect this project to a local Zotero profile"),
+                    ("openalex", "Connect this project to a local OpenAlex profile"),
+                    ("test", "Test a connected provider now"),
+                    ("agent", "Agent metadata access · never PDFs or write access"),
+                    ("disconnect", "Disconnect a provider on this machine"),
                     ("back", "Back"),
                 ],
             )
             if action == "back":
                 return
-            if config.schema_version < 4:
-                console.print("Schema v4 is required for integrations.")
-                if _yes_no("Apply the backed-up migration now?", True):
-                    apply_migration(root, config.active_contributor)
+            if config.schema_version < 5:
+                console.print(
+                    "Schema v5 moves connection IDs out of Git-managed project configuration."
+                )
+                if _yes_no("Preview and apply the backed-up privacy migration now?", True):
+                    console.print(migration_plan(root))
+                    if _yes_no("Apply this migration?", True):
+                        apply_migration(root, config.active_contributor)
                 continue
-            if action == "status":
-                console.print(integration_health(root))
-                _pause()
-            elif action == "zotero":
-                zotero_config = config.integrations.zotero
-                mode = _select(
-                    "Zotero connection",
-                    [(item, item.value) for item in ZoteroMode],
-                    zotero_config.mode,
+            profiles = load_user_setup().profiles
+            if action in {"zotero", "openalex"}:
+                provider = action
+                choices = [
+                    (name, name)
+                    for name, profile_value in profiles.items()
+                    if profile_value.provider == provider
+                ]
+                if not choices:
+                    console.print(
+                        f"No local {provider.title()} profile exists. Run [bold]smairt setup[/] "
+                        "first; no project file was changed."
+                    )
+                    _pause()
+                    continue
+                selected = _select(f"Local {provider.title()} profile", choices)
+                profile_value = profiles[selected]
+                if provider == "openalex":
+                    configure_openalex(
+                        root,
+                        enabled=True,
+                        profile=selected,
+                        environment_variable=profile_value.environment_variable
+                        or "OPENALEX_API_KEY",
+                    )
+                else:
+                    configure_zotero(
+                        root,
+                        mode=profile_value.mode or ZoteroMode.LOCAL,
+                        library_id=profile_value.library_id,
+                        library_type=profile_value.library_type or ZoteroLibraryType.USER,
+                        profile=selected,
+                        environment_variable=profile_value.environment_variable or "ZOTERO_API_KEY",
+                        mcp_access_enabled=config.integrations.zotero.mcp_access_enabled,
+                        confirm_agent_access=False,
+                    )
+                console.print(
+                    f"[green]{provider.title()} connected for this checkout.[/] "
+                    "Connection IDs remain outside the project repository."
                 )
-                library_id = _text("Library ID (Web mode)", zotero_config.library_id or "")
-                library_type = _select(
-                    "Library type",
-                    [(item, item.value) for item in ZoteroLibraryType],
-                    zotero_config.library_type,
+            elif action == "status":
+                _render_integration_health(health)
+            elif action == "test":
+                provider = _select(
+                    "Connected provider", [("zotero", "Zotero"), ("openalex", "OpenAlex")]
                 )
-                profile = _text("Credential profile", zotero_config.credential.profile)
+                provider_name = cast(ProviderName, provider)
+                binding = load_bindings(root).providers.get(provider_name)
+                if not binding:
+                    raise ValueError(f"{provider.title()} is not connected on this machine")
+                console.print(_connection_receipt(test_profile(binding)))
+            elif action == "disconnect":
+                provider = _select("Provider", [("zotero", "Zotero"), ("openalex", "OpenAlex")])
+                if provider == "openalex":
+                    default_profile = profiles.get("default")
+                    configure_openalex(
+                        root,
+                        enabled=False,
+                        profile="default",
+                        environment_variable=(
+                            (default_profile.environment_variable or "OPENALEX_API_KEY")
+                            if default_profile and default_profile.provider == "openalex"
+                            else "OPENALEX_API_KEY"
+                        ),
+                    )
+                else:
+                    configure_zotero(
+                        root,
+                        mode=ZoteroMode.DISABLED,
+                        library_id=None,
+                        library_type=ZoteroLibraryType.USER,
+                        profile="default",
+                        mcp_access_enabled=False,
+                    )
+                console.print(f"[green]{provider.title()} disconnected for this checkout.[/green]")
+            else:
+                zotero_status = cast(dict[str, object], integration_health(root)["zotero"])
+                if not zotero_status.get("ready"):
+                    raise ValueError(
+                        "connect a Zotero profile before enabling agent metadata access"
+                    )
+                profile_name = str(zotero_status["bound_profile"])
+                profile_value = profiles[profile_name]
+                enable = _yes_no(
+                    "Allow the configured assistant to read bounded Zotero metadata only?",
+                    not config.integrations.zotero.mcp_access_enabled,
+                )
+                confirm_private = (
+                    _yes_no(
+                        "Confirm this private-project permission for the active contributor?", False
+                    )
+                    if enable and config.data.classification is DataClassification.PRIVATE
+                    else False
+                )
                 configure_zotero(
                     root,
-                    mode=mode,
-                    library_id=library_id or None,
-                    library_type=library_type,
-                    profile=profile,
-                    environment_variable=zotero_config.credential.environment_variable
-                    or "ZOTERO_API_KEY",
-                    mcp_access_enabled=_yes_no(
-                        "Allow attributed read-only Zotero metadata through MCP?",
-                        zotero_config.mcp_access_enabled,
-                    ),
-                    confirm_agent_access=_yes_no(
-                        "Confirm agent access for this contributor?",
-                        False,
-                    )
-                    if config.data.classification is DataClassification.PRIVATE
-                    else False,
+                    mode=profile_value.mode or ZoteroMode.LOCAL,
+                    library_id=profile_value.library_id,
+                    library_type=profile_value.library_type or ZoteroLibraryType.USER,
+                    profile=profile_name,
+                    environment_variable=profile_value.environment_variable or "ZOTERO_API_KEY",
+                    mcp_access_enabled=enable,
+                    confirm_agent_access=confirm_private,
                 )
-            elif action == "openalex":
-                openalex_config = config.integrations.openalex
-                profile = _text("Credential profile", openalex_config.credential.profile)
-                env_var = _text(
-                    "Environment variable",
-                    openalex_config.credential.environment_variable or "OPENALEX_API_KEY",
-                )
-                configure_openalex(
-                    root,
-                    enabled=_yes_no("Enable OpenAlex supplementation?", openalex_config.enabled),
-                    profile=profile,
-                    environment_variable=env_var,
-                )
-            elif action == "credential":
-                provider = _select("Provider", [("openalex", "OpenAlex"), ("zotero", "Zotero")])
-                configured = (
-                    config.integrations.openalex.credential
-                    if provider == "openalex"
-                    else config.integrations.zotero.credential
-                )
-                profile = _text("Credential profile", configured.profile)
-                operation = _select(
-                    "Credential", [("set", "Set masked value"), ("delete", "Delete")]
-                )
-                if operation == "delete":
-                    delete_credential(provider, profile)
-                    console.print("[green]Credential deleted if it existed.[/green]")
-                    continue
-                secret = _secret(f"{provider} API key")
-                set_credential(provider, profile, secret)
-                console.print("[green]Credential stored in the OS keyring.[/green]")
-            elif action == "test":
-                with console.status("Contacting Zotero…", spinner="dots"):
-                    collections = ZoteroProvider(root).collections(1)
-                console.print({"ok": True, "collections_returned": len(collections)})
-            else:
                 harness = config.harness.active
-                if harness is HarnessName.CLINE:
-                    raise ValueError("Cline MCP configuration is deferred")
-                enabled = harness in config.integrations.mcp.enabled_harnesses
-                configure_mcp(root, harness, not enabled)
-                console.print(mcp_status(root))
+                if enable:
+                    configure_mcp(root, harness, True)
+                console.print(
+                    "[green]Agent metadata access updated.[/] PDFs, full text, secrets, and "
+                    "write operations remain unavailable."
+                )
         except BackNavigation:
             return
         except (OSError, RuntimeError, ValueError) as exc:
@@ -587,60 +827,197 @@ def _integrations_menu(root: Path) -> None:
         _pause()
 
 
+def _render_integration_health(payload: dict[str, object]) -> None:
+    """Explain local connection state without dumping internal dictionaries."""
+    for provider in ("zotero", "openalex"):
+        status_payload = cast(dict[str, object], payload[provider])
+        ready = bool(status_payload.get("ready"))
+        console.print(
+            f"{'[green]✓[/]' if ready else '[yellow]![/]'} {provider.title()}: "
+            f"{'ready' if ready else 'not connected on this machine'}"
+        )
+        if status_payload.get("bound_profile"):
+            console.print(f"  Local profile: {status_payload['bound_profile']}")
+        if provider == "zotero":
+            console.print(
+                "  Agent access: "
+                + ("metadata only" if status_payload.get("mcp_access_enabled") else "disabled")
+            )
+
+
 def _references_menu(root: Path) -> None:
-    """Import and review references through the same transactional CLI services."""
+    """Separate metadata, documents, and human verification with visible receipts."""
     while True:
         records = load_index(root)
-        _header("References", f"{len(records)} indexed record(s)")
+        verified = sum(item.verification_status.value == "verified" for item in records)
+        attached = sum(bool(item.local_path) for item in records)
+        _header("References", "Add metadata → attach PDFs → review and verify")
+        console.print(
+            Columns(
+                [
+                    Panel(str(len(records)), title="Indexed", border_style=ORANGE),
+                    Panel(str(attached), title="PDFs attached", border_style=ORANGE),
+                    Panel(str(verified), title="Human verified", border_style=ORANGE),
+                ],
+                equal=True,
+                expand=True,
+            )
+        )
         try:
             action = _select(
                 "References",
                 [
-                    ("list", "Review metadata"),
-                    ("doi", "Import DOI metadata"),
-                    ("zotero-item", "Import Zotero item"),
-                    ("zotero-collection", "Import Zotero collection"),
-                    ("zotero-pdf", "Copy one local Zotero PDF"),
-                    ("attach", "Attach a local PDF"),
+                    ("metadata", "Add metadata · DOI or Zotero"),
+                    ("document", "Add a local PDF · standalone or attach"),
+                    ("review", "Review, edit, and human-verify metadata"),
+                    ("zotero-pdf", "Copy one selected local Zotero PDF"),
+                    ("export", "Export references"),
                     ("back", "Back"),
                 ],
             )
             if action == "back":
                 return
-            if action == "list":
-                for record in records:
-                    console.print(
-                        f"[bold]{record.id}[/] · {record.title} · "
-                        f"{record.verification_status.value}"
-                    )
-                _pause()
-                continue
-            if action == "doi":
-                record = add_doi_reference(
-                    root,
-                    _text("DOI"),
-                    use_openalex=_yes_no("Supplement missing fields with OpenAlex?", False),
-                    confirm_remote=_yes_no("Confirm this metadata network request?", True),
+            if action == "metadata":
+                source = _select(
+                    "Metadata source",
+                    [
+                        ("doi", "DOI · Crossref metadata, no PDF"),
+                        ("zotero-item", "One Zotero item · metadata only"),
+                        ("zotero-collection", "Zotero collection · metadata only"),
+                    ],
                 )
-            elif action == "zotero-item":
-                record = import_zotero_item(root, _text("Zotero item key"))
-            elif action == "zotero-collection":
-                key = _text("Zotero collection key")
-                limit_text = _text("Maximum items (1-1000)", "500")
-                imported = import_zotero_collection(root, key, limit=int(limit_text))
-                console.print(f"[green]Imported {len(imported)} record(s).[/green]")
-                _pause()
-                continue
+                if source == "doi":
+                    record = add_doi_reference(
+                        root,
+                        _text("DOI"),
+                        use_openalex=_yes_no(
+                            "Supplement missing fields with connected OpenAlex?", False
+                        ),
+                        confirm_remote=_yes_no("Send this DOI in a metadata request?", True),
+                    )
+                    _reference_receipt(root, [record], "Metadata imported; no PDF was added")
+                elif source == "zotero-item":
+                    record = import_zotero_item(root, _text("Zotero item key"))
+                    _reference_receipt(
+                        root,
+                        [record],
+                        "Zotero metadata imported; the item key is retained as source provenance",
+                    )
+                else:
+                    key = _text("Zotero collection key")
+                    limit_text = _text("Maximum metadata records (1-1000)", "500")
+                    imported = import_zotero_collection(root, key, limit=int(limit_text))
+                    _reference_receipt(
+                        root,
+                        imported,
+                        "Collection metadata imported; PDFs were not copied",
+                    )
+            elif action == "document":
+                document_action = _select(
+                    "Local PDF",
+                    [
+                        ("standalone", "Index a PDF as a new reference"),
+                        ("attach", "Attach a PDF to existing metadata"),
+                    ],
+                )
+                pdf = Path(_text("PDF path")).expanduser()
+                if document_action == "standalone":
+                    proposed = inspect_pdf(pdf)
+                    console.print(
+                        f"Proposed title: {proposed['title']}\n"
+                        f"Proposed DOI: {proposed.get('doi') or 'not detected'}"
+                    )
+                    title = _text("Confirmed title", str(proposed["title"]))
+                    if not _yes_no("Copy and index this PDF in the project?", True):
+                        continue
+                    record = add_reference(
+                        root,
+                        pdf,
+                        title=title,
+                        authors=list(cast(list[str], proposed.get("authors", []))),
+                        doi=cast(str | None, proposed.get("doi")),
+                    )
+                else:
+                    if not records:
+                        raise ValueError("add metadata before attaching a PDF")
+                    attachable = [item for item in records if not item.local_path]
+                    if not attachable:
+                        raise ValueError("all indexed references already have PDFs attached")
+                    identifier = _select(
+                        "Reference",
+                        [(item.id, f"{item.title} · {item.id}") for item in attachable],
+                    )
+                    record = attach_reference(root, identifier, pdf)
+                _reference_receipt(root, [record], "PDF copied, validated, and checksummed")
+            elif action == "review":
+                if not records:
+                    console.print("No references are indexed yet.")
+                    _pause()
+                    continue
+                identifier = _select(
+                    "Reference",
+                    [
+                        (item.id, f"{item.title} · {item.verification_status.value}")
+                        for item in records
+                    ],
+                )
+                record = next(item for item in records if item.id == identifier)
+                console.print(
+                    Panel(
+                        f"[bold]{record.title}[/]\n"
+                        f"Authors: {', '.join(record.authors) or 'missing'}\n"
+                        f"Year: {record.year or 'missing'} · DOI: {record.doi or 'missing'}\n"
+                        f"PDF: {record.local_path or 'not attached'}\n"
+                        f"Status: {record.verification_status.value}",
+                        title=record.id,
+                    )
+                )
+                review_action = _select(
+                    "Review action",
+                    [
+                        ("verify", "Confirm current metadata"),
+                        ("edit", "Correct one field"),
+                        ("back", "Back"),
+                    ],
+                )
+                if review_action == "back":
+                    continue
+                contributor = SmairtConfig.load(root / "smairt.yaml").active_contributor
+                if not contributor:
+                    raise ValueError("select an active contributor before attributed review")
+                if review_action == "verify":
+                    record = verify_reference(root, identifier, contributor)
+                else:
+                    field = _select(
+                        "Field",
+                        [
+                            (item, item.title())
+                            for item in ("title", "authors", "year", "doi", "venue", "url")
+                        ],
+                    )
+                    record = edit_reference(
+                        root, identifier, field, _text("Corrected value"), contributor
+                    )
+                _reference_receipt(
+                    root, [record], "Human review recorded with contributor attribution"
+                )
             elif action == "zotero-pdf":
                 item_key = _text("Parent Zotero item key")
                 attachment_key = _text("Zotero attachment key")
-                if not _yes_no("Copy this one attachment into the project?", False):
+                if not _yes_no(
+                    "Copy this selected PDF into references/pdfs and record its checksum?", False
+                ):
                     continue
                 record = copy_zotero_attachment(root, item_key, attachment_key, confirmed=True)
+                _reference_receipt(
+                    root, [record], "Selected Zotero PDF copied; no other attachment changed"
+                )
             else:
-                identifier = _text("Reference ID")
-                record = attach_reference(root, identifier, Path(_text("PDF path")))
-            console.print(f"[green]Saved {record.id}.[/green]")
+                console.print(
+                    "Export from the shell for an explicit destination:\n"
+                    "  smairt reference export --format bibtex --output references.bib\n"
+                    "  smairt reference export --format csl-json --output references.json"
+                )
         except BackNavigation:
             return
         except (OSError, RuntimeError, ValueError) as exc:
@@ -648,27 +1025,205 @@ def _references_menu(root: Path) -> None:
         _pause()
 
 
-def _health_menu(root: Path) -> None:
-    """Run local validation and doctor checks from one small submenu."""
-    try:
-        action = _select(
-            "Health",
-            [
-                ("validate", "Validate project"),
-                ("doctor", "Run doctor"),
-                ("back", "Back"),
-            ],
+def _reference_receipt(root: Path, records: list[Any], effect: str) -> None:
+    """Show exactly what a reference operation changed and where it is visible."""
+    lines = [f"[green]{effect}[/green]", f"Records changed: {len(records)}"]
+    for record in records[:10]:
+        lines.append(
+            f"• {record.id} · {record.verification_status.value} · "
+            f"PDF: {record.local_path or 'none'}"
         )
-        if action == "validate":
-            payload = status(root)["validation"]
-        elif action == "doctor":
-            payload = doctor(root)
-        else:
+    if len(records) > 10:
+        lines.append(f"…and {len(records) - 10} more")
+    lines.extend(
+        [
+            "Index: references/index.yaml",
+            "Provider receipts: references/provenance/",
+            "Next: review metadata and record human verification",
+        ]
+    )
+    console.print(Panel("\n".join(lines), title="Reference receipt", border_style="green"))
+
+
+def _health_menu(root: Path) -> None:
+    """Present concise health results and confirmed framework-only repairs."""
+    while True:
+        validation = cast(dict[str, object], status(root)["validation"])
+        _header(
+            "Project Health",
+            "All checks passed" if validation["ok"] else "Issues need attention",
+        )
+        try:
+            action = _select(
+                "Health",
+                [
+                    ("validate", "Quick project validation"),
+                    ("doctor", "Full system and project doctor"),
+                    ("fix", "Preview safe SMAIRT-managed repairs"),
+                    ("back", "Back"),
+                ],
+            )
+            if action == "back":
+                return
+            if action == "validate":
+                _render_validation(validation)
+            elif action == "doctor":
+                _render_doctor(doctor(root))
+            else:
+                preview = upgrade_project(root, apply=False)
+                changes = cast(list[object], preview.get("changes", []))
+                active = SmairtConfig.load(root / "smairt.yaml").harness.active
+                harness = next(item for item in list_harnesses(root) if item["active"])
+                console.print(f"Managed guidance updates: {len(changes)}")
+                adapter_needs_refresh = bool(harness.get("missing") or harness.get("modified"))
+                console.print(
+                    "Active harness adapter: "
+                    + ("needs review" if adapter_needs_refresh else "healthy")
+                )
+                if changes and _yes_no("Apply conflict-free managed guidance updates?", False):
+                    console.print(upgrade_project(root, apply=True))
+                if adapter_needs_refresh and _yes_no(
+                    f"Refresh the managed {active.value} adapter after conflict checks?", False
+                ):
+                    console.print(install_harness(root, active.value, upgrade=True))
+                if not changes and not adapter_needs_refresh:
+                    console.print("[green]No safe managed repair is needed.[/green]")
+            _pause()
+        except BackNavigation:
             return
-        console.print(payload)
-        _pause()
-    except BackNavigation:
+        except (OSError, RuntimeError, ValueError) as exc:
+            console.print(f"[red]Health check could not continue:[/] {exc}")
+            _pause()
+
+
+def _render_validation(payload: dict[str, object]) -> None:
+    """Render pass/warn/fail validation without implementation-shaped output."""
+    findings = cast(list[dict[str, str]], payload.get("findings", []))
+    if payload["ok"] and not findings:
+        console.print("[green]✓ All project checks passed.[/green]")
         return
+    errors = [item for item in findings if item.get("severity") == "error"]
+    warnings = [item for item in findings if item.get("severity") != "error"]
+    console.print(f"[red]{len(errors)} error(s)[/] · [yellow]{len(warnings)} warning(s)[/]")
+    for item in findings:
+        marker = "[red]FAIL[/]" if item.get("severity") == "error" else "[yellow]WARN[/]"
+        console.print(f"{marker} {item.get('message')} [dim]({item.get('artifact')})[/dim]")
+
+
+def _render_doctor(payload: dict[str, object]) -> None:
+    """Group doctor output by researcher-facing subsystem."""
+    console.print(
+        "[green]✓ Doctor found no blocking problem.[/]"
+        if payload["ok"]
+        else "[red]Doctor found blocking problems.[/]"
+    )
+    categories = {
+        "Package": not cast(dict[str, object], payload["package"])["missing_dependencies"],
+        "Project": cast(dict[str, object], payload["validation"])["ok"],
+        "Git": cast(dict[str, object], payload["git"])["healthy"],
+        "Environment": cast(dict[str, object], payload["environment"])["healthy"],
+        "Transactions": cast(dict[str, object], payload["transactions"])["ok"],
+        "Release": payload["release_ready"],
+    }
+    for label, ready in categories.items():
+        console.print(f"{'[green]✓[/]' if ready else '[yellow]![/]'} {label}")
+    for warning in cast(list[str], payload.get("warnings", [])):
+        console.print(f"[yellow]Suggested action:[/] {warning}")
+
+
+def _project_setup_menu(root: Path) -> None:
+    """Group editable project setup without mixing it with user-wide setup."""
+    while True:
+        try:
+            action = _select(
+                "Project setup",
+                [
+                    ("settings", "Project details and license"),
+                    ("people", "People and active contributor"),
+                    ("environment", "Conda environment"),
+                    ("integrations", "Local connections and project permissions"),
+                    ("back", "Back"),
+                ],
+            )
+            if action == "back":
+                return
+            if action == "settings":
+                _settings_menu(root)
+            elif action == "people":
+                _people_menu(root)
+            elif action == "environment":
+                _environment_menu(root)
+            else:
+                _integrations_menu(root)
+        except BackNavigation:
+            return
+
+
+def _advanced_menu(root: Path) -> None:
+    """Expose real safety, harness, migration, and recovery operations."""
+    while True:
+        config = SmairtConfig.load(root / "smairt.yaml")
+        _header("Advanced", "Safety, harness adapters, migrations, and recovery")
+        try:
+            action = _select(
+                "Advanced",
+                [
+                    ("safety", "Safety and sharing policy"),
+                    ("harness", "Coding harness adapter"),
+                    ("migration", "Schema migration status"),
+                    ("recovery", "Recovery and technical commands"),
+                    ("back", "Back"),
+                ],
+            )
+            if action == "back":
+                return
+            if action == "safety":
+                console.print(safety_status(root))
+                safety_action = _select(
+                    "Safety",
+                    [
+                        ("mode", "Change Standard or Strict mode"),
+                        ("release", "Run sharing and release checks"),
+                        ("back", "Back"),
+                    ],
+                )
+                if safety_action == "mode":
+                    mode = _select("Safety mode", [("standard", "Standard"), ("strict", "Strict")])
+                    if _yes_no(f"Change project safety mode to {mode}?", False):
+                        console.print(set_safety_mode(root, mode))
+                elif safety_action == "release":
+                    _render_validation(release_check(root))
+            elif action == "harness":
+                for item in list_harnesses(root):
+                    console.print(
+                        f"{'*' if item['active'] else ' '} {item['harness']} · "
+                        f"{'ready' if item.get('adapter_supported') else 'not installed/current'}"
+                    )
+                selected = _select(
+                    "Active harness",
+                    [(item, item.value.title()) for item in HarnessName],
+                    config.harness.active,
+                )
+                if selected != config.harness.active and _yes_no(
+                    f"Switch the managed adapter to {selected.value}?", False
+                ):
+                    console.print(select_harness(root, selected.value))
+            elif action == "migration":
+                console.print(migration_plan(root))
+            else:
+                console.print(
+                    "Recovery remains explicit to protect user-authored work:\n"
+                    "  smairt recovery status --json\n"
+                    "  smairt recovery complete <transaction-id> --yes\n"
+                    "  smairt recovery rollback <transaction-id> --yes\n"
+                    "Technical reports: smairt doctor --json · smairt validate --json"
+                )
+            _pause()
+        except BackNavigation:
+            return
+        except (OSError, RuntimeError, ValueError) as exc:
+            console.print(f"[red]Advanced action could not continue:[/] {exc}")
+            _pause()
 
 
 def run_project_menu(root: Path) -> None:
@@ -683,19 +1238,41 @@ def run_project_menu(root: Path) -> None:
             f"{'Healthy' if validation['ok'] else 'Needs attention'} · "
             f"Contributor: {config.active_contributor or 'not selected'} · Esc goes back",
         )
+        guidance = next_guidance(root)
+        reference_count = cast(dict[str, object], current["counts"]).get("references", 0)
+        integration = integration_health(root) if config.schema_version >= 4 else {}
+        ready_connections = (
+            sum(
+                bool(cast(dict[str, object], integration[name]).get("ready"))
+                for name in ("zotero", "openalex")
+            )
+            if integration
+            else 0
+        )
+        console.print(
+            Columns(
+                [
+                    Panel(str(guidance["stage"]).replace("_", " ").title(), title="Workflow"),
+                    Panel(f"{reference_count} indexed", title="References"),
+                    Panel(
+                        f"{config.environment.mode.value}\n{ready_connections} connection(s) ready",
+                        title="Tools",
+                    ),
+                    Panel("Healthy" if validation["ok"] else "Needs attention", title="Health"),
+                ],
+                equal=True,
+                expand=True,
+            )
+        )
         try:
             action = _select(
                 "What would you like to do?",
                 [
-                    ("next", "Recommended next step"),
-                    ("research", "Research workflow"),
+                    ("next", "Continue research · recommended action and prompt"),
                     ("references", "References"),
-                    ("settings", "Project settings"),
-                    ("people", "People and collaborators"),
-                    ("environment", "Environment"),
-                    ("integrations", "Integrations & API keys"),
-                    ("safety", "Safety and harness"),
-                    ("health", "Validate and doctor"),
+                    ("setup", "Project setup"),
+                    ("health", "Health and safe repairs"),
+                    ("advanced", "Advanced"),
                     ("exit", "Return to shell"),
                 ],
             )
@@ -703,63 +1280,203 @@ def run_project_menu(root: Path) -> None:
             return
         if action == "exit":
             return
-        if action in {"next", "research", "safety"}:
-            _show_guidance(root, action.title())
+        if action == "next":
+            _show_guidance(root, "Continue Research")
         elif action == "references":
             _references_menu(root)
-        elif action == "settings":
-            _settings_menu(root)
-        elif action == "people":
-            _people_menu(root)
-        elif action == "environment":
-            _environment_menu(root)
-        elif action == "integrations":
-            _integrations_menu(root)
-        else:
+        elif action == "setup":
+            _project_setup_menu(root)
+        elif action == "health":
             _health_menu(root)
+        else:
+            _advanced_menu(root)
 
 
 def run_setup_menu() -> None:
-    """Show installation health without requiring an initialized project."""
-    _header("SMAIRT Setup", "Conda is optional; Git and uv support the tool installation path")
-    console.print(setup_doctor(check_github=False))
-    _pause()
-
-
-def run_contextual_menu() -> None:
-    """Open the project dashboard or the pre-project start hub."""
-    from smairt.project import find_project
-
-    try:
-        root = find_project()
-    except FileNotFoundError:
-        root = None
-    if root is not None:
-        run_project_menu(root)
-        return
+    """Configure installation health and user-local provider profiles."""
     while True:
-        _header("SMAIRT", "Scientific Method with AI Research Toolkit")
+        health = setup_doctor(check_github=False)
+        profiles = load_user_setup().profiles
+        backend = keyring_health()
+        _header("SMAIRT Setup", "User-wide settings · secrets never enter project files")
+        console.print(
+            Columns(
+                [
+                    Panel(
+                        "[green]Ready[/]" if health["ok"] else "[yellow]Needs attention[/]",
+                        title="Installation",
+                        border_style=ORANGE,
+                    ),
+                    Panel(
+                        f"{len(profiles)} configured\nKeyring: {backend.get('status', 'unknown')}",
+                        title="Connections",
+                        border_style=ORANGE,
+                    ),
+                ],
+                equal=True,
+                expand=True,
+            )
+        )
         try:
             action = _select(
-                "Start",
+                "Setup",
                 [
-                    ("new", "Create a new project"),
-                    ("init", "Initialize the current folder"),
-                    ("setup", "Check tool setup"),
-                    ("help", "Show command help"),
+                    ("doctor", "Check installation and show solutions"),
+                    ("keys", "Add or remove an API key"),
+                    ("zotero", "Configure and test Zotero"),
+                    ("openalex", "Configure and test OpenAlex"),
+                    ("profiles", "Review or remove connection profiles"),
+                    ("appearance", "Appearance and motion"),
                     ("exit", "Return to shell"),
                 ],
             )
+            if action == "exit":
+                return
+            if action == "doctor":
+                _render_setup_health(health)
+            elif action == "keys":
+                provider = _select("Provider", [("openalex", "OpenAlex"), ("zotero", "Zotero Web")])
+                profile_name = _text("Profile name", "default")
+                operation = _select(
+                    "API key", [("set", "Store or replace key"), ("delete", "Delete key")]
+                )
+                if operation == "delete":
+                    removed = delete_credential(provider, profile_name)
+                    console.print(
+                        "[green]Key deleted.[/]" if removed else "No stored key was found."
+                    )
+                else:
+                    set_credential(provider, profile_name, _secret(f"{provider} API key"))
+                    console.print(
+                        "[green]Key stored in the OS keyring.[/] It was not written to a file."
+                    )
+            elif action == "zotero":
+                _configure_zotero_setup()
+            elif action == "openalex":
+                _configure_openalex_setup()
+            elif action == "profiles":
+                if not profiles:
+                    console.print("No connection profiles are configured.")
+                else:
+                    selected = _select(
+                        "Connection profile",
+                        [
+                            (name, f"{name} · {profile.provider.title()}")
+                            for name, profile in profiles.items()
+                        ],
+                    )
+                    operation = _select(
+                        "Profile",
+                        [("test", "Test connection"), ("delete", "Remove local profile")],
+                    )
+                    if operation == "test":
+                        console.print(_connection_receipt(test_profile(selected)))
+                    elif _yes_no(f"Remove local profile '{selected}'?", False):
+                        delete_profile(selected)
+                        console.print("[green]Local profile removed.[/green]")
+            else:
+                setup = load_user_setup()
+                setup.motion = _select(
+                    "Motion",
+                    [
+                        ("automatic", "Automatic · subtle when the terminal supports it"),
+                        ("off", "Off · static interface"),
+                    ],
+                    setup.motion,
+                )
+                from smairt.local_setup import save_user_setup
+
+                save_user_setup(setup)
+                console.print("[green]Appearance preference saved for this machine.[/green]")
+            _pause()
         except BackNavigation:
             return
-        if action == "exit":
-            return
-        if action == "new":
-            run_new_project()
-        elif action == "init":
-            run_new_project(Path.cwd(), allow_existing=True)
-        elif action == "setup":
-            run_setup_menu()
-        else:
-            console.print("Run [bold]smairt --help[/bold] for the complete command reference.")
+        except (OSError, RuntimeError, ValueError) as exc:
+            console.print(f"[red]Setup could not continue:[/] {exc}")
             _pause()
+
+
+def _render_setup_health(payload: dict[str, object]) -> None:
+    """Render setup doctor as a compact checklist instead of a raw dictionary."""
+    console.print(
+        "[green]All required tools are ready.[/green]"
+        if payload["ok"]
+        else "[yellow]Setup needs attention.[/yellow]"
+    )
+    for label in ("python", "git", "uv", "conda", "github_cli", "credential_backend"):
+        value = payload.get(label)
+        if isinstance(value, dict):
+            ready = value.get("supported", value.get("available", True))
+            marker = "[green]✓[/]" if ready else "[yellow]![/]"
+            console.print(f"{marker} {label.replace('_', ' ').title()}")
+            recovery = value.get("recovery") or value.get("warning")
+            if recovery:
+                console.print(f"  [dim]{recovery}[/dim]")
+
+
+def _connection_receipt(payload: dict[str, object]) -> Panel:
+    """Render a secret-free provider test result."""
+    details = ["[green]Connection test passed.[/green]"]
+    for key in ("provider", "profile", "mode", "libraries_available", "remaining"):
+        if payload.get(key) is not None:
+            details.append(f"{key.replace('_', ' ').title()}: {payload[key]}")
+    return Panel("\n".join(details), title="Connection receipt", border_style="green")
+
+
+def _configure_openalex_setup() -> None:
+    """Create and test one user-local OpenAlex profile."""
+    name = _text("Profile name", "default")
+    set_credential("openalex", name, _secret("OpenAlex API key"))
+    configure_profile(
+        name,
+        ConnectionProfile(
+            provider="openalex",
+            credential_profile=name,
+            environment_variable="OPENALEX_API_KEY",
+        ),
+    )
+    console.print(_connection_receipt(test_profile(name)))
+
+
+def _configure_zotero_setup() -> None:
+    """Create local or Web Zotero access with guided library discovery."""
+    name = _text("Profile name", "default")
+    mode = _select(
+        "Zotero connection",
+        [
+            (ZoteroMode.LOCAL, "Local Zotero app · no key · read-only"),
+            (ZoteroMode.WEB, "Zotero Web library · read-only API key"),
+        ],
+    )
+    if mode is ZoteroMode.LOCAL:
+        configure_profile(
+            name,
+            ConnectionProfile(provider="zotero", credential_profile=name, mode=mode),
+        )
+    else:
+        set_credential("zotero", name, _secret("Zotero read-only API key"))
+        provisional = ConnectionProfile(
+            provider="zotero",
+            credential_profile=name,
+            environment_variable="ZOTERO_API_KEY",
+            mode=mode,
+            library_id="pending",
+            library_type=ZoteroLibraryType.USER,
+        )
+        libraries = discover_zotero_libraries(provisional)
+        library_type, library_id = _select(
+            "Library",
+            [((kind, identifier), label) for kind, identifier, label in libraries],
+        )
+        configure_profile(
+            name,
+            ConnectionProfile(
+                provider="zotero",
+                credential_profile=name,
+                environment_variable="ZOTERO_API_KEY",
+                mode=mode,
+                library_id=library_id,
+                library_type=ZoteroLibraryType(library_type),
+            ),
+        )
+    console.print(_connection_receipt(test_profile(name)))

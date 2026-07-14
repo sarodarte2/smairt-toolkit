@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,7 +17,7 @@ from smairt.models import HarnessName, SmairtConfig, utc_now
 from smairt.transactions import FileTransaction
 from smairt.utils import ensure_within, sha256_text
 
-ADAPTER_VERSION = 4
+ADAPTER_VERSION = 5
 BEGIN_MARKER = "<!-- SMAIRT:BEGIN MANAGED CORE -->"
 END_MARKER = "<!-- SMAIRT:END MANAGED CORE -->"
 CORE_RULES = """# SMAIRT managed core
@@ -91,27 +93,20 @@ MCP_TOOL_NAMES = [
 
 CLINE_PRE_TOOL = """#!/bin/sh
 INPUT=$(cat)
-if printf '%s' "$INPUT" | smairt validate --tool-input >/dev/null 2>&1; then
-  printf '%s\n' '{"cancel":false}'
-else
-  printf '%s\n' '{"cancel":true,"errorMessage":"SMAIRT safety validation failed"}'
-fi
-"""
-CLINE_CONTEXT_RESTORE = """#!/bin/sh
-cat >/dev/null
 if ! command -v smairt >/dev/null 2>&1; then
-  printf '%s\n' '{"cancel":false,"contextModification":"SMAIRT CLI unavailable; do not mutate research state until project context is restored."}'
+  printf '%s\n' '{"cancel":true,"contextModification":"","errorMessage":"SMAIRT CLI unavailable; protected operation denied."}'
   exit 0
 fi
-STATUS=$(smairt status --json 2>/dev/null || printf '%s' 'status unavailable')
-NEXT=$(smairt next --json 2>/dev/null || printf '%s' 'next action unavailable')
-export SMAIRT_HOOK_CONTEXT="SMAIRT project context:\n$STATUS\n\nRecommended next action:\n$NEXT\n\nLoad only task-scoped context and stop at human scientific gates."
-PYTHON=$(command -v python3 || command -v python || true)
-if [ -z "$PYTHON" ]; then
-  printf '%s\n' '{"cancel":false,"contextModification":"Run smairt status --json and smairt next --json before continuing."}'
-else
-  "$PYTHON" -c 'import json, os; print(json.dumps({"cancel": False, "contextModification": os.environ["SMAIRT_HOOK_CONTEXT"]}))'
+printf '%s' "$INPUT" | smairt harness hook --harness cline --event PreToolUse
+"""
+CLINE_CONTEXT_RESTORE = """#!/bin/sh
+INPUT=$(cat)
+EVENT=$(basename "$0")
+if ! command -v smairt >/dev/null 2>&1; then
+  printf '%s\n' '{"cancel":false,"contextModification":"SMAIRT CLI unavailable; do not mutate research state.","errorMessage":""}'
+  exit 0
 fi
+printf '%s' "$INPUT" | smairt harness hook --harness cline --event "$EVENT"
 """
 CLINE_FILES = {
     ".clinerules/01-smairt.md": (
@@ -128,6 +123,7 @@ CLINE_FILES = {
     ".clinerules/hooks/PreToolUse": CLINE_PRE_TOOL,
     ".clinerules/hooks/TaskStart": CLINE_CONTEXT_RESTORE,
     ".clinerules/hooks/TaskResume": CLINE_CONTEXT_RESTORE,
+    ".clinerules/hooks/PreCompact": CLINE_CONTEXT_RESTORE,
     ".clineignore": (".env*\nreferences/pdfs/**\ndata/raw/**\ndata/local/**\n.smairt/local/**\n"),
     ".cline/workflows/smairt-next.md": (
         "# Continue SMAIRT research\n1. Run `smairt status --json`.\n"
@@ -135,6 +131,47 @@ CLINE_FILES = {
         "4. Use `/newtask` when the current context becomes broad.\n"
         "5. Stop at human scientific gates.\n"
     ),
+}
+
+CODEX_HOOK = """#!/bin/sh
+INPUT=$(cat)
+EVENT=${1:-PreToolUse}
+if ! command -v smairt >/dev/null 2>&1; then
+  printf '%s\n' '{"decision":"block","reason":"SMAIRT CLI unavailable; protected operation denied."}'
+  exit 0
+fi
+printf '%s' "$INPUT" | smairt harness hook --harness codex --event "$EVENT"
+"""
+
+CURSOR_HOOK = """#!/bin/sh
+INPUT=$(cat)
+EVENT=${1:-preToolUse}
+if ! command -v smairt >/dev/null 2>&1; then
+  printf '%s\n' '{"decision":"block","reason":"SMAIRT CLI unavailable; protected operation denied."}'
+  exit 0
+fi
+printf '%s' "$INPUT" | smairt harness hook --harness cursor --event "$EVENT"
+"""
+
+OPENCODE_FILES = {
+    ".opencode/commands/smairt-next.md": (
+        "---\ndescription: Continue the current SMAIRT research stage safely\n---\n\n"
+        "Run `smairt next --prompt`, load only the listed files, and stop at every human gate.\n"
+    ),
+    ".opencode/agents/smairt-review.md": (
+        "---\ndescription: Read-only review of SMAIRT evidence and project health\n"
+        "mode: subagent\npermission:\n  edit: deny\n  bash: deny\n  external_directory: deny\n"
+        "---\n\nReview source-backed claims, uncertainty, and validation without changing files.\n"
+    ),
+}
+
+CURSOR_FILES = {
+    ".cursor/rules/smairt.mdc": (
+        "---\ndescription: SMAIRT scientific workflow and human-gate policy\nalwaysApply: true\n"
+        "---\n\nUse AGENTS.md and `smairt next --prompt`. Never cross a human scientific gate.\n"
+    ),
+    ".cursorignore": ".env*\nreferences/pdfs/**\ndata/raw/**\ndata/local/**\n.smairt/local/**\n",
+    ".cursor/hooks/smairt-hook": CURSOR_HOOK,
 }
 
 ADAPTERS = {
@@ -148,8 +185,15 @@ ADAPTERS = {
                 ".clinerules/hooks/PreToolUse",
                 ".clinerules/hooks/TaskStart",
                 ".clinerules/hooks/TaskResume",
+                ".clinerules/hooks/PreCompact",
             }
         ),
+    ),
+    HarnessName.OPENCODE: Adapter(HarnessName.OPENCODE, OPENCODE_FILES),
+    HarnessName.CURSOR: Adapter(
+        HarnessName.CURSOR,
+        CURSOR_FILES,
+        frozenset({".cursor/hooks/smairt-hook"}),
     ),
 }
 
@@ -161,19 +205,65 @@ def _adapter(root: Path, name: HarnessName, *, enabled: bool | None = None) -> A
     config = SmairtConfig.load(root / "smairt.yaml")
     is_enabled = name in config.integrations.mcp.enabled_harnesses if enabled is None else enabled
     if name is HarnessName.CODEX:
-        content = (
-            'model_instructions_file = "../AGENTS.md"\n\n'
-            '[[hooks.PreToolUse]]\nmatcher = "^Bash$"\n\n'
-            '[[hooks.PreToolUse.hooks]]\ntype = "command"\n'
-            'command = "smairt validate --tool-input"\ntimeout = 30\n'
-            'statusMessage = "Checking SMAIRT safety policy"\n'
-        )
+        content = 'model_instructions_file = "../AGENTS.md"\n'
         if is_enabled:
             content += (
                 '\n[mcp_servers.smairt]\ncommand = "smairt"\nargs = ["mcp", "serve"]\n'
                 f"enabled_tools = {json.dumps(MCP_TOOL_NAMES)}\n"
             )
         files[".codex/config.toml"] = content
+        files[".codex/hooks/smairt-hook"] = CODEX_HOOK
+        hook_command = '"$(git rev-parse --show-toplevel)/.codex/hooks/smairt-hook"'
+        files[".codex/hooks.json"] = (
+            json.dumps(
+                {
+                    "hooks": {
+                        "SessionStart": [
+                            {
+                                "matcher": "startup|resume|compact",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": f"{hook_command} SessionStart",
+                                        "timeout": 30,
+                                        "statusMessage": "Loading SMAIRT context",
+                                    }
+                                ],
+                            }
+                        ],
+                        "PreToolUse": [
+                            {
+                                "matcher": "Bash|apply_patch|Edit|Write|mcp__.*",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": f"{hook_command} PreToolUse",
+                                        "timeout": 30,
+                                        "statusMessage": "Checking SMAIRT policy",
+                                    }
+                                ],
+                            }
+                        ],
+                        "PreCompact": [
+                            {
+                                "matcher": "manual|auto",
+                                "hooks": [
+                                    {
+                                        "type": "command",
+                                        "command": f"{hook_command} PreCompact",
+                                        "timeout": 30,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        return Adapter(name, files, frozenset({".codex/hooks/smairt-hook"}))
     elif name is HarnessName.ZOO:
         path = _managed_path(root, ".roo/mcp.json")
         payload: dict[str, Any] = {"mcpServers": {}}
@@ -196,6 +286,77 @@ def _adapter(root: Path, name: HarnessName, *, enabled: bool | None = None) -> A
             }
         if servers:
             files[".roo/mcp.json"] = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    elif name is HarnessName.CLINE and is_enabled:
+        files[".cline/mcp.json"] = (
+            json.dumps(
+                {"mcpServers": {"smairt": {"command": "smairt", "args": ["mcp", "serve"]}}},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+    elif name is HarnessName.OPENCODE:
+        opencode_payload: dict[str, Any] = {
+            "$schema": "https://opencode.ai/config.json",
+            "instructions": ["AGENTS.md"],
+            "permission": {
+                "external_directory": "deny",
+                "bash": {
+                    "*": "ask",
+                    "git status*": "allow",
+                    "git diff*": "allow",
+                    "smairt status*": "allow",
+                    "smairt next*": "allow",
+                    "smairt context*": "allow",
+                    "smairt validate*": "allow",
+                    "git reset --hard*": "deny",
+                    "git clean -fd*": "deny",
+                    "git push --force*": "deny",
+                },
+            },
+        }
+        if is_enabled:
+            opencode_payload["mcp"] = {
+                "smairt": {
+                    "type": "local",
+                    "command": ["smairt", "mcp", "serve"],
+                    "enabled": True,
+                }
+            }
+        files["opencode.json"] = json.dumps(opencode_payload, indent=2, sort_keys=False) + "\n"
+    elif name is HarnessName.CURSOR:
+        command = '"$(git rev-parse --show-toplevel)/.cursor/hooks/smairt-hook"'
+        files[".cursor/hooks.json"] = (
+            json.dumps(
+                {
+                    "version": 1,
+                    "hooks": {
+                        "sessionStart": [{"command": f"{command} sessionStart", "timeout": 30}],
+                        "preToolUse": [
+                            {
+                                "command": f"{command} preToolUse",
+                                "matcher": "Shell|Write|Edit|MCP",
+                                "timeout": 30,
+                                "failClosed": True,
+                            }
+                        ],
+                        "preCompact": [{"command": f"{command} preCompact", "timeout": 30}],
+                    },
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        if is_enabled:
+            files[".cursor/mcp.json"] = (
+                json.dumps(
+                    {"mcpServers": {"smairt": {"command": "smairt", "args": ["mcp", "serve"]}}},
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            )
     return Adapter(name, files, base.executable)
 
 
@@ -221,9 +382,51 @@ CAPABILITIES: dict[str, dict[str, object]] = {
         "protected_operation_hook": "blocking",
         "modes": "advisory",
         "context_restore": "advisory",
-        "mcp": "deferred",
+        "mcp": "read_only_opt_in",
+    },
+    "opencode": {
+        "rules": "advisory",
+        "protected_operation_hook": "permissions",
+        "modes": "read_only_subagent",
+        "context_restore": "manual",
+        "mcp": "read_only_opt_in",
+        "configuration_notice": "executable OpenCode plugins are intentionally not installed",
+    },
+    "cursor": {
+        "rules": "advisory",
+        "protected_operation_hook": "blocking",
+        "modes": "advisory",
+        "context_restore": "advisory",
+        "mcp": "read_only_opt_in",
+        "configuration_notice": "project hooks must be enabled and trusted by Cursor",
     },
 }
+
+HARNESS_BINARIES = {
+    HarnessName.CODEX: ("codex",),
+    HarnessName.ZOO: ("zoo",),
+    HarnessName.CLINE: ("cline",),
+    HarnessName.OPENCODE: ("opencode",),
+    HarnessName.CURSOR: ("agent", "cursor-agent"),
+}
+
+
+def _binary_status(name: HarnessName) -> dict[str, object]:
+    """Inspect a local harness executable without contacting its provider."""
+    candidates = HARNESS_BINARIES[name]
+    executable = next((item for item in candidates if shutil.which(item)), candidates[0])
+    path = shutil.which(executable)
+    version = None
+    if path:
+        try:
+            result = subprocess.run(
+                [path, "--version"], capture_output=True, text=True, timeout=3, check=False
+            )
+            output = (result.stdout or result.stderr).strip()
+            version = output.splitlines()[0] if output else None
+        except (OSError, subprocess.TimeoutExpired):
+            version = None
+    return {"command": executable, "available": bool(path), "version": version}
 
 
 def _manifest_path(root: Path, harness: HarnessName) -> Path:
@@ -371,6 +574,7 @@ def harness_status(root: Path, harness: str | None = None) -> dict[str, Any]:
         "adapter_version": version,
         "adapter_supported": version == ADAPTER_VERSION if manifest else False,
         "capabilities": CAPABILITIES[name.value],
+        "binary": _binary_status(name),
         "modified": modified,
         "missing": missing,
         "non_executable": executable_errors,
@@ -381,6 +585,12 @@ def harness_status(root: Path, harness: str | None = None) -> dict[str, Any]:
             if name is HarnessName.CLINE
             else "Codex project hooks and MCP require project trust"
             if name is HarnessName.CODEX
+            else "Cursor project hooks require project trust"
+            if name is HarnessName.CURSOR
+            else "OpenCode uses permissions; executable plugins are not installed"
+            if name is HarnessName.OPENCODE
+            else "Zoo has no documented blocking protected-operation hook"
+            if name is HarnessName.ZOO
             else None
         ),
     }
@@ -419,7 +629,7 @@ def switch_plan(root: Path, harness: str) -> dict[str, Any]:
             prior_digest = known_target.get(relative)
             if prior_digest is None or sha256_text(path.read_text()) != prior_digest:
                 conflicts.append(relative)
-    for directory in (".codex", ".roo", ".cline", ".clinerules"):
+    for directory in (".codex", ".roo", ".cline", ".clinerules", ".opencode", ".cursor"):
         base = _managed_path(root, directory)
         if base.exists():
             owned = set(current_files) | set(target_files)
@@ -560,12 +770,10 @@ def configure_mcp(
     *,
     dry_run: bool = False,
 ) -> dict[str, object]:
-    """Transactionally toggle MCP for the active Codex or Zoo adapter."""
+    """Transactionally toggle read-only MCP for the active maintained adapter."""
     config = SmairtConfig.load(root / "smairt.yaml")
     if config.schema_version < 4:
         raise ValueError("MCP settings require schema v4; run 'smairt migrate apply'")
-    if harness is HarnessName.CLINE:
-        raise ValueError("Cline MCP configuration is deferred")
     if config.harness.active is not harness:
         raise ValueError("MCP can be changed only for the active harness")
     currently_enabled = harness in config.integrations.mcp.enabled_harnesses

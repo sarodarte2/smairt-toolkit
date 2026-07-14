@@ -1,5 +1,7 @@
 """Harness-selection CLI commands."""
 
+import json
+import sys
 from typing import Annotated
 
 import typer
@@ -12,6 +14,7 @@ from smairt.harnesses import (
     select_harness,
     switch_plan,
 )
+from smairt.hook_policy import hook_response, parse_hook_payload
 
 harness_app = typer.Typer(help="Install and inspect coding-harness adapters")
 
@@ -56,3 +59,27 @@ def harness_select(
         else select_harness(project_root(), harness, backup_and_switch=backup_and_switch)
     )
     emit(payload, False)
+
+
+@harness_app.command("hook", hidden=True)
+def harness_hook(
+    harness: Annotated[str, typer.Option("--harness")],
+    event: Annotated[str, typer.Option("--event")],
+) -> None:
+    """Evaluate one bounded harness hook request without network access."""
+    try:
+        payload = parse_hook_payload(sys.stdin.buffer.read(1024 * 1024 + 1))
+        response = hook_response(project_root(), harness, event, payload)
+    except (OSError, ValueError) as exc:
+        response = (
+            {"cancel": True, "contextModification": "", "errorMessage": str(exc)}
+            if harness == "cline"
+            else {
+                "hookSpecificOutput": {
+                    "hookEventName": event,
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": str(exc),
+                }
+            }
+        )
+    typer.echo(json.dumps(response, separators=(",", ":")))

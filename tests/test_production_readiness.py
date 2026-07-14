@@ -300,9 +300,9 @@ def test_cline_hooks_and_harness_health(project: Path) -> None:
     )
     assert result.returncode == 0
     assert json.loads(result.stdout)["cancel"] is False
-    assert "Recommended next action" in json.loads(result.stdout)["contextModification"]
+    assert "Objective:" in json.loads(result.stdout)["contextModification"]
     assert os.access(start, os.X_OK)
-    assert not (project / ".clinerules/hooks/PreCompact").exists()
+    assert (project / ".clinerules/hooks/PreCompact").exists()
 
     manifest = project / ".smairt/harnesses/cline.json"
     manifest.write_text("not-json")

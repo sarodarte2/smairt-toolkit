@@ -53,7 +53,7 @@ def export_contracts(destination: Path) -> list[str]:
         written.append(str(path))
     from smairt.harnesses import compatibility_payload
 
-    for harness in ("codex", "zoo", "cline"):
+    for harness in ("codex", "zoo", "cline", "opencode", "cursor"):
         fixture = destination / "fixtures" / f"{harness}.json"
         fixture.parent.mkdir(parents=True, exist_ok=True)
         atomic_write(fixture, json.dumps(compatibility_payload(harness), indent=2) + "\n")
@@ -78,7 +78,7 @@ def check_contracts(destination: Path) -> dict[str, object]:
         except (json.JSONDecodeError, OSError) as exc:
             findings.append(f"invalid JSON in {path.name}: {exc}")
     fixtures = destination / "fixtures"
-    for harness in ("codex", "zoo", "cline"):
+    for harness in ("codex", "zoo", "cline", "opencode", "cursor"):
         path = fixtures / f"{harness}.json"
         if not path.exists():
             findings.append(f"missing fixture {path.name}")

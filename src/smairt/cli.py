@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
 from typing import Annotated, Any, cast
 
@@ -13,11 +12,18 @@ import typer
 import yaml
 from rich.console import Console
 from rich.markup import escape
+from rich.panel import Panel
 from rich.prompt import Confirm
 
 from smairt import __version__
 from smairt.cli_harness import harness_app
-from smairt.cli_integrations import credential_app, integration_app
+from smairt.cli_integrations import (
+    credential_app,
+    integration_app,
+    setup_connection_app,
+    setup_openalex_app,
+    setup_zotero_app,
+)
 from smairt.cli_mcp import mcp_app
 from smairt.cli_publication import paper_app, summary_app
 from smairt.cli_references import reference_app
@@ -36,7 +42,7 @@ from smairt.code_quality import build_code_index, validate_code
 from smairt.contracts import check_contracts, export_contracts
 from smairt.diagnostics import doctor, setup_doctor
 from smairt.errors import SmairtError
-from smairt.guidance import next_guidance
+from smairt.guidance import next_guidance, render_suggested_prompt
 from smairt.integrity import verify_run
 from smairt.migrations import apply_migration, migration_plan, rollback_migration
 from smairt.model_policy import recommend_model
@@ -53,7 +59,7 @@ from smairt.project import status as project_status
 from smairt.provenance import add_contributor, generate_history, load_events, use_contributor
 from smairt.scaffold import conda_environments, create_project
 from smairt.settings import select_environment, update_project_settings
-from smairt.tui import run_contextual_menu, run_new_project, run_project_menu
+from smairt.tui import run_new_project, run_project_menu, run_setup_menu
 from smairt.upgrade import upgrade_project
 from smairt.utils import slugify
 
@@ -103,7 +109,11 @@ contract_app = typer.Typer(help="Export and check portable harness contracts")
 migrate_app = typer.Typer(help="Plan, apply, and roll back schema migrations")
 model_app = typer.Typer(help="Recommend economical model capability tiers")
 settings_app = typer.Typer(help="Inspect and update researcher-facing project settings")
-setup_app = typer.Typer(help="Diagnose the user-wide SMAIRT tool setup")
+setup_app = typer.Typer(
+    help="Configure and diagnose the user-wide SMAIRT tool setup",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
 
 app.add_typer(start_app, name="start")
 app.add_typer(reference_app, name="reference")
@@ -129,6 +139,10 @@ app.add_typer(setup_app, name="setup")
 app.add_typer(credential_app, name="credential")
 app.add_typer(integration_app, name="integration")
 app.add_typer(mcp_app, name="mcp")
+setup_app.add_typer(credential_app, name="credential")
+setup_app.add_typer(setup_connection_app, name="connection")
+setup_app.add_typer(setup_zotero_app, name="zotero")
+setup_app.add_typer(setup_openalex_app, name="openalex")
 register_root_commands(app)
 
 
@@ -192,7 +206,33 @@ def history_command(as_json: Annotated[bool, typer.Option("--json")] = False) ->
 def doctor_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
     """Diagnose project and release health without network access or mutation."""
     payload = doctor(_root())
-    _emit(payload, as_json)
+    if as_json:
+        _emit(payload, True)
+    else:
+        console.print("[green]PASS[/]" if payload["ok"] else "[red]NEEDS ATTENTION[/]")
+        package = cast(dict[str, object], payload["package"])
+        validation = cast(dict[str, object], payload["validation"])
+        git = cast(dict[str, object], payload["git"])
+        environment = cast(dict[str, object], payload["environment"])
+        transactions = cast(dict[str, object], payload["transactions"])
+        categories = {
+            "Package": not package["missing_dependencies"],
+            "Project": validation["ok"],
+            "Git": git["healthy"],
+            "Environment": environment["healthy"],
+            "Transactions": transactions["ok"],
+            "Release": payload["release_ready"],
+        }
+        for label, ready in categories.items():
+            console.print(f"{'[green]✓[/]' if ready else '[yellow]![/]'} {label}")
+        findings = cast(list[dict[str, str]], validation.get("findings", []))
+        for finding in findings:
+            console.print(
+                f"\n[bold]{finding.get('title', finding['code'])}[/]\n"
+                f"{finding['message']}\n[cyan]Next:[/] "
+                f"{finding.get('remediation', 'Inspect the artifact.')}"
+            )
+        console.print("\n[dim]Technical report: smairt doctor --json[/dim]")
     if not payload["ok"]:
         raise typer.Exit(1)
 
@@ -207,6 +247,17 @@ def setup_doctor_command(
     _emit(payload, as_json)
     if not payload["ok"]:
         raise typer.Exit(1)
+
+
+@setup_app.callback()
+def setup_main(ctx: typer.Context) -> None:
+    """Open user-wide setup when no setup subcommand was supplied."""
+    if ctx.invoked_subcommand is None:
+        try:
+            run_setup_menu()
+        except KeyboardInterrupt:
+            console.print("[yellow]SMAIRT setup interrupted.[/yellow]")
+            raise typer.Exit(130) from None
 
 
 @app.command("verify")
@@ -285,6 +336,19 @@ def _show_guidance(root: Path) -> None:
     recommended = guidance.get("recommended")
     if recommended:
         console.print(f"[bold]Recommended next:[/] {recommended['label']}")
+        reads = recommended.get("read") or []
+        if reads:
+            console.print("[bold]Read first:[/] " + " · ".join(str(item) for item in reads))
+        if recommended.get("command"):
+            console.print(f"[bold]Command:[/] [cyan]{recommended['command']}[/cyan]")
+        console.print(
+            Panel(
+                render_suggested_prompt(root, guidance),
+                title="Suggested Prompt",
+                border_style="#f28c28",
+            )
+        )
+        console.print("[dim]Copy again with: smairt next --prompt[/dim]")
     alternatives = [item["label"] for item in guidance["actions"] if item is not recommended]
     if alternatives:
         console.print("[dim]Other options: " + " · ".join(alternatives) + "[/dim]")
@@ -298,20 +362,40 @@ def main(
         bool, typer.Option("--verbose", help="Show diagnostic exception causes.")
     ] = False,
 ) -> None:
-    """Handle global output policy and show help when no command is selected."""
+    """Handle global output policy and show the deterministic SMAIRT splash."""
     del verbose
     if version:
         console.print(__version__)
         ctx.exit(0)
     if ctx.invoked_subcommand is None:
-        if sys.stdin.isatty() and sys.stdout.isatty():
-            try:
-                run_contextual_menu()
-            except KeyboardInterrupt:
-                console.print("[yellow]SMAIRT interrupted.[/yellow]")
-                raise typer.Exit(130) from None
-        else:
-            console.print(ctx.get_help())
+        _show_splash()
+
+
+def _show_splash() -> None:
+    """Show package identity and useful entry points without opening a menu."""
+    try:
+        root = find_project()
+    except FileNotFoundError:
+        root = None
+    body = (
+        f"[bold #f28c28]SMAIRT {escape(__version__)}[/]\n"
+        "Scientific Method with AI Research Toolkit\n\n"
+        "PNNL Computational Biology contributors · MIT License\n"
+        "Distribution: Python package [bold]smairt[/] · "
+        "github.com/PNNL-CompBio/smairt-template"
+    )
+    console.print(Panel.fit(body, border_style="#f28c28", padding=(1, 2)))
+    if root is None:
+        console.print(
+            "[bold]Start here:[/] smairt new\n"
+            "[dim]Also: smairt setup · smairt --help · smairt --version[/dim]"
+        )
+    else:
+        console.print(
+            f"[bold]Project detected:[/] {escape(str(root))}\n"
+            "[bold]Continue:[/] smairt menu\n"
+            "[dim]Also: smairt next · smairt status · smairt --help[/dim]"
+        )
 
 
 def _new_project(
@@ -407,7 +491,8 @@ def new_command(
 def start_project(
     destination: Annotated[Path | None, typer.Argument()] = None,
 ) -> None:
-    """Friendly alias for the interactive project wizard."""
+    """Deprecated alias for the interactive project wizard."""
+    console.print("[yellow]smairt start project is deprecated; use smairt new.[/yellow]")
     _new_project(
         destination,
         None,
@@ -433,7 +518,10 @@ def init_command(
     name: Annotated[str | None, typer.Option()] = None,
     author: Annotated[str | None, typer.Option()] = None,
 ) -> None:
-    """Initialize an existing directory, interactively by default."""
+    """Deprecated alias for initializing an existing directory."""
+    console.print(
+        "[yellow]smairt init is deprecated; use smairt new and choose this folder.[/yellow]"
+    )
     _new_project(
         destination or Path.cwd(),
         name,
@@ -457,7 +545,16 @@ def init_command(
 def menu_command() -> None:
     """Open the editable project dashboard."""
     try:
-        run_project_menu(_root())
+        root = find_project()
+    except FileNotFoundError:
+        console.print(
+            f"[yellow]No SMAIRT project contains {Path.cwd().resolve()}.[/yellow]\n"
+            "Create one with [bold]smairt new[/bold], then run [bold]smairt menu[/bold] "
+            "from that project."
+        )
+        raise typer.Exit(2) from None
+    try:
+        run_project_menu(root)
     except KeyboardInterrupt:
         console.print("[yellow]SMAIRT interrupted.[/yellow]")
         raise typer.Exit(130) from None
@@ -585,13 +682,24 @@ def model_recommend(
 
 
 @app.command("next")
-def next_command(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
+def next_command(
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+    prompt: Annotated[bool, typer.Option("--prompt")] = False,
+) -> None:
     """Show the state-aware next actions for this research project."""
-    payload = next_guidance(_root())
+    if as_json and prompt:
+        raise typer.BadParameter("--json and --prompt cannot be combined")
+    root = _root()
+    payload = next_guidance(root)
+    suggested = render_suggested_prompt(root, payload)
+    if prompt:
+        console.print(suggested, markup=False)
+        return
     if as_json:
+        payload["suggested_prompt"] = suggested
         _emit(payload, True)
     else:
-        _show_guidance(_root())
+        _show_guidance(root)
 
 
 @code_app.command("index")

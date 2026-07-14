@@ -51,6 +51,8 @@ class HarnessName(StrEnum):
     CODEX = "codex"
     ZOO = "zoo"
     CLINE = "cline"
+    OPENCODE = "opencode"
+    CURSOR = "cursor"
 
 
 class ZoteroMode(StrEnum):
@@ -294,6 +296,7 @@ class OpenAlexIntegration(DurableModel):
 class ZoteroIntegration(DurableModel):
     """Configure read-only local or Web Zotero access."""
 
+    enabled: bool = False
     mode: ZoteroMode = ZoteroMode.DISABLED
     library_id: str | None = None
     library_type: ZoteroLibraryType = ZoteroLibraryType.USER
@@ -304,13 +307,6 @@ class ZoteroIntegration(DurableModel):
     mcp_confirmed_by: str | None = None
     mcp_confirmed_at: str | None = None
 
-    @model_validator(mode="after")
-    def coherent_web_library(self) -> ZoteroIntegration:
-        """Require the library selector used by Web API requests."""
-        if self.mode is ZoteroMode.WEB and not (self.library_id or "").strip():
-            raise ValueError("Zotero Web mode requires a library ID")
-        return self
-
 
 class McpIntegration(DurableModel):
     """Record which maintained harnesses may start SMAIRT's read-only MCP."""
@@ -320,9 +316,7 @@ class McpIntegration(DurableModel):
     @field_validator("enabled_harnesses")
     @classmethod
     def unique_supported_harnesses(cls, values: list[HarnessName]) -> list[HarnessName]:
-        """Reject deferred Cline configuration and remove duplicates."""
-        if any(value is HarnessName.CLINE for value in values):
-            raise ValueError("Cline MCP configuration is not supported")
+        """Remove duplicate maintained harness entries."""
         return list(dict.fromkeys(values))
 
 
@@ -352,7 +346,7 @@ class ActiveState(DurableModel):
 class SmairtConfig(DurableModel):
     """Define the authoritative, versioned project contract in smairt.yaml."""
 
-    schema_version: int = 4
+    schema_version: int = 6
     smairt_version: str = Field(default_factory=lambda: __version__)
     project: ProjectInfo
     data: DataPolicy
@@ -371,7 +365,7 @@ class SmairtConfig(DurableModel):
     @classmethod
     def supported_schema(cls, value: int) -> int:
         """Reject beta schemas that this release cannot safely interpret."""
-        if value not in {2, 3, 4}:
+        if value not in {2, 3, 4, 5, 6}:
             raise ValueError(
                 "incompatible project schema; migrate through a supported SMAIRT release"
             )
@@ -416,6 +410,22 @@ class SmairtConfig(DurableModel):
         data = self.model_dump(mode="json", exclude_none=True)
         if self.schema_version < 4:
             data.pop("integrations", None)
+        elif self.schema_version < 5:
+            integrations = data.get("integrations")
+            if isinstance(integrations, dict):
+                zotero = integrations.get("zotero")
+                if isinstance(zotero, dict):
+                    zotero.pop("enabled", None)
+        else:
+            integrations = data.get("integrations")
+            if isinstance(integrations, dict):
+                openalex = integrations.get("openalex")
+                if isinstance(openalex, dict):
+                    openalex.pop("credential", None)
+                zotero = integrations.get("zotero")
+                if isinstance(zotero, dict):
+                    for field in ("mode", "library_id", "library_type", "credential"):
+                        zotero.pop(field, None)
         if self.schema_version < 3:
             project = data.get("project")
             if isinstance(project, dict):

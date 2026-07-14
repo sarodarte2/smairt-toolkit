@@ -31,7 +31,7 @@ def detect_scaffold(root: Path) -> str:
     version = int(payload.get("schema_version", 1))
     if legacy and version >= 2:
         return "mixed"
-    if version in {3, 4}:
+    if version in {3, 4, 5, 6}:
         return f"v{version}"
     return "v2" if version == 2 else "v1"
 
@@ -42,19 +42,38 @@ def migration_plan(root: Path) -> dict[str, object]:
     conflicts = []
     if kind in {"unknown", "mixed", "original"}:
         conflicts.append(f"automatic migration is not safe for {kind} scaffold")
-    applicable = kind in {"v1", "v2", "v3"} and not conflicts
-    from_version = 1 if kind == "v1" else 2 if kind == "v2" else 3 if kind == "v3" else 4
-    to_version = min(from_version + 1, 4)
+    applicable = kind in {"v1", "v2", "v3", "v4", "v5"} and not conflicts
+    from_version = (
+        1
+        if kind == "v1"
+        else 2
+        if kind == "v2"
+        else 3
+        if kind == "v3"
+        else 4
+        if kind == "v4"
+        else 5
+    )
+    to_version = min(from_version + 1, 6)
     migration_name = f"v{from_version}-to-v{to_version}-<id>.json"
     writes = ["smairt.yaml", f".smairt/migrations/{migration_name}"] if applicable else []
     if applicable and to_version == 4:
         writes.insert(1, "references/index.yaml")
+    if applicable and to_version == 5:
+        writes.append(".smairt/local/integrations.yaml")
     return {
         "detected": kind,
         "from_version": from_version,
         "to_version": to_version,
         "writes": writes,
-        "moves": [],
+        "moves": (
+            [
+                "Zotero library/account settings -> user-local profile",
+                "provider profile bindings -> .smairt/local/integrations.yaml",
+            ]
+            if applicable and to_version == 5
+            else []
+        ),
         "backups": (
             ["smairt.yaml", "references/index.yaml"] if to_version == 4 else ["smairt.yaml"]
         )
@@ -111,6 +130,48 @@ def apply_migration(
         project.setdefault("license", "unspecified")
     if to_version == 4:
         payload.setdefault("integrations", {})
+    if to_version == 5:
+        from smairt.local_setup import ConnectionProfile, bind_profile, configure_profile
+        from smairt.models import ZoteroLibraryType, ZoteroMode
+
+        integrations = payload.setdefault("integrations", {})
+        openalex = integrations.setdefault("openalex", {})
+        openalex_credential = openalex.pop("credential", {}) or {}
+        openalex_profile = str(openalex_credential.get("profile") or "default")
+        configure_profile(
+            openalex_profile,
+            ConnectionProfile(
+                provider="openalex",
+                credential_profile=openalex_profile,
+                environment_variable=str(
+                    openalex_credential.get("environment_variable") or "OPENALEX_API_KEY"
+                ),
+            ),
+        )
+        if bool(openalex.get("enabled")):
+            bind_profile(root, "openalex", openalex_profile)
+        zotero = integrations.setdefault("zotero", {})
+        zotero_mode = ZoteroMode(str(zotero.pop("mode", "disabled")))
+        zotero_credential = zotero.pop("credential", {}) or {}
+        zotero_profile = str(zotero_credential.get("profile") or "default")
+        library_id = zotero.pop("library_id", None)
+        library_type = ZoteroLibraryType(str(zotero.pop("library_type", "user")))
+        zotero["enabled"] = zotero_mode is not ZoteroMode.DISABLED
+        if zotero_mode is not ZoteroMode.DISABLED:
+            configure_profile(
+                zotero_profile,
+                ConnectionProfile(
+                    provider="zotero",
+                    credential_profile=zotero_profile,
+                    environment_variable=str(
+                        zotero_credential.get("environment_variable") or "ZOTERO_API_KEY"
+                    ),
+                    mode=zotero_mode,
+                    library_id=str(library_id) if library_id else None,
+                    library_type=library_type if zotero_mode is ZoteroMode.WEB else None,
+                ),
+            )
+            bind_profile(root, "zotero", zotero_profile)
     config = SmairtConfig.model_validate(payload)
     applied_at = utc_now()
     config.migration_history.append(

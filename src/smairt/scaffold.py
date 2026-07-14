@@ -35,6 +35,8 @@ from smairt.utils import atomic_write, ensure_within, sha256_text, slugify
 DIRECTORIES = (
     ".agents/skills/smairt-research/references",
     ".codex",
+    ".cursor",
+    ".opencode",
     ".githooks",
     ".smairt/backups",
     ".smairt/events",
@@ -513,7 +515,7 @@ def _create_project_in_place(
 
     slug = slugify(name)
     if environment_mode is EnvironmentMode.NEW_CONDA:
-        environment_name = environment_name or f"smairt-{slug}"
+        environment_name = environment_name or slug
         if create_environment:
             create_conda_environment(environment_name)
 

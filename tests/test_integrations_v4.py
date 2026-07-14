@@ -30,6 +30,7 @@ from smairt.models import (
     ReferenceRecord,
     SmairtConfig,
     VerificationStatus,
+    ZoteroLibraryType,
     ZoteroMode,
 )
 from smairt.provenance import add_contributor
@@ -197,7 +198,8 @@ def test_mcp_inventory_and_generated_harness_configs(tmp_path: Path) -> None:
     assert set(server._tool_manager._tools) == set(MCP_TOOL_NAMES)
     parsed = tomllib.loads((root / ".codex/config.toml").read_text())
     assert "mcp_servers" not in parsed
-    assert parsed["hooks"]["PreToolUse"][0]["hooks"][0]["type"] == "command"
+    hooks = json.loads((root / ".codex/hooks.json").read_text())
+    assert hooks["hooks"]["PreToolUse"][0]["hooks"][0]["type"] == "command"
     enabled = configure_mcp(root, HarnessName.CODEX, True)
     assert enabled["changed"] is True
     parsed = tomllib.loads((root / ".codex/config.toml").read_text())
@@ -208,7 +210,8 @@ def test_mcp_inventory_and_generated_harness_configs(tmp_path: Path) -> None:
     assert configure_mcp(root, HarnessName.CODEX, False)["changed"] is True
     parsed = tomllib.loads((root / ".codex/config.toml").read_text())
     assert "mcp_servers" not in parsed
-    assert parsed["hooks"]["PreToolUse"][0]["hooks"][0]["type"] == "command"
+    hooks = json.loads((root / ".codex/hooks.json").read_text())
+    assert hooks["hooks"]["PreToolUse"][0]["hooks"][0]["type"] == "command"
     assert not any(
         "KEY" in value for value in os.environ if value in (root / ".codex/config.toml").read_text()
     )
@@ -334,9 +337,15 @@ def test_duplicate_doi_preserves_legacy_id_and_human_metadata(monkeypatch, tmp_p
 
 def test_zotero_provider_paginates_and_rejects_unbounded_limits(tmp_path: Path) -> None:
     root = project(tmp_path)
-    config = SmairtConfig.load(root / "smairt.yaml")
-    config.integrations.zotero.mode = ZoteroMode.LOCAL
-    config.dump(root / "smairt.yaml")
+    from smairt.integrations import configure_zotero
+
+    configure_zotero(
+        root,
+        mode=ZoteroMode.LOCAL,
+        library_id=None,
+        library_type=ZoteroLibraryType.USER,
+        profile="pagination",
+    )
 
     class FakeClient:
         request = type("Request", (), {"headers": {"Last-Modified-Version": "42"}})()

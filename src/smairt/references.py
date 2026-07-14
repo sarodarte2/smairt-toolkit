@@ -278,10 +278,19 @@ def _resolve_openalex_key(root: Path, api_key: str | None = None) -> str:
     from smairt.credentials import resolve_credential
 
     config = SmairtConfig.load(root / "smairt.yaml")
-    profile = config.integrations.openalex.credential
-    key, _ = resolve_credential(
-        "openalex", profile.profile, profile.environment_variable or "OPENALEX_API_KEY"
-    )
+    try:
+        from smairt.local_setup import resolve_profile
+
+        _, local_profile = resolve_profile(root, "openalex")
+        profile_name = local_profile.credential_profile
+        environment_variable = local_profile.environment_variable or "OPENALEX_API_KEY"
+    except ValueError:
+        if config.schema_version >= 5:
+            raise
+        profile = config.integrations.openalex.credential
+        profile_name = profile.profile
+        environment_variable = profile.environment_variable or "OPENALEX_API_KEY"
+    key, _ = resolve_credential("openalex", profile_name, environment_variable)
     if not key:
         raise ValueError("OpenAlex credential is missing")
     return key
@@ -504,7 +513,7 @@ def _zotero_snapshot(root: Path, record: ReferenceRecord, captured: str, suffix:
 @mutating("reference import Zotero")
 def import_zotero_item(root: Path, item_key: str) -> ReferenceRecord:
     """Import one Zotero item as metadata in one recoverable transaction."""
-    from smairt.zotero import ZoteroProvider
+    from smairt.zotero import ZoteroProvider, public_item
 
     provider = ZoteroProvider(root)
     raw = provider.item(item_key)
@@ -516,7 +525,7 @@ def import_zotero_item(root: Path, item_key: str) -> ReferenceRecord:
         {"source": "zotero", "captured_at": captured, "snapshot": str(snapshot.relative_to(root))}
     )
     transaction = FileTransaction(root, "reference import Zotero")
-    transaction.stage_text(snapshot, json.dumps(raw, indent=2, sort_keys=True) + "\n")
+    transaction.stage_text(snapshot, json.dumps(public_item(raw), indent=2, sort_keys=True) + "\n")
     transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
     transaction.commit()
     return record
@@ -527,7 +536,7 @@ def import_zotero_collection(
     root: Path, collection_key: str, *, limit: int = 500
 ) -> list[ReferenceRecord]:
     """Import one paginated collection atomically without per-item refetches."""
-    from smairt.zotero import ZoteroProvider
+    from smairt.zotero import ZoteroProvider, public_item
 
     provider = ZoteroProvider(root)
     raw_items = provider.collection_items(collection_key, limit)
@@ -550,7 +559,7 @@ def import_zotero_collection(
                 "snapshot": str(snapshot.relative_to(root)),
             }
         )
-        snapshots.append((snapshot, raw))
+        snapshots.append((snapshot, public_item(raw)))
         if record not in imported:
             imported.append(record)
     transaction = FileTransaction(root, "reference import Zotero collection")
@@ -566,7 +575,7 @@ def copy_zotero_attachment(
 ) -> ReferenceRecord:
     """Copy one explicitly selected local Zotero PDF attachment."""
     from smairt.models import ZoteroMode
-    from smairt.zotero import ZoteroProvider
+    from smairt.zotero import ZoteroProvider, public_item
 
     if not confirmed:
         raise ValueError("local Zotero attachment copying requires --yes")
@@ -624,9 +633,12 @@ def copy_zotero_attachment(
         ]
     )
     transaction = FileTransaction(root, "reference copy Zotero attachment")
-    transaction.stage_text(parent_snapshot, json.dumps(parent_raw, indent=2, sort_keys=True) + "\n")
     transaction.stage_text(
-        attachment_snapshot, json.dumps(attachment_raw, indent=2, sort_keys=True) + "\n"
+        parent_snapshot, json.dumps(public_item(parent_raw), indent=2, sort_keys=True) + "\n"
+    )
+    transaction.stage_text(
+        attachment_snapshot,
+        json.dumps(public_item(attachment_raw), indent=2, sort_keys=True) + "\n",
     )
     transaction.stage_bytes(destination, content, mode=0o644)
     transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
@@ -657,7 +669,15 @@ def edit_reference(
     previous = getattr(record, field)
     if field == "doi":
         value = normalize_doi(value)
-    parsed: object = int(value) if field == "year" else value
+    parsed: object
+    if field == "year":
+        parsed = int(value)
+    elif field == "authors":
+        parsed = [item.strip() for item in value.split(",") if item.strip()]
+        if not parsed:
+            raise ValueError("authors must contain at least one name")
+    else:
+        parsed = value
     setattr(record, field, parsed)
     record.edit_history.append(
         {

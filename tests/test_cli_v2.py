@@ -49,7 +49,7 @@ def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None
         json.loads(invoke_ok(["safety", "status", "--json"]).stdout)["data"]["mode"] == "standard"
     )
     assert json.loads(invoke_ok(["harness", "status", "--json"]).stdout)["data"]["active"]
-    assert len(json.loads(invoke_ok(["harness", "list", "--json"]).stdout)["data"]) == 3
+    assert len(json.loads(invoke_ok(["harness", "list", "--json"]).stdout)["data"]) == 5
 
     preview = invoke_ok(["harness", "select", "cline", "--dry-run"])
     assert "create_or_update" in preview.stdout
@@ -69,7 +69,7 @@ def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None
     )["data"]
     assert capsule["capsule_path"].startswith(".smairt/local/context/")
 
-    assert json.loads(invoke_ok(["migrate", "plan", "--json"]).stdout)["data"]["detected"] == "v4"
+    assert json.loads(invoke_ok(["migrate", "plan", "--json"]).stdout)["data"]["detected"] == "v6"
     invoke_ok(["contract", "export"])
     invoke_ok(["contract", "check"])
     invoke_ok(["reference", "list", "--json"])

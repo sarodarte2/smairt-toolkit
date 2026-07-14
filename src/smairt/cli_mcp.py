@@ -32,7 +32,7 @@ def mcp_enable(
     harness: Annotated[HarnessName, typer.Option()],
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
 ) -> None:
-    """Enable the project-scoped server only for the active Codex or Zoo harness."""
+    """Enable the project-scoped server for the active maintained harness."""
     emit(configure_mcp(project_root(), harness, True, dry_run=dry_run), False)
 
 

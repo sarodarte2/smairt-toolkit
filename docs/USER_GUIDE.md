@@ -8,9 +8,11 @@ linked by validated IDs and hashes. Agent chat is not the scientific record.
 
 ## Start a project
 
-Run `smairt new` for the terminal wizard or supply every field noninteractively. A project can
-start with an open question; no hypothesis is required during setup. Confirming a contributor is
-required before consequential decisions and publication actions.
+Run `smairt new` for the terminal wizard or supply every field noninteractively. The wizard first
+offers to create a new child folder or initialize the selected folder in place. Existing files are
+reviewed rather than blocked merely because an unrelated ancestor contains SMAIRT files. A
+project can start with an open question; no hypothesis is required during setup. Confirming a
+contributor is required before consequential decisions and publication actions.
 
 Data classification and safety mode are separate. Use `public`, `unpublished`, or `private` for
 the corresponding material. `controlled` is present so SMAIRT can refuse false compliance
@@ -23,12 +25,18 @@ Use these commands whenever a task begins or context is restored:
 ```bash
 smairt status --json
 smairt next --json
+smairt next --prompt
 smairt context --task planning --token-budget 8000
 ```
 
-The JSON response is a versioned envelope. Scientific choices remain human gates: contributor
-identity, hypothesis selection, experimental route, evidence decision, claim approval,
-correction, and safety-mode changes.
+The prompt form is a bounded, context-aware handoff for Codex, Zoo Code, Cline, OpenCode, Cursor,
+or another assistant; it cannot approve scientific decisions. The JSON response is a versioned
+envelope. Scientific choices remain human gates: contributor identity, hypothesis selection,
+experimental route, evidence decision, claim approval, correction, and safety-mode changes.
+
+Use `smairt harness status --json` to distinguish installed adapter files from the local client,
+trust, and hook settings that remain controlled by each harness. MCP access is metadata-only and
+must be enabled explicitly for the active harness.
 
 ## Run and review experiments
 
@@ -76,3 +84,6 @@ smairt safety status --refresh-visibility --json
 
 Read [Safety Modes](SAFETY.md) before private work and run `smairt safety release-check` before
 sharing or release.
+
+The dashboard's Health area summarizes pass/fail by category and suggests safe managed repairs.
+Use JSON or the referenced project files when detailed audit evidence is needed.

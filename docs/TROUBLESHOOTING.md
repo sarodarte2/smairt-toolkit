@@ -26,7 +26,14 @@ time, and a stable status—not a sensitive remote URL.
 Run the switch with `--dry-run`. Reconcile unmanaged conflicts or review locally modified managed
 files. `--backup-and-switch` backs up modified managed content; it does not delete custom files.
 
-## The TUI is too small
+Run `smairt harness status --json` afterward. It separates missing or modified adapter files from
+runtime requirements such as Codex/Cursor project trust or Cline hook enablement. A missing local
+harness binary does not damage the project adapter; install that client before trying to use it.
 
-The supported minimum is 80×24. Resize if your terminal cannot show the footer and current step.
-All TUI actions have equivalent CLI commands in [CLI Reference](CLI_REFERENCE.md).
+## The terminal layout looks cramped or moves unexpectedly
+
+SMAIRT automatically switches between compact, medium, and wide layouts. Increase terminal height
+when a long form needs scrolling. Current menus redraw in the normal terminal buffer; if escape
+sequences are being printed literally, confirm `TERM` is valid and that output is attached to a
+TTY. Disable motion under Setup → Appearance or set `SMAIRT_REDUCED_MOTION=1`. All menu actions
+have equivalent commands in [CLI Reference](CLI_REFERENCE.md).

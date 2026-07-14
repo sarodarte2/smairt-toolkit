@@ -7,13 +7,14 @@ adapters nor agent conversations own scientific state.
 
 ```mermaid
 flowchart TB
-    UI["CLI and terminal-native prompt hub"] --> D["Research domain services"]
+    UI["CLI and responsive terminal workspace"] --> D["Research domain services"]
     D --> S["Validated portable records"]
     D --> L["Mutation lock"]
     D --> T["Transaction journals"]
     D --> I["Run integrity manifests"]
-    H["Codex / Zoo / Cline adapters"] --> UI
-    H -. advisory instructions .-> D
+    H["Five maintained harness adapters"] --> UI
+    H -. rules, permissions, and hooks .-> D
+    P["Bounded offline hook policy"] --> H
     M["SMAIRT read-only MCP"] --> S
     Z["Zotero local or Web read API"] --> D
     K["Environment / OS keyring"] --> D
@@ -50,3 +51,8 @@ pair. Crossref is authoritative for DOI metadata; OpenAlex fills missing fields 
 read/import-only. The MCP process exposes exactly five bounded metadata tools and strips local
 paths, checksums, PDFs, and full text. Zotero tools are separately disabled by default and cannot
 be enabled for controlled projects.
+
+Harness adapters are defense in depth. Codex, Cline, and Cursor translate upstream lifecycle
+payloads through a bounded offline policy evaluator; OpenCode uses project permissions; Zoo Code
+is explicitly advisory because it has no documented blocking hook. No adapter replaces SMAIRT's
+human gates, transaction boundaries, or immutable-record validation.

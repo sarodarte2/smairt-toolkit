@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from smairt.credentials import resolve_credential
+from smairt.local_setup import ConnectionProfile, resolve_profile
 from smairt.models import SmairtConfig, ZoteroMode
 from smairt.utils import validate_identifier
 
@@ -38,9 +39,26 @@ class ZoteroProvider:
         client_factory: Callable[[Any, float], Any] | None = None,
         timeout: float = 15.0,
     ) -> None:
-        config = SmairtConfig.load(root / "smairt.yaml").integrations.zotero
-        if config.mode is ZoteroMode.DISABLED:
+        project = SmairtConfig.load(root / "smairt.yaml")
+        shared = project.integrations.zotero
+        enabled = shared.enabled or (
+            project.schema_version < 5 and shared.mode is not ZoteroMode.DISABLED
+        )
+        if not enabled:
             raise ValueError("Zotero integration is disabled")
+        try:
+            _, config = resolve_profile(root, "zotero")
+        except ValueError:
+            if project.schema_version >= 5:
+                raise
+            config = ConnectionProfile(
+                provider="zotero",
+                credential_profile=shared.credential.profile,
+                environment_variable=shared.credential.environment_variable,
+                mode=shared.mode,
+                library_id=shared.library_id,
+                library_type=shared.library_type if shared.mode is ZoteroMode.WEB else None,
+            )
         self.config = config
         self.timeout = timeout
         self.last_library_version: str | None = None

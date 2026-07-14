@@ -9,7 +9,11 @@ journeys, CodeQL, pip-audit, dependency review, gitleaks, and the formal reposit
 ## Manual gates
 
 - Run the WSL clean-wheel smoke journey.
-- Confirm the workflow hub in narrow and normal terminals without alternate-screen behavior.
+- Confirm compact, medium, and wide layouts without alternate-screen behavior; resize each live
+  menu and verify submenu transitions remain anchored.
+- Verify reduced motion through Setup → Appearance and `SMAIRT_REDUCED_MOTION=1`.
+- Install, switch, inspect, and toggle MCP for Codex, Zoo Code, Cline, OpenCode, and Cursor.
+- Execute allow/deny hook fixtures and confirm unsupported Zoo enforcement remains clearly labeled.
 - Confirm ordinary status, validation, doctor, and workflow refresh have no network access.
 - Review experimental safety wording and controlled-data refusal with the team.
 - Verify README commands, links, badges, changelog, and installation instructions.

@@ -27,6 +27,17 @@ def test_choice_uses_arrows_enter_and_escape() -> None:
     ):
         input_stream.send_text("\x1b[B\r")
         assert _select("Choose", [("first", "First"), ("second", "Second")]) == "second"
+        input_stream.send_text("\x1b[A\r")
+        assert _select("Wrap up", [("first", "First"), ("second", "Second")]) == "second"
+        input_stream.send_text("\x1b[B\r")
+        assert (
+            _select(
+                "Wrap down",
+                [("first", "First"), ("second", "Second")],
+                default="second",
+            )
+            == "first"
+        )
         input_stream.send_text("\x1b")
         with pytest.raises(BackNavigation):
             _select("Choose", [("first", "First")])
@@ -36,13 +47,14 @@ def test_choice_uses_arrows_enter_and_escape() -> None:
     assert not output.entered_alternate_screen
 
 
-def test_new_project_workflow_creates_v4_project(monkeypatch, tmp_path: Path) -> None:
+def test_new_project_workflow_creates_v6_project(monkeypatch, tmp_path: Path) -> None:
     """Create through retained-state steps and verify metadata and managed license."""
     target = tmp_path / "terminal-project"
 
     def answer_text(message: str, default: str = "") -> str:
         answers = {
-            "Destination": str(target),
+            "Parent directory": str(tmp_path),
+            "Project folder": target.name,
             "Project name": "Terminal Study",
             "Primary researcher": "Researcher",
             "Email (optional)": "researcher@example.org",
@@ -64,9 +76,9 @@ def test_new_project_workflow_creates_v4_project(monkeypatch, tmp_path: Path) ->
     monkeypatch.setattr("smairt.tui._text", answer_text)
     monkeypatch.setattr("smairt.tui._select", answer_select)
 
-    assert run_new_project(target) == target
+    assert run_new_project(tmp_path) == target
     config = SmairtConfig.load(target / "smairt.yaml")
-    assert config.schema_version == 4
+    assert config.schema_version == 6
     assert config.project.fields_of_study == ["Biology", "Genomics"]
     assert config.project.license is ProjectLicense.MIT
     assert config.contributors[0].email == "researcher@example.org"

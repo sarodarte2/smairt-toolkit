@@ -1,5 +1,9 @@
 # SMAIRT Quickstart
 
+First run `smairt setup` if you want OpenAlex or Zotero, then run `smairt new`. The wizard can
+create a new child folder or scaffold the folder you already selected. New Conda environments use
+the project slug as their default name.
+
 This journey creates a project, completes the required framing placeholders, selects a hypothesis,
 runs an experiment, and records a human decision. Substitute real sources and scientific content;
 the example text is deliberately not evidence.
@@ -49,6 +53,9 @@ smairt decision record --experiment EXPERIMENT_001 --iteration ITERATION_001 \
   --rationale "Observed result met the predefined criterion" --decided-by "Researcher Name"
 smairt next --json
 ```
+
+For a copy/paste-ready agent handoff based on the same project state, run `smairt next --prompt`.
+It includes bounded files to read and preserves all human decision gates.
 
 Failed or interrupted runs cannot be accepted. Revise by creating a new iteration rather than
 editing an old run.

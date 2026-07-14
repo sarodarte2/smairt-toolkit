@@ -35,16 +35,20 @@ consequential steps, and gives coding agents a bounded, inspectable place to wor
 
 ## Start working
 
-Run the command with no arguments:
+Start with the small command-line welcome:
 
 ```bash
 smairt
 ```
 
-The workflow hub stays in your terminal scrollback. Use Up/Down to move, Enter to open or accept,
-Escape to go back one level, and Ctrl-C to stop. Outside a project it helps create or initialize
-one. Inside a project it opens research guidance, references, settings, people, environments,
-safety, and validation.
+It shows the installed version, credits, license, and the three useful entry points. Run `smairt
+setup` for machine-wide keys and literature connections, `smairt new` to create a project, and
+`smairt menu` inside a project for its dashboard. Menus remain in terminal scrollback. Use
+Up/Down (or j/k) to move, Enter to accept, Escape to go back, and Ctrl-C to stop. Selection wraps:
+Down from the final choice returns to the first, and Up from the first returns to the final choice.
+
+The project wizard first asks whether to create a named child folder or initialize the folder you
+already chose. It never treats an unrelated project above a Git worktree as the current project.
 
 For scripts or experienced users, every important setup action also has an explicit command:
 
@@ -54,6 +58,7 @@ smairt new my-study --name "My Study" --author "Researcher Name" \
 cd my-study
 smairt settings show --json
 smairt next --json
+smairt next --prompt
 ```
 
 ## Human and AI roles
@@ -86,16 +91,19 @@ my-study/
 
 ## What works today
 
-- Terminal-native project creation and a contextual workflow hub.
+- Terminal-native global setup, project creation, and a five-area project dashboard.
 - Durable project identity, fields of study, license, contributors, and environment settings.
 - Reference indexing, research proposals, registered experiments, immutable runs, decisions,
   evidence, claims, and Markdown/DOCX paper builds.
 - DOI-first Crossref metadata, optional OpenAlex supplementation, and read-only local or Web
   Zotero imports. Collection imports are bounded; PDFs are copied only when explicitly selected
   from a local Zotero library and validated before one atomic commit.
-- OS-keyring credential profiles and a five-tool, metadata-only MCP server for Codex and Zoo.
+- Maintained Codex, Zoo Code, Cline, OpenCode, and Cursor adapters with truthful hook coverage.
+- User-local connection profiles, OS-keyring credentials, and a five-tool, metadata-only MCP
+  server for every maintained harness. Shared project YAML contains policy, not account or
+  library IDs.
 - Transactional writes, mutation locks, recovery journals, validation, safety modes, and adapter
-  guidance for Codex, Zoo Code, and Cline.
+  guidance tailored to each maintained harness.
 - Offline project doctor checks and a setup doctor with an explicit opt-in GitHub auth check.
 
 This is beta software. Safety checks are technical guardrails, not institutional, regulatory,

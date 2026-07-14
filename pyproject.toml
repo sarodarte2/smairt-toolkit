@@ -23,6 +23,7 @@ dependencies = [
   "pyzotero>=1.13,<2",
   "mcp>=1.28,<2",
   "httpx>=0.27,<1",
+  "platformdirs>=4.3,<5",
 ]
 
 [project.optional-dependencies]
@@ -65,14 +66,14 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PIE", "RUF", "S", "D100", "D10
 "src/smairt/cli.py" = ["S603", "S607"]
 "src/smairt/diagnostics.py" = ["S603", "S607"]
 "src/smairt/migrations.py" = ["S607"]
-"src/smairt/project.py" = ["S603"]
+"src/smairt/project.py" = ["S603", "S607"]
 "src/smairt/provenance.py" = ["S607"]
 "src/smairt/runner.py" = ["S603", "S607"]
 "src/smairt/safety.py" = ["S607"]
 "src/smairt/scaffold.py" = ["S603", "S607"]
 # These lines are generated shell-hook payloads whose exact quoting is part of
 # the external harness contract; wrapping them would make the script less safe.
-"src/smairt/harnesses.py" = ["E501"]
+"src/smairt/harnesses.py" = ["E501", "S603"]
 
 [tool.mypy]
 python_version = "3.11"

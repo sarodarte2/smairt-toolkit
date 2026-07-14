@@ -33,8 +33,13 @@ boundaries, or non-obvious ordering rather than syntax.
 
 Add an adapter manifest, managed files, executable set, capability levels, conflict behavior, and
 compatibility fixture. Test installation, switching, modified and missing files, executable bits,
-upstream JSON, and custom-file preservation. Capabilities use `blocking`, `advisory`, `manual`, or
-`unsupported`.
+upstream JSON, MCP enable/disable, and custom-file preservation. New lifecycle payloads must pass
+through the 1 MiB-bounded offline hook policy and emit the harness's documented response shape.
+Capabilities must distinguish `blocking`, `permissions`, `advisory`, `manual`, and `unsupported`.
+
+Schema v6 currently maintains Codex, Zoo Code, Cline, OpenCode, and Cursor. Executable project
+plugins are never generated merely to gain hook parity when a safer native permission surface is
+available.
 
 ## Tests and release gates
 

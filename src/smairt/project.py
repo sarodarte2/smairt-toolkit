@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -35,11 +36,36 @@ PROHIBITED_NAMES = {".env", "credentials.json", "secrets.json", "secrets.yaml"}
 
 
 def find_project(start: Path | None = None) -> Path:
-    """Walk upward from a path until the nearest smairt.yaml contract is found."""
+    """Find the nearest project without crossing an enclosing Git worktree.
+
+    A broad directory such as ``~/Documents`` can itself contain a SMAIRT
+    project.  A nested, unrelated Git checkout must not silently inherit that
+    ancestor project.  Inside a Git worktree, its top-level directory is
+    therefore the final discovery candidate.  Plain project subdirectories
+    continue to use normal nearest-ancestor discovery.
+    """
     current = (start or Path.cwd()).resolve()
-    for candidate in (current, *current.parents):
+    if current.is_file():
+        current = current.parent
+    candidates = (current, *current.parents)
+    boundary: Path | None = None
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=current,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        result = None
+    if result is not None and result.returncode == 0 and result.stdout.strip():
+        boundary = Path(result.stdout.strip()).resolve()
+    for candidate in candidates:
         if (candidate / "smairt.yaml").exists():
             return candidate
+        if boundary is not None and candidate == boundary:
+            break
     raise FileNotFoundError("No smairt.yaml found in this directory or its parents")
 
 
@@ -86,7 +112,16 @@ class ValidationReport:
 
     def add(self, severity: str, code: str, artifact: str, message: str) -> None:
         """Add one finding and mirror it into legacy error or warning lists."""
-        finding = {"severity": severity, "code": code, "artifact": artifact, "message": message}
+        remediation = _finding_remediation(code, artifact)
+        finding = {
+            "severity": severity,
+            "code": code,
+            "title": code.replace(".", " ").replace("_", " ").title(),
+            "artifact": artifact,
+            "message": message,
+            "summary": message,
+            "remediation": remediation,
+        }
         self.findings.append(finding)
         (self.errors if severity == "error" else self.warnings).append(message)
 
@@ -105,6 +140,43 @@ class ValidationReport:
             "findings": self.findings,
             "readiness": self.readiness,
         }
+
+
+def _finding_remediation(code: str, artifact: str) -> str:
+    """Map stable finding families to concise, non-destructive next actions."""
+    if code.startswith(("git.credentials", "git.protected")):
+        return (
+            "Remove the protected content from the Git index, rotate exposed keys, "
+            "then validate again."
+        )
+    if code.startswith("project.required_files"):
+        return (
+            "Run Health > Preview safe SMAIRT-managed repairs; do not overwrite "
+            "user-authored files."
+        )
+    if code.startswith("references"):
+        return (
+            f"Review {artifact} through SMAIRT References, correct the record, then validate again."
+        )
+    if code.startswith("code."):
+        return (
+            "Open the reported code artifact, address the readability or traceability "
+            "issue, and rerun validation."
+        )
+    if code.startswith("run."):
+        return (
+            "Preserve the run bundle and use SMAIRT recovery, correction, or a new "
+            "iteration as appropriate."
+        )
+    if code.startswith(("background.", "proposal.", "hypothesis.")):
+        return (
+            "Use `smairt next` for the bounded workflow action; a human must cross "
+            "scientific decision gates."
+        )
+    return (
+        f"Inspect {artifact}, use `smairt doctor` for context, and rerun validation "
+        "after correction."
+    )
 
 
 def _git_files(root: Path, staged: bool) -> list[str]:
@@ -126,10 +198,42 @@ def is_prohibited(relative: str) -> bool:
     return (
         path.name.lower() in PROHIBITED_NAMES
         or path.suffix.lower() in PROHIBITED_SUFFIXES
-        or lower.startswith(("references/pdfs/", "data/raw/", "data/local/"))
+        or lower.startswith(("references/pdfs/", "data/raw/", "data/local/", ".smairt/local/"))
         or path.name.lower().startswith("credentials")
         or path.name.lower().startswith("secrets")
     )
+
+
+def _staged_secret_paths(root: Path) -> list[str]:
+    """Return staged files with credential assignments without exposing values."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--no-ext-diff", "--unified=0"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise RuntimeError("Git could not scan staged credential content") from exc
+    if result.returncode != 0:
+        raise RuntimeError("Git could not scan staged credential content")
+    current = "unknown"
+    findings: set[str] = set()
+    assignment = re.compile(
+        r"(?i)(?:OPENALEX_API_KEY|ZOTERO_API_KEY|api[_-]?key|access[_-]?token|password|secret)"
+        r"\s*[:=]\s*['\"]?([^\s'\"]+)"
+    )
+    placeholders = {"", "none", "null", "changeme", "your-key", "<key>", "${value}"}
+    for line in result.stdout.splitlines():
+        if line.startswith("+++ b/"):
+            current = line[6:]
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        match = assignment.search(line[1:])
+        if match and match.group(1).strip().lower() not in placeholders:
+            findings.add(current)
+    return sorted(findings)
 
 
 def validate_project(
@@ -177,6 +281,23 @@ def validate_project(
                         ".git",
                         f"Protected files are tracked/staged: {', '.join(prohibited)}",
                     )
+                if staged:
+                    try:
+                        secret_paths = _staged_secret_paths(root)
+                    except RuntimeError as exc:
+                        report.checks["credential_scan"] = False
+                        report.add("error", "git.credential_scan_failed", ".git", str(exc))
+                    else:
+                        report.checks["credential_scan"] = not secret_paths
+                        if secret_paths:
+                            report.add(
+                                "error",
+                                "git.credentials",
+                                ".git",
+                                "Possible credential values are staged in: "
+                                + ", ".join(secret_paths)
+                                + "; values were redacted",
+                            )
     else:
         report.checks["git_safety"] = True
 

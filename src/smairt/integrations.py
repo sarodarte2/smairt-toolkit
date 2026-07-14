@@ -10,6 +10,15 @@ from smairt.credentials import (
     keyring_health,
     resolve_credential,
 )
+from smairt.local_setup import (
+    ConnectionProfile,
+    ProviderName,
+    bind_profile,
+    configure_profile,
+    load_bindings,
+    resolve_profile,
+    unbind_profile,
+)
 from smairt.locking import mutating
 from smairt.models import (
     CredentialProfile,
@@ -31,6 +40,20 @@ def _load_v4(root: Path) -> SmairtConfig:
     return config
 
 
+def _binding_status(
+    root: Path, provider: ProviderName
+) -> tuple[str | None, ConnectionProfile | None]:
+    """Resolve a local binding for status output without turning absence into an error."""
+    name = load_bindings(root).providers.get(provider)
+    if not name:
+        return None, None
+    try:
+        _, profile = resolve_profile(root, provider)
+    except ValueError:
+        return name, None
+    return name, profile
+
+
 def _credential_source(provider: str, profile: str, environment_variable: str | None) -> str:
     """Return a secret-free resolution label for status displays."""
     try:
@@ -50,12 +73,25 @@ def configure_openalex(
     profile: str,
     environment_variable: str = "OPENALEX_API_KEY",
 ) -> dict[str, object]:
-    """Persist an OpenAlex credential reference without reading its secret."""
+    """Configure a local OpenAlex profile and shared project enablement policy."""
     config = _load_v4(root)
     integration = config.integrations.openalex
     integration.enabled = enabled
-    integration.credential.profile = profile
-    integration.credential.environment_variable = environment_variable
+    if enabled:
+        configure_profile(
+            profile,
+            ConnectionProfile(
+                provider="openalex",
+                credential_profile=profile,
+                environment_variable=environment_variable,
+            ),
+        )
+        bind_profile(root, "openalex", profile)
+    else:
+        unbind_profile(root, "openalex")
+    if config.schema_version < 5:
+        integration.credential.profile = profile
+        integration.credential.environment_variable = environment_variable
     transaction = FileTransaction(root, "configure OpenAlex")
     transaction.stage_text(root / "smairt.yaml", config.to_yaml())
     transaction.commit()
@@ -63,15 +99,19 @@ def configure_openalex(
 
 
 def openalex_status(root: Path) -> dict[str, object]:
-    """Report non-secret OpenAlex configuration without network access."""
+    """Report shared policy and local OpenAlex readiness without network access."""
     integration = _load_v4(root).integrations.openalex
-    credential = integration.credential
+    name, profile = _binding_status(root, "openalex")
+    credential_profile = profile.credential_profile if profile else None
+    environment_variable = profile.environment_variable if profile else None
     return {
         "enabled": integration.enabled,
-        "profile": credential.profile,
-        "environment_variable": credential.environment_variable,
-        "credential_source": _credential_source(
-            "openalex", credential.profile, credential.environment_variable
+        "bound_profile": name,
+        "ready": bool(integration.enabled and profile),
+        "credential_source": (
+            _credential_source("openalex", credential_profile, environment_variable)
+            if credential_profile
+            else "missing-profile"
         ),
         "network_accessed": False,
     }
@@ -89,7 +129,7 @@ def configure_zotero(
     mcp_access_enabled: bool = False,
     confirm_agent_access: bool = False,
 ) -> dict[str, object]:
-    """Persist validated read-only Zotero settings and attributed MCP consent."""
+    """Configure local Zotero connection data and shared project consent."""
     config = _load_v4(root)
     if mcp_access_enabled and mode is ZoteroMode.DISABLED:
         raise ValueError("Zotero MCP access requires a configured local or Web integration")
@@ -104,15 +144,42 @@ def configure_zotero(
             )
         confirmed_by = config.active_contributor
         confirmed_at = utc_now()
-    config.integrations.zotero = ZoteroIntegration(
-        mode=mode,
-        library_id=library_id.strip() if library_id else None,
-        library_type=library_type,
-        credential=CredentialProfile(profile=profile, environment_variable=environment_variable),
-        mcp_access_enabled=mcp_access_enabled,
-        mcp_confirmed_by=confirmed_by,
-        mcp_confirmed_at=confirmed_at,
-    )
+    enabled = mode is not ZoteroMode.DISABLED
+    if enabled:
+        configure_profile(
+            profile,
+            ConnectionProfile(
+                provider="zotero",
+                credential_profile=profile,
+                environment_variable=environment_variable,
+                mode=mode,
+                library_id=library_id.strip() if library_id else None,
+                library_type=library_type if mode is ZoteroMode.WEB else None,
+            ),
+        )
+        bind_profile(root, "zotero", profile)
+    else:
+        unbind_profile(root, "zotero")
+    if config.schema_version < 5:
+        config.integrations.zotero = ZoteroIntegration(
+            enabled=enabled,
+            mode=mode,
+            library_id=library_id.strip() if library_id else None,
+            library_type=library_type,
+            credential=CredentialProfile(
+                profile=profile, environment_variable=environment_variable
+            ),
+            mcp_access_enabled=mcp_access_enabled,
+            mcp_confirmed_by=confirmed_by,
+            mcp_confirmed_at=confirmed_at,
+        )
+    else:
+        config.integrations.zotero = ZoteroIntegration(
+            enabled=enabled,
+            mcp_access_enabled=mcp_access_enabled,
+            mcp_confirmed_by=confirmed_by,
+            mcp_confirmed_at=confirmed_at,
+        )
     # Full validation covers cross-record classification and contributor invariants.
     config = SmairtConfig.model_validate(config.model_dump(mode="json", exclude_none=True))
     transaction = FileTransaction(root, "configure Zotero")
@@ -122,17 +189,22 @@ def configure_zotero(
 
 
 def zotero_status(root: Path) -> dict[str, object]:
-    """Report non-secret Zotero configuration without network access."""
+    """Report shared policy and local Zotero readiness without exposing identifiers."""
     zotero = _load_v4(root).integrations.zotero
-    credential = zotero.credential
+    name, profile = _binding_status(root, "zotero")
+    credential_profile = profile.credential_profile if profile else None
+    environment_variable = profile.environment_variable if profile else None
     return {
-        "mode": zotero.mode.value,
-        "library_id": zotero.library_id,
-        "library_type": zotero.library_type.value,
-        "profile": credential.profile,
-        "environment_variable": credential.environment_variable,
-        "credential_source": _credential_source(
-            "zotero", credential.profile, credential.environment_variable
+        "enabled": zotero.enabled,
+        "mode": profile.mode.value if profile and profile.mode else "not-bound",
+        "bound_profile": name,
+        "ready": bool(zotero.enabled and profile),
+        "credential_source": (
+            "not-required"
+            if profile and profile.mode is ZoteroMode.LOCAL
+            else _credential_source("zotero", credential_profile, environment_variable)
+            if credential_profile
+            else "missing-profile"
         ),
         "mcp_access_enabled": zotero.mcp_access_enabled,
         "network_accessed": False,

@@ -67,13 +67,13 @@ def doctor(root: Path) -> dict[str, object]:
     schema = detect_scaffold(root)
     release = release_check(root)
     warnings = []
-    if schema in {"v2", "v3"}:
+    if schema in {"v2", "v3", "v4", "v5"}:
         warnings.append(
-            "Schema v4 integrations are available; run 'smairt migrate apply' when ready."
+            "Schema v6 five-harness adapters are available; run 'smairt migrate apply' when ready."
         )
     ok = bool(
         validation["ok"]
-        and schema in {"v2", "v3", "v4"}
+        and schema in {"v2", "v3", "v4", "v5", "v6"}
         and not missing_dependencies
         and (not git_required or git_ok)
         and environment_ok
@@ -85,8 +85,8 @@ def doctor(root: Path) -> dict[str, object]:
         "warnings": warnings,
         "package": {"version": __version__, "missing_dependencies": missing_dependencies},
         "scaffold": schema,
-        "schema_compatible": schema in {"v2", "v3", "v4"},
-        "schema_current": schema == "v4",
+        "schema_compatible": schema in {"v2", "v3", "v4", "v5", "v6"},
+        "schema_current": schema == "v6",
         "git": {
             "available": git_available,
             "repository": git_repository,

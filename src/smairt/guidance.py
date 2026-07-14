@@ -597,3 +597,42 @@ def _guidance(stage: str, completed: str, actions: list[dict[str, Any]]) -> dict
         ),
         "actions": actions[:4],
     }
+
+
+def render_suggested_prompt(root: Path, guidance: dict[str, Any] | None = None) -> str:
+    """Render the recommended action as a portable, bounded harness handoff."""
+    payload = guidance or next_guidance(root)
+    action = payload.get("recommended")
+    if not isinstance(action, dict):
+        return "Inspect this SMAIRT project and report why no next action is currently available."
+    config = SmairtConfig.load(root / "smairt.yaml")
+    lines = [
+        f"SMAIRT project stage: {payload['stage']}",
+        f"Objective: {action['label']}",
+        f"Configured harness: {config.harness.active.value}",
+    ]
+    reads = action.get("read") or []
+    if reads:
+        lines.extend(["", "Read only the bounded starting context:"])
+        lines.extend(f"- {path}" for path in reads)
+    instruction = action.get("prompt")
+    command = action.get("command")
+    lines.extend(["", "Task:"])
+    if instruction:
+        lines.append(str(instruction))
+    elif command:
+        lines.append(
+            f"Run `{command}`, inspect its result, and report the resulting project state."
+        )
+    else:
+        lines.append("Review the listed state and help the researcher complete this action.")
+    lines.extend(
+        [
+            "",
+            "Follow the repository's SMAIRT and research conventions. Keep source-backed "
+            "claims, inference, limitations, and evidence gaps distinct.",
+            "Do not select hypotheses, accept evidence, approve claims, change safety policy, "
+            "or cross another human decision gate without explicit researcher confirmation.",
+        ]
+    )
+    return "\n".join(lines)
