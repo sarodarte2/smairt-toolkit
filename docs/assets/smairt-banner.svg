@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
   <title id="title">SMAIRT</title>
-  <desc id="desc">A scientific method framework that preserves evidence, provenance, and human judgment in AI-assisted research.</desc>
+  <desc id="desc">A Scientific Method Framework that preserves Evidence, Provenance, and Human Judgment in AI-Assisted Research.</desc>
   <rect width="1200" height="300" rx="28" fill="#101820"/>
   <g transform="translate(66 66)">
     <rect width="168" height="168" rx="22" fill="#17242d" stroke="#f28c28" stroke-width="4"/>
@@ -10,6 +10,6 @@
     <path d="M134 43v82" stroke="#647986" stroke-width="3" stroke-dasharray="6 7"/>
   </g>
   <text x="282" y="126" fill="#f4f4f4" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="82" font-weight="700">SMAIRT</text>
-  <text x="286" y="176" fill="#f28c28" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="21">Scientific method · evidence · provenance · judgment</text>
+  <text x="286" y="176" fill="#f28c28" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="21">Scientific Method · Evidence · Provenance · Safety</text>
   <text x="286" y="218" fill="#a9bac5" font-family="system-ui, -apple-system, sans-serif" font-size="21">A framework for traceable AI-assisted research</text>
 </svg>
