@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main, agentic-harness]
   pull_request:
 
 permissions:
