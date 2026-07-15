@@ -63,7 +63,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   dependency-review:
-    if: github.event_name == 'pull_request'
+    # GitHub's dependency-review API returns 403 for repositories that are forks.
+    if: github.event_name == 'pull_request' && !github.event.repository.fork
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

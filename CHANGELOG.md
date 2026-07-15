@@ -18,6 +18,7 @@ compatibility, but no GitHub release or tag currently corresponds to that versio
 ### Added
 
 - Documentation validation for links, structure, terminology, metadata, and public claims.
+- Compatible minimum dependency coverage and fork-aware dependency-review handling in CI.
 - A documentation hub, explicit upstream acknowledgments, and clearer GitHub contribution and
   security routes.
 - Neutral banner, mark, and social-preview assets plus three focused Mermaid diagrams.

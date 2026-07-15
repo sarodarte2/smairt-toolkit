@@ -65,5 +65,6 @@ permission surface exists.
 
 Functional tests protect locking, transactions, runner behavior, safety, corrections, migrations,
 integrity, research transitions, documentation, and harness switching. The security workflow adds
-CodeQL, dependency audit/review, and secret scanning. See the [Release process](release.md) for the
-complete gate.
+CodeQL, dependency audit, and secret scanning. GitHub dependency review runs for eligible
+non-fork pull requests; maintainers must review dependency changes manually while this repository
+remains a fork. See the [Release process](release.md) for the complete gate.

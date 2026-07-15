@@ -10,7 +10,9 @@ A release candidate must pass:
 - Ruff format and lint checks, strict mypy, documentation validation, and the functional test suite;
 - Python 3.11–3.13 on Linux and macOS plus minimum/latest dependency resolution;
 - source distribution and wheel builds followed by clean-environment smoke tests;
-- CodeQL, dependency audit and review, and secret scanning;
+- CodeQL, dependency audit, and secret scanning;
+- GitHub dependency review for an eligible non-fork repository, or a documented manual dependency
+  diff while the repository remains a fork;
 - README commands, local links, external links, metadata consistency, and package/version checks.
 
 ## Manual gates
