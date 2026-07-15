@@ -1,8 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
-  <title id="title">SMAIRT</title><desc id="desc">Trace research from question to publication</desc>
-  <rect width="1280" height="640" fill="#101820"/><path d="M0 560h1280" stroke="#1f8a70" stroke-width="8"/>
-  <text x="96" y="230" fill="#f4f4f4" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="132" font-weight="700">&gt; SMAIRT_</text>
-  <text x="102" y="330" fill="#f28c28" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="42">question → evidence → publication</text>
-  <text x="102" y="410" fill="#a9bac5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="30">Local-first research provenance for coding-agent workflows</text>
-  <g fill="#1f8a70"><circle cx="105" cy="520" r="12"/><circle cx="145" cy="520" r="12"/><circle cx="185" cy="520" r="12"/></g>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">SMAIRT</title>
+  <desc id="desc">A scientific method framework that helps researchers use AI while preserving evidence, provenance, and human judgment.</desc>
+  <rect width="1280" height="640" fill="#101820"/>
+  <rect x="80" y="82" width="1120" height="476" rx="30" fill="#141f27" stroke="#2a3a45" stroke-width="3"/>
+  <g transform="translate(112 142)">
+    <rect width="150" height="150" rx="20" fill="#17242d" stroke="#f28c28" stroke-width="4"/>
+    <path d="M31 46l28 28-28 28M72 104h45" fill="none" stroke="#f4f4f4" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="121" cy="36" r="8" fill="#62d6e8"/>
+    <circle cx="121" cy="119" r="8" fill="#5fd38d"/>
+    <path d="M121 45v65" stroke="#647986" stroke-width="3" stroke-dasharray="5 6"/>
+  </g>
+  <text x="306" y="242" fill="#f4f4f4" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="112" font-weight="700">SMAIRT</text>
+  <text x="112" y="380" fill="#f28c28" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="650">A scientific method framework for researchers using AI</text>
+  <text x="112" y="445" fill="#a9bac5" font-family="system-ui, -apple-system, sans-serif" font-size="31">Preserve evidence · provenance · human judgment</text>
+  <path d="M112 504h1056" stroke="#1f8a70" stroke-width="7" stroke-linecap="round"/>
 </svg>

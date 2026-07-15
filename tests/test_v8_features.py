@@ -30,15 +30,13 @@ from smairt.local_setup import (
     test_profile as check_profile,
 )
 from smairt.migrations import migration_plan
-from smairt.models import ComputeMode, ComputeResources, DataClassification, Decision, SmairtConfig
-from smairt.paper import create_claim, create_evidence_card, review_claim
+from smairt.models import ComputeMode, ComputeResources, DataClassification, SmairtConfig
 from smairt.references import add_doi_reference
 from smairt.research import (
     activate_hypothesis,
     create_background,
     create_experiment,
     create_proposal_set,
-    record_decision,
     validate_background,
     validate_hypothesis,
     validate_proposal_set,
@@ -112,7 +110,7 @@ def test_user_setup_v3_migrates_appearance_without_project_state(tmp_path: Path)
 
     config = load_user_setup()
 
-    assert config.schema_version == 5
+    assert config.schema_version == 6
     assert config.appearance.motion == "off"
     assert config.appearance.theme == "scientific"
     assert config.appearance.mark == "none"
@@ -140,9 +138,47 @@ def test_user_setup_v4_migrates_logo_and_provider_scoped_profiles(tmp_path: Path
 
     config = load_user_setup()
 
-    assert config.schema_version == 5
-    assert config.appearance.mark == "pnnl"
+    assert config.schema_version == 6
+    assert config.appearance.theme == "pnnl"
+    assert config.appearance.mark == "none"
     assert config.profiles["zotero"]["default"].mode.value == "local"
+
+
+@pytest.mark.parametrize("legacy_mark", ["pnnl", "utep"])
+def test_user_setup_v5_migrates_institutional_marks_to_none(
+    tmp_path: Path, legacy_mark: str
+) -> None:
+    setup = tmp_path / "user-setup/setup.yaml"
+    setup.parent.mkdir(parents=True)
+    setup.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 5,
+                "appearance": {"theme": legacy_mark, "mark": legacy_mark},
+                "profiles": {},
+            },
+            sort_keys=False,
+        )
+    )
+
+    config = load_user_setup()
+
+    assert config.schema_version == 6
+    assert config.appearance.theme == legacy_mark
+    assert config.appearance.mark == "none"
+
+
+def test_user_setup_v5_preserves_custom_mark(tmp_path: Path) -> None:
+    setup = tmp_path / "user-setup/setup.yaml"
+    setup.parent.mkdir(parents=True)
+    setup.write_text(
+        "schema_version: 5\nappearance:\n  theme: scientific\n  mark: custom\nprofiles: {}\n"
+    )
+
+    config = load_user_setup()
+
+    assert config.schema_version == 6
+    assert config.appearance.mark == "custom"
 
 
 def test_each_provider_can_own_a_default_profile(tmp_path: Path) -> None:
@@ -194,8 +230,10 @@ def test_custom_ascii_logo_rejects_terminal_injection(tmp_path: Path) -> None:
     assert load_custom_logo() == " /\\\n/  \\"
 
 
-def test_documented_demo_reaches_one_supported_approved_claim(tmp_path: Path, monkeypatch) -> None:
-    """Keep the human walkthrough's fixtures scientifically and mechanically coherent."""
+def test_unverified_demo_fixture_runs_without_research_acceptance(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Exercise the fixture without turning an automated smoke run into accepted evidence."""
     root = project(tmp_path)
     example = Path(__file__).parents[1] / "examples/enzyme-kinetics-demo"
     monkeypatch.setattr(
@@ -224,7 +262,7 @@ def test_documented_demo_reaches_one_supported_approved_claim(tmp_path: Path, mo
         title="Nonlinear Michaelis-Menten recovery",
         statement="Nonlinear fitting recovers the declared Vmax and Km within tolerance.",
         selected_by="Researcher",
-        rationale="Direct bounded correctness test.",
+        rationale="Direct bounded smoke test.",
     )
     text = hypothesis.read_text()
     text = text.replace("[Complete from the selected proposal and human edits.]", "Native fit.")
@@ -253,7 +291,7 @@ def test_documented_demo_reaches_one_supported_approved_claim(tmp_path: Path, mo
         root,
         title="Enzyme Kinetics",
         hypothesis_id="HYPOTHESIS_001",
-        purpose="Recover independently declared parameters",
+        purpose="Recover predeclared fixture parameters",
         enforce_protocol=True,
     )
     iteration = experiment / "iterations/ITERATION_001"
@@ -266,26 +304,9 @@ def test_documented_demo_reaches_one_supported_approved_claim(tmp_path: Path, mo
     analysis = root / "analysis/EXPERIMENT_001/ANALYSIS_ITERATION_001.md"
     analysis.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(example / "ANALYSIS_ITERATION_001.md", analysis)
-    record_decision(
-        root,
-        experiment_id="EXPERIMENT_001",
-        iteration_id="ITERATION_001",
-        run_id=run.run_id,
-        decision=Decision.ACCEPT,
-        rationale="Every predeclared check passed.",
-        decided_by="Researcher",
-    )
-    evidence = create_evidence_card(
-        root,
-        run.run_id,
-        purpose="Correctness demo",
-        observed_result="Declared parameters were recovered.",
-        limitations="Synthetic deterministic fixture.",
-        decision="ACCEPT",
-    )
-    claim = create_claim(root, "The demo recovered its declared parameters.", [evidence.stem])
-    reviewed = review_claim(root, claim.stem, "approved")
-    assert reviewed["status"] == "approved"
+    assert "Status: unverified fixture" in analysis.read_text()
+    assert not list((root / "paper/evidence").glob("*.md"))
+    assert not list((root / "paper/claims").glob("*.yaml"))
 
 
 def test_semantic_scholar_normalizes_provisional_results(tmp_path: Path) -> None:
@@ -466,7 +487,7 @@ def test_slurm_launch_failure_is_a_terminal_manifested_run(tmp_path: Path, monke
 
 
 def test_demo_analysis_recovers_declared_parameters(tmp_path: Path) -> None:
-    """Keep the public demo's numerical correctness inside the release gate."""
+    """Keep the unverified fixture deterministic without treating it as validation."""
     demo = Path(__file__).parents[1] / "examples/enzyme-kinetics-demo"
     run_dir = tmp_path / "run"
     environment = os.environ.copy()

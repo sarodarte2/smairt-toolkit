@@ -11,10 +11,8 @@ from prompt_toolkit.output.base import Size
 from smairt.local_setup import AppearanceConfig
 from smairt.models import ProjectLicense, SmairtConfig
 from smairt.tui import (
-    PNNL_MARK,
     SMAIRT_LOGO,
     THEMES,
-    UTEP_MARK,
     BackNavigation,
     _appearance_values,
     _preflight_destination,
@@ -39,7 +37,7 @@ def test_responsive_layout_breakpoints_and_wide_cap() -> None:
 
 
 def test_named_themes_and_secondary_marks_never_replace_smairt(monkeypatch) -> None:
-    """Keep brand identity separate from optional institutional easter eggs."""
+    """Keep neutral brand identity separate from named color palettes."""
     expected_themes = {
         "scientific",
         "pnnl",
@@ -53,10 +51,10 @@ def test_named_themes_and_secondary_marks_never_replace_smairt(monkeypatch) -> N
         "monochrome",
     }
     assert expected_themes <= set(THEMES)
-    assert "SMAIRT" not in PNNL_MARK and "SMAIRT" not in UTEP_MARK
     assert len(SMAIRT_LOGO.splitlines()) == 5
-    assert _appearance_values(AppearanceConfig(mark="pnnl"))[2] == PNNL_MARK
-    assert _appearance_values(AppearanceConfig(mark="utep"))[2] == UTEP_MARK
+    monkeypatch.setattr("smairt.tui.load_custom_logo", lambda: "CUSTOM\nMARK")
+    assert _appearance_values(AppearanceConfig(mark="custom"))[2] == "CUSTOM\nMARK"
+    assert _appearance_values(AppearanceConfig(mark="none"))[2] == ""
     monkeypatch.setenv("NO_COLOR", "1")
     assert _appearance_values(AppearanceConfig(theme="matrix"))[:2] == THEMES["monochrome"][:2]
 

@@ -26,7 +26,7 @@ def test_harness_chooser_works_before_project_creation(tmp_path: Path, monkeypat
     assert all(item["active"] is None for item in listed)
     cursor = json.loads(invoke_ok(["harness", "info", "cursor", "--json"]).stdout)["data"]
     assert cursor["display_name"] == "Cursor"
-    assert cursor["guide"] == "docs/harnesses/cursor.md"
+    assert cursor["guide"] == "docs/reference/harnesses/cursor.md"
 
 
 def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None:

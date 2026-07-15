@@ -12,6 +12,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Validate documentation structure and repository metadata
+        run: python scripts/validate_docs.py
+      - name: Check external documentation links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --no-progress --max-retries 2 --retry-wait-time 2
+            './**/*.md'
+
   test:
     strategy:
       fail-fast: false
@@ -84,9 +103,15 @@ jobs:
       - run: >-
           "$RUNNER_TEMP/wheel-smoke/bin/smairt" --version
       - run: >-
+          "$RUNNER_TEMP/wheel-smoke/bin/smairt" setup doctor --json
+      - run: >-
           "$RUNNER_TEMP/wheel-smoke/bin/smairt" new "$RUNNER_TEMP/smoke-project"
           --name "Package Smoke" --author "CI Researcher" --confirm-contributor
           --classification unpublished --no-git
+      - run: "$RUNNER_TEMP/wheel-smoke/bin/smairt status --json"
+        working-directory: ${{ runner.temp }}/smoke-project
+      - run: "$RUNNER_TEMP/wheel-smoke/bin/smairt next --json"
+        working-directory: ${{ runner.temp }}/smoke-project
       - run: >-
           "$RUNNER_TEMP/wheel-smoke/bin/smairt" doctor --json
         working-directory: ${{ runner.temp }}/smoke-project

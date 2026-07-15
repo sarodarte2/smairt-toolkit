@@ -1,7 +1,12 @@
+# Unverified proposal fixture
+
+These options exercise the proposal record shape. They have not been selected or reviewed as part
+of a completed demonstration.
+
 ## Option A: Nonlinear Michaelis-Menten recovery
 
 ### Hypothesis
-Nonlinear fitting will recover the independently declared Vmax and Km within their tolerances.
+Nonlinear fitting will recover the predeclared Vmax and Km within their tolerances.
 
 ### Reasoning and Evidence
 The fixed substrate series follows the Michaelis-Menten relationship; doi-a04d8aaf11d84cfac807 supplies

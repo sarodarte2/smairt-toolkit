@@ -75,7 +75,8 @@ def test_bare_smairt_is_splash_and_menu_outside_project_explains(
     monkeypatch.chdir(tmp_path)
     splash = runner.invoke(app, [])
     assert splash.exit_code == 0
-    assert "PNNL Computational Biology contributors" in splash.stdout
+    assert "A scientific method framework" in splash.stdout
+    assert "sarodarte2/smairt-toolkit" in splash.stdout
     assert "smairt new" in splash.stdout and "smairt setup" in splash.stdout
     menu = runner.invoke(app, ["menu"])
     assert menu.exit_code == 2

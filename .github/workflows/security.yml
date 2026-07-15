@@ -2,7 +2,7 @@ name: Security
 
 on:
   push:
-    branches: [main, agentic_harness]
+    branches: [main, agentic-harness]
   pull_request:
   schedule:
     - cron: "23 9 * * 1"

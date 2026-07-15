@@ -38,7 +38,7 @@ HARNESS_PRESENTATIONS: dict[HarnessName, HarnessPresentation] = {
         reviewer="Native read-only project subagent; model override is optional",
         setup="Trust the project and review project hooks before enabling them",
         limitation="Hook coverage depends on project trust and does not replace CLI gates",
-        guide="docs/harnesses/codex.md",
+        guide="docs/reference/harnesses/codex.md",
     ),
     HarnessName.ZOO: HarnessPresentation(
         display_name="Zoo Code",
@@ -50,7 +50,7 @@ HARNESS_PRESENTATIONS: dict[HarnessName, HarnessPresentation] = {
         reviewer="SMAIRT Evidence Review mode with an optional sticky reviewer model",
         setup="Review the generated .roo rules, mode, ignore, and MCP configuration",
         limitation="No documented blocking protected-operation hook",
-        guide="docs/harnesses/zoo-code.md",
+        guide="docs/reference/harnesses/zoo-code.md",
     ),
     HarnessName.CLINE: HarnessPresentation(
         display_name="Cline",
@@ -64,7 +64,7 @@ HARNESS_PRESENTATIONS: dict[HarnessName, HarnessPresentation] = {
         ),
         setup="Enable Cline hooks and review the generated workflow and ignore files",
         limitation="A distinct reviewer model requires the advanced Agent Squad path",
-        guide="docs/harnesses/cline.md",
+        guide="docs/reference/harnesses/cline.md",
     ),
     HarnessName.OPENCODE: HarnessPresentation(
         display_name="OpenCode",
@@ -76,7 +76,7 @@ HARNESS_PRESENTATIONS: dict[HarnessName, HarnessPresentation] = {
         reviewer="Native read-only subagent; model override is optional",
         setup="Review opencode.json permissions and opt in to the read-only MCP if needed",
         limitation="SMAIRT intentionally does not install executable project plugins",
-        guide="docs/harnesses/opencode.md",
+        guide="docs/reference/harnesses/opencode.md",
     ),
     HarnessName.CURSOR: HarnessPresentation(
         display_name="Cursor",
@@ -88,7 +88,7 @@ HARNESS_PRESENTATIONS: dict[HarnessName, HarnessPresentation] = {
         reviewer="Native read-only project subagent; model override is optional",
         setup="Trust the project, enable hooks, and review Cursor CLI permissions",
         limitation="Hook enforcement remains controlled by Cursor trust and settings",
-        guide="docs/harnesses/cursor.md",
+        guide="docs/reference/harnesses/cursor.md",
     ),
     HarnessName.CLAUDE: HarnessPresentation(
         display_name="Claude Code",
@@ -100,7 +100,7 @@ HARNESS_PRESENTATIONS: dict[HarnessName, HarnessPresentation] = {
         reviewer="Read-only plan-mode project subagent",
         setup="Trust the project and review Claude hooks and MCP configuration",
         limitation="Hooks and MCP remain subject to Claude Code project trust",
-        guide="docs/harnesses/claude-code.md",
+        guide="docs/reference/harnesses/claude-code.md",
     ),
 }
 

@@ -25,17 +25,23 @@ from smairt.workflows import (
     opencode_command_files,
 )
 
-ADAPTER_VERSION = 7
+ADAPTER_VERSION = 8
 BEGIN_MARKER = "<!-- SMAIRT:BEGIN MANAGED CORE -->"
 END_MARKER = "<!-- SMAIRT:END MANAGED CORE -->"
 CORE_RULES = """# SMAIRT managed core
 
-- Treat `smairt.yaml` and portable records as authoritative scientific state.
-- Run `smairt status --json`, `smairt next --json`, and task-scoped `smairt context` first.
-- Never choose hypotheses, approve claims, or attribute contributors without the researcher.
-- Never read or stage secrets, raw protected data, ignored PDFs, or protected local summaries.
-- Use subagents only for independent read-only exploration and evidence gathering.
-- Validate artifacts and run `smairt verify` before reporting completion.
+Treat `smairt.yaml` and the linked project records as authoritative scientific state. An assistant
+conversation is not the research record.
+
+1. Begin with `smairt status --json` and `smairt next --json`.
+2. Load only task-scoped context and the files named by the selected workflow.
+3. Distinguish offline reads, remote metadata access, and project mutations before acting.
+4. Use SMAIRT commands for research-state changes and `smairt run` for execution.
+5. Stop for the researcher before selecting a hypothesis, choosing a consequential method,
+   recording a scientific decision, accepting evidence, approving a claim, or assigning credit.
+6. Never read or stage secrets, raw protected data, ignored PDFs, or protected local summaries.
+7. Preserve failed work and immutable run bundles. Validation checks structure and integrity; it
+   does not establish scientific correctness.
 """
 
 
