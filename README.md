@@ -2,6 +2,11 @@
   <img src="docs/assets/smairt-banner.svg" alt="SMAIRT — a scientific method framework for traceable AI-assisted research" width="820">
 </p>
 
+<p align="center">
+  <a href="https://github.com/sarodarte2/smairt-toolkit/actions/workflows/ci.yml"><img src="https://github.com/sarodarte2/smairt-toolkit/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="https://github.com/sarodarte2/smairt-toolkit/actions/workflows/security.yml"><img src="https://github.com/sarodarte2/smairt-toolkit/actions/workflows/security.yml/badge.svg?branch=main" alt="Security status"></a>
+</p>
+
 # SMAIRT
 
 **A scientific method framework that helps researchers use AI while preserving evidence,
