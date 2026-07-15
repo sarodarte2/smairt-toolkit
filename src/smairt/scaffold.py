@@ -115,38 +115,14 @@ __pycache__/
 """
 
 
-AGENTS = """# SMAIRT Project Guidance
-
-This repository uses SMAIRT. The authoritative project contract is `smairt.yaml`.
-
-Before research work:
-1. Run `smairt status --json` and `smairt next --json`.
-2. Use the focused workflow in `.agents/skills/smairt-*/` that matches the task.
-3. Load only the convention relevant to the current task.
-4. Create research artifacts through SMAIRT commands.
-5. Execute experiments through `smairt run`.
-6. Run `smairt validate` before reporting completion.
-7. End each research step with: what completed, the recommended next action, and up to
-   three relevant alternatives from `smairt next --json`.
-
-Run safe routine SMAIRT commands directly. Pause for explicit human input before selecting or
-editing a hypothesis, choosing an experimental route, recording a scientific decision, or
-retracting/superseding evidence. Use interactive choices when available and a numbered list
-otherwise. Always offer to open the relevant artifact before a human decision.
-
-Never place secrets or raw research data in Git. Never rewrite an immutable run record.
-Do not activate or finalize a hypothesis without an explicit human decision.
-"""
-
-
 SKILL_FILES = shared_skill_files()
 
 
-CODE_CONVENTIONS = """# Code Conventions
+CODE_CONVENTIONS = """# Code conventions
 
-Research code must be easy for a novice programmer to trace and easy for tools to index.
+Research code must be readable by a new collaborator and structured enough for tools to index.
 
-## Required experiment structure
+## Experiment structure
 
 - Name new entrypoints `script_XXX_descriptive_name.py`, using the `EXPERIMENT_XXX` number.
 - Begin with a module docstring containing experiment, iteration, hypothesis or purpose,
@@ -157,7 +133,7 @@ Research code must be easy for a novice programmer to trace and easy for tools t
 - Read paths from `SMAIRT_CONFIG_PATH`, `SMAIRT_RESULTS_DIR`, and `SMAIRT_FIGURES_DIR`.
 - Use descriptive variable names. Include units in names when values would otherwise be ambiguous.
 - Domain-standard names such as `Km` and `Vmax` are acceptable when defined clearly.
-- Add type hints to functions and docstrings to public or reusable functions.
+- Add type hints to functions and contract-oriented docstrings to public or reusable functions.
 - Validate inputs explicitly and fail with messages that tell the researcher what is wrong.
 - Record deterministic seeds whenever randomness is used.
 - Print concise stage, input shape/count, configuration, output-path, and completion summaries;
@@ -165,7 +141,7 @@ Research code must be easy for a novice programmer to trace and easy for tools t
 - Put reusable code in `scripts/shared/` after a pattern genuinely repeats.
 - Never hardcode machine-specific absolute paths or credentials.
 
-## Comments and readability
+## Scientific readability
 
 - Comments explain scientific intent, assumptions, units, transformations, and why a choice was
   made. Do not merely translate syntax into English.
@@ -176,12 +152,12 @@ Research code must be easy for a novice programmer to trace and easy for tools t
 - Update `scripts/CODE_INDEX.yaml` with `smairt code index` after structural code changes.
 - Run `smairt code validate` before executing or reporting an experiment.
 
-SMAIRT's runner is the logging authority. Do not add a second timestamped TeeLogger or paste raw
-output into source comments.
+SMAIRT's runner is the logging authority. Do not add a second timestamped logger or paste raw output
+into source comments.
 """
 
 
-RESEARCH_CONVENTIONS = """# Research Conventions
+RESEARCH_CONVENTIONS = """# Research conventions
 
 - A project may begin with uncertainty; a hypothesis is not required during setup.
 - Hypothesis-driven work states its prediction, rationale, competing explanation, success
@@ -190,10 +166,11 @@ RESEARCH_CONVENTIONS = """# Research Conventions
 - Treat biological/experimental replicates as independent units; avoid leakage across splits.
 - Distinguish source-backed claims, project evidence, inference, and evidence gaps.
 - Preserve unsuccessful work and record why it was revised or abandoned.
+- Treat validation as an integrity check, not proof that a scientific interpretation is correct.
 """
 
 
-INTERPRETATION_CONVENTIONS = """# Interpretation Conventions
+INTERPRETATION_CONVENTIONS = """# Interpretation conventions
 
 Separate:
 1. Observed results.
@@ -219,12 +196,19 @@ reference_index_sha256: null
 # Hypothesis XXX: Title
 
 ## Statement
+
 ## Rationale
+
 ## Falsifiable Prediction
+
 ## Null or Competing Explanation
+
 ## Required Data and Controls
+
 ## Success and Failure Criteria
+
 ## Known Confounders
+
 ## Human Selection Rationale
 """
 
@@ -232,61 +216,80 @@ reference_index_sha256: null
 ANALYSIS_TEMPLATE = """# Analysis: EXPERIMENT_XXX / ITERATION_XXX
 
 ## Executive Summary
+
 ## Hypothesis or Purpose
+
 ## Run Records
+
 ## Observed Results
+
 ## Derived Results
+
 ## Interpretation
+
 ## Where It Works
+
 ## Where It Breaks Down
+
 ## Limitations and Confounders
+
 ## Decision
+
 ## Next Steps
+
 ## Intellectual Contribution Notes
 """
 
 
-PAPER_README = """# Paper
+PAPER_README = """# Paper workspace
 
-This is the single home for evolving scholarly output. `working/` contains the live narrative;
-`drafts/` contains meaningful milestones; figures and tables must be mapped in
-`paper/manifest.yaml` to accepted run evidence. Not every experiment belongs in the paper,
-but every result used in the paper must be traceable.
+This directory is the single home for evolving scholarly output. `working/` contains the current
+narrative and `drafts/` preserves meaningful milestones. Evidence cards, claims, section reviews,
+figures, and tables must remain linked through `paper/manifest.yaml`.
+
+Not every experiment belongs in a manuscript. Every result used in one must be traceable to an
+accepted run, an approved claim, and the references needed to interpret it. A build is a versioned
+artifact, not permission to publish.
 """
 
 
-PHILOSOPHY = """# SMAIRT Philosophy
+PHILOSOPHY = """# Project philosophy
 
-SMAIRT uses the scientific method to make AI-assisted research rapid, traceable, and
-reproducible. AI can accelerate navigation of existing knowledge and implementation; humans
-remain responsible for framing, novelty, judgment, interpretation, and decisions.
+SMAIRT helps researchers use AI without assigning scientific authority to an assistant. AI can
+accelerate literature navigation, comparison, implementation, and review. Researchers remain
+responsible for framing, novelty, method choice, interpretation, and consequential decisions.
 
-The core record is Background -> Hypothesis or Purpose -> Methods -> Results and Interpretation.
-Next steps seed later work, and intellectual contributions remain visible.
+The durable record connects background, hypothesis or exploratory purpose, methods, immutable
+runs, interpretation, evidence, and claims. Uncertainty and unsuccessful work remain visible so a
+new collaborator can understand not only the current conclusion, but how the project reached it.
 """
 
 
-WORKFLOW = """# SMAIRT Workflow
+WORKFLOW = """# Project workflow
 
-1. Record the initial question and local reference material.
-2. Build a source-grounded working background.
-3. Generate three distinct hypothesis options and let the human choose or edit.
-4. Create a linked experiment and iteration.
-5. Execute through `smairt run` for automatic provenance and logs.
-6. Interpret observed evidence separately from inference.
-7. Record a human decision and revise without rewriting history.
-8. Link only accepted evidence into the paper manifest.
+1. Record the initial question, scope, and available references.
+2. Build a background that separates source support, inference, limitations, and evidence gaps.
+3. Compare three distinct hypotheses, or record a clear exploratory purpose.
+4. Let the researcher select or revise the scientific direction.
+5. Declare an experiment, iteration, protocol, controls, and interpretation criteria.
+6. Execute through `smairt run` so code, configuration, environment, logs, and hashes are captured.
+7. Interpret observations separately from derived results and speculation.
+8. Record the researcher decision and revise through new iterations or appended corrections.
+9. Link only accepted evidence and approved claims into reviewed manuscript text.
+
+Use `smairt status --json` and `smairt next --json` whenever context is restored.
 """
 
 
 ACKNOWLEDGMENTS = """# Acknowledgments
 
-SMAIRT originated in the Pacific Northwest National Laboratory Computational Biology
-community and was refined through practical AI-assisted research workflows. This evolved
-toolkit builds on the PNNL-CompBio/smairt-template repository and its contributors.
+This project was created with SMAIRT Toolkit, an independent fork of the
+[PNNL-CompBio/smairt-template](https://github.com/PNNL-CompBio/smairt-template) framework created
+by the Pacific Northwest National Laboratory Computational Biology Group and its contributors.
 
-The orange terminal accent is a small acknowledgment of those PNNL origins. This project does
-not imply endorsement by Pacific Northwest National Laboratory.
+SMAIRT Toolkit is not an official product of Pacific Northwest National Laboratory or The
+University of Texas at El Paso. Optional color-palette names are informal easter eggs and do not
+reproduce institutional marks or imply sponsorship, approval, or endorsement.
 """
 
 
@@ -554,19 +557,30 @@ def _create_project_in_place(
         "docs/PHILOSOPHY.md": PHILOSOPHY,
         "docs/WORKFLOW.md": WORKFLOW,
         "docs/GIT_AND_COLLABORATION.md": (
-            "# Git and Collaboration\n\n"
-            "Commit meaningful research checkpoints; Git is recommended but optional.\n"
+            "# Git and collaboration\n\n"
+            "Git records file history; SMAIRT records scientific transitions and provenance. "
+            "Use a branch or worktree for each contributor or independent line of work, and "
+            "commit meaningful research checkpoints. The checkout mutation lock does not "
+            "coordinate separate worktrees or resolve scientific conflicts.\n\n"
+            "Never commit secrets, raw protected data, ignored local bindings, or local PDF "
+            "copies. Before sharing, run `smairt validate --staged` and the safety checks "
+            "appropriate to the project's classification.\n"
         ),
         "docs/ACKNOWLEDGMENTS.md": ACKNOWLEDGMENTS,
         "prompts/CODE_CONVENTIONS.md": CODE_CONVENTIONS,
         "prompts/RESEARCH_CONVENTIONS.md": RESEARCH_CONVENTIONS,
         "prompts/INTERPRETATION_CONVENTIONS.md": INTERPRETATION_CONVENTIONS,
         "prompts/KNOWN_PATTERNS.md": (
-            "# Known Patterns and Errors\n\nRecord reusable solutions and costly mistakes here.\n"
+            "# Known patterns and errors\n\n"
+            "Record reusable technical solutions, failed approaches, and costly mistakes. "
+            "Link each entry to the affected experiment, iteration, run, or source when "
+            "possible. Do not turn this file into an unverified scientific conclusion.\n"
         ),
         "prompts/intellectual_contribution.md": (
-            "# Intellectual Contribution Log\n\n"
-            "Record human framing, choices, insights, and decisions.\n"
+            "# Intellectual contribution log\n\n"
+            "Record researcher framing, method choices, insights, interpretations, and "
+            "decisions that would otherwise be lost in transient conversations. Distinguish "
+            "those contributions from assistant-generated proposals or drafts.\n"
         ),
         "background/initial_question.md": (
             f"# Initial Question\n\n{question or '[Not specified yet]'}\n"
@@ -576,34 +590,64 @@ def _create_project_in_place(
         ),
         "background/initial_background.md": "# Initial Background\n\nStatus: DRAFT\n",
         "plans/README.md": (
-            "# Plans\n\nCreate a plan before multi-step work, pivots, or architecture changes.\n"
+            "# Plans\n\n"
+            "Use this directory for active multi-step implementation or research plans. State "
+            "the intended outcome, affected records, decision points, validation, and stop "
+            "conditions. Delete or close a plan after its useful content is reflected in the "
+            "canonical project record.\n"
         ),
         "hypotheses/README.md": (
-            "# Hypotheses\n\nProposal sets preserve AI options; only a human can activate one.\n"
+            "# Hypotheses\n\n"
+            "Proposal sets preserve distinct candidate explanations and their limitations. An "
+            "assistant may draft or challenge them; only a confirmed researcher can select, "
+            "revise, or activate the project's scientific direction. Exploratory work may "
+            "declare a purpose instead of forcing a hypothesis.\n"
         ),
         "hypotheses/HYPOTHESIS_TEMPLATE.md": HYPOTHESIS_TEMPLATE,
         "experiments/README.md": (
-            "# Experiments\n\nExperiment and iteration directories are created by SMAIRT.\n"
+            "# Experiments\n\n"
+            "Create experiments and iterations through SMAIRT so identifiers, protocols, code, "
+            "and run provenance remain linked. Use a new iteration for a meaningful method, "
+            "configuration, input, control, or interpretation change. Never rewrite an "
+            "immutable run bundle.\n"
         ),
         "scripts/README.md": (
-            "# Scripts\n\nUse scripts/shared for reusable project-specific code.\n"
+            "# Project scripts\n\n"
+            "Experiment entrypoints belong to their experiment iteration. Move code into "
+            "`scripts/shared/` only after a project-specific pattern genuinely repeats. Run "
+            "`smairt code index` after structural changes.\n"
         ),
         "scripts/shared/README.md": (
-            "# Shared Code\n\nExtract patterns reused across project experiments.\n"
+            "# Shared project code\n\n"
+            "Keep reusable, project-specific functions here. Document inputs, outputs, units, "
+            "assumptions, and failure conditions, and avoid hidden scientific parameters or "
+            "machine-specific paths.\n"
         ),
         "scripts/CODE_INDEX.yaml": "schema_version: 1\nmodules: []\n",
         "analysis/README.md": (
-            "# Analysis\n\nInterpret results against their linked hypothesis or purpose.\n"
+            "# Analysis\n\n"
+            "Interpret results against the linked hypothesis or exploratory purpose and the "
+            "predeclared criteria. Separate observations, derived results, interpretation, "
+            "limitations, confounders, and future hypotheses. Verification is not a scientific "
+            "decision.\n"
         ),
         "analysis/ANALYSIS_TEMPLATE.md": ANALYSIS_TEMPLATE,
         "references/README.md": (
             "# References\n\n"
-            "PDFs remain local; verified metadata and checksums live in index.yaml.\n"
+            "`index.yaml` is the attributed reference record. Remote metadata is provisional "
+            "until a contributor reviews it. Local PDFs remain ignored by default; when "
+            "attached, their path and checksum are recorded together. Discovery results are "
+            "not project evidence until deliberately imported and used.\n"
         ),
         "references/index.yaml": "schema_version: 2\nreferences: []\n",
         "paper/README.md": PAPER_README,
         "paper/manifest.yaml": "elements: []\n",
-        "paper/contribution_statement.md": "# Contribution Statement\n",
+        "paper/contribution_statement.md": (
+            "# Contribution statement\n\n"
+            "Describe researcher and collaborator contributions using the authorship framework "
+            "appropriate to the eventual venue. Distinguish human framing, decisions, analysis, "
+            "and review from assistant-generated proposals, code, or prose.\n"
+        ),
         "environment/software_versions.yaml": "tools: {}\n",
     }
     license_content = render_license(license_name, author)

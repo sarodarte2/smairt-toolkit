@@ -21,7 +21,7 @@ else
 fi
 
 "$SMAIRT" --version
-"$SMAIRT" new "$PROJECT" --name "Verified Enzyme Kinetics" --author "Demo Researcher" \
+"$SMAIRT" new "$PROJECT" --name "Enzyme Kinetics Preview" --author "Demo Researcher" \
   --question "Can the workflow recover known Michaelis-Menten parameters?" \
   --confirm-contributor --no-git
 
@@ -39,17 +39,14 @@ cp "$HERE/analysis.py" "$ITERATION/script_001_enzyme_kinetics.py"
 "$SMAIRT" run --experiment EXPERIMENT_001 --iteration ITERATION_001
 
 RUN_JSON=$(find "$PROJECT/results/EXPERIMENT_001/ITERATION_001" -name run.json -print | head -n 1)
-RUN_ID=$(basename "$(dirname "$RUN_JSON")")
 cp "$HERE/ANALYSIS_ITERATION_001.md" \
   "$PROJECT/analysis/EXPERIMENT_001/ANALYSIS_ITERATION_001.md"
-"$SMAIRT" verify --run "$RUN_ID" --json >/dev/null
-"$SMAIRT" decision record --experiment EXPERIMENT_001 --iteration ITERATION_001 \
-  --run "$RUN_ID" --decision ACCEPT --rationale "Independent recovery checks passed." \
-  --decided-by "Demo Researcher"
+test -n "$RUN_JSON"
 
 HOOK_RESULT=$(printf '%s' '{"tool_name":"read_file","tool_input":{"path":".env"}}' | \
   "$SMAIRT" harness hook --harness codex --event PreToolUse)
 printf '%s' "$HOOK_RESULT" | grep -q 'deny'
 
 "$SMAIRT" status --json
-printf '\nCompleted local demo: %s\n' "$PROJECT"
+printf '\nCompleted non-validating smoke example: %s\n' "$PROJECT"
+printf '%s\n' 'No verification or research decision was recorded.'

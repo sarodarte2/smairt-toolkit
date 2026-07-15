@@ -1,11 +1,12 @@
 # Security Policy
 
-Security fixes target the latest GitHub prerelease. Earlier beta projects may need export and
-recreation rather than migration.
+SMAIRT is an unreleased research preview. Security fixes are developed against the current
+repository state; compatibility with an older generated project is evaluated case by case.
 
 Do not open a public vulnerability issue. Use GitHub private vulnerability reporting for
-`PNNL-CompBio/smairt-template`. Include the affected version, impact, reproduction, and suggested
-mitigation without real credentials or protected research data.
+[`sarodarte2/smairt-toolkit`](https://github.com/sarodarte2/smairt-toolkit/security/advisories/new).
+Include the affected version, impact, minimal reproduction, and a suggested mitigation when known.
+Do not include real credentials, private PDFs, protected research data, or sensitive remote URLs.
 
 SMAIRT is not a sandbox and runs with the user's filesystem permissions. Secret scans,
 protected-path checks, hooks, locks, and integrity records reduce accidents but do not provide

@@ -1,172 +1,186 @@
 <p align="center">
-  <img src="docs/assets/smairt-banner.svg" alt="SMAIRT — research provenance in the terminal" width="820">
+  <img src="docs/assets/smairt-banner.svg" alt="SMAIRT — a scientific method framework for traceable AI-assisted research" width="820">
 </p>
 
 # SMAIRT
 
-## Install from source
+**A scientific method framework that helps researchers use AI while preserving evidence,
+provenance, and human judgment.**
 
-There is no verified SMAIRT release yet. The supported installation path is deliberately simple
-and truthful:
+> [!IMPORTANT]
+> SMAIRT is a research preview. The core workflows are implemented and tested, but interfaces may
+> change before a stable release. The included enzyme-kinetics example has not completed its
+> human walkthrough and must not be cited as validation of the software or a scientific result.
+
+SMAIRT (Scientific Method with AI Research Toolkit) is a local-first Python application for
+organizing AI-assisted research as a reviewable scientific process. It connects questions,
+references, hypotheses or exploratory purposes, experiments, immutable runs, decisions, evidence,
+and manuscript claims without treating an agent conversation as the scientific record.
+
+## Why SMAIRT exists
+
+AI assistants can search literature, draft code, compare explanations, and prepare analyses. They
+can also make it easy to lose the boundary between a suggestion and a scientific decision. SMAIRT
+keeps that boundary visible:
+
+- researchers select hypotheses, approve experimental routes, interpret evidence, and authorize
+  claims;
+- AI assistants work from bounded context and produce inspectable proposals or artifacts;
+- durable YAML, JSON, and Markdown records preserve provenance outside chat history;
+- validation, locks, transactions, and immutable run manifests protect the record from accidental
+  rewriting.
+
+## How the research lifecycle fits together
+
+```mermaid
+flowchart LR
+    Q["Research question"] --> R["Sources and grounded background"]
+    R --> P["Distinct proposals or exploratory purpose"]
+    P --> H{"Researcher decision"}
+    H --> E["Experiment and iteration"]
+    E --> U["Immutable run"]
+    U --> I{"Researcher interpretation"}
+    I --> V["Accepted, superseded, or retracted evidence"]
+    V --> C["Approved claim and reviewed manuscript"]
+```
+
+The software can help prepare every stage, but the two decision points remain human gates.
+
+| SMAIRT and an AI assistant can | The researcher must |
+| --- | --- |
+| Organize references and attributed metadata | Decide which sources are relevant and trustworthy |
+| Draft background and compare proposals | Frame the question and select or revise scientific direction |
+| Create experiment scaffolds and analysis code | Approve methods, controls, criteria, and consequential changes |
+| Capture runs, logs, environments, and checksums | Interpret results and decide whether evidence is acceptable |
+| Assemble claims and manuscript sections | Approve claims, corrections, and publication-ready text |
+
+## Install and orient yourself
+
+SMAIRT does not yet publish a verified package release. Install the current research preview from
+this repository with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-git clone https://github.com/PNNL-CompBio/smairt-template.git
-cd smairt-template
+git clone https://github.com/sarodarte2/smairt-toolkit.git
+cd smairt-toolkit
 uv tool install --python 3.11 .
 smairt --version
+smairt setup
 ```
 
-This installs `smairt` as an isolated user-wide tool. Conda is not required to run SMAIRT. We
-recommend Miniforge for isolated experiment environments that SMAIRT can discover or create.
+`smairt setup` configures this machine, not a research project. It checks the installation and can
+store optional literature or compute connection profiles outside the repository. Conda is not
+required to run SMAIRT.
 
-Need the prerequisites? Follow [Installation](docs/INSTALL.md),
-[Miniforge and Conda](docs/SETUP_CONDA.md), or [Git and GitHub](docs/SETUP_GIT_GITHUB.md).
-
-## Science is the hard part
-
-The hard problem of science is not producing more text or code. It is maintaining a trustworthy
-line from a question, through sources and experiments, to the judgment a researcher is prepared to
-defend. AI can help researchers search, summarize, propose, and implement, but it must not quietly
-become the author of scientific decisions.
-
-SMAIRT—the Scientific Method with AI Research Toolkit—is a local-first workspace for that division
-of labor. It keeps research state in readable YAML, JSON, and Markdown, asks humans to approve
-consequential steps, and gives coding agents a bounded, inspectable place to work.
-
-## Start working
-
-Start with the small command-line welcome:
+Create a project when the setup is ready:
 
 ```bash
-smairt
-```
-
-It shows the installed version, credits, license, and the three useful entry points. Run `smairt
-setup` for machine-wide keys and literature connections, `smairt new` to create a project, and
-`smairt menu` inside a project for its dashboard. Screens redraw in place and adapt from a branded
-four-card workspace to a compact single-column view as the terminal changes size. Use Up/Down (or
-j/k) to move, Enter to accept, Escape to go back exactly one level, and Ctrl-C to stop. The visible
-Back row is part of normal arrow navigation and can be selected with Enter. Selection wraps through
-that row, and the project home includes a fuzzy action finder that filters commands as you type.
-
-The SMAIRT ASCII wordmark remains the product identity in every layout. Setup → Appearance can add
-a responsive PNNL- or UTEP-inspired terminal mark as a small easter egg and apply familiar named
-color palettes without changing the terminal background. Institutional names and marks belong to
-their respective institutions; these terminal approximations are unofficial and do not imply
-endorsement.
-
-See [terminal easter-egg attributions](docs/ATTRIBUTIONS.md) for the complete notice.
-
-For beginners, the workflow hub keeps each screen in the terminal rather than opening a separate
-application. Outside a project it helps create or initialize one. Inside a project it opens
-research guidance, references, settings, people, environments, safety, and validation tools.
-
-The project wizard first asks whether to create a named child folder or initialize the folder you
-already chose. It never treats an unrelated project above a Git worktree as the current project.
-
-For scripts or experienced terminal users, every important setup action also has an explicit
-command:
-
-```bash
-smairt new my-study --name "My Study" --author "Researcher Name" \
-  --confirm-contributor --field Biology --license MIT --no-git
+smairt new my-study
 cd my-study
-smairt settings show --json
-smairt next --json
+smairt status --json
 smairt next --prompt
 ```
 
-Enable normal shell Tab completion once with `smairt --install-completion`, then restart the shell.
-See [Terminal completion](docs/TERMINAL_COMPLETION.md) for supported shells and the local-only
-privacy boundary.
+The interactive wizard explains project location, contributor identity, data classification,
+environment, coding harness, and safety mode. The final two commands show what exists and produce a
+bounded, copyable handoff for an AI assistant without crossing a scientific decision gate.
 
-## Choose your coding harness
+See [Installation](docs/getting-started/installation.md) for prerequisites and optional
+connections, then follow the [Quickstart](docs/getting-started/quickstart.md) for a careful tour of
+a new project.
 
-SMAIRT generates a native project adapter for one harness at a time. Scientific records remain
-portable when you switch.
+## What SMAIRT records
 
-| Harness | Best fit | SMAIRT workflow | Review isolation |
-| --- | --- | --- | --- |
-| Codex | Terminal-first OpenAI agent work | `$smairt-*` skills | Read-only project subagent |
-| Zoo Code | Modes and orchestrated handoffs | `/smairt-*` skills | Dedicated review mode |
-| Cline | Explicit Plan/Act transitions | `/smairt-*` workflows | Standard read-only subagent |
-| OpenCode | Provider-flexible terminal work | `/smairt-*` commands | Read-only project subagent |
-| Cursor | IDE-centered research coding | `/smairt-*` skills | Read-only project subagent |
-| Claude Code | Terminal-native Claude projects | `/smairt-*` skills | Read-only plan-mode subagent |
-
-Compare them before or after creating a project:
-
-```bash
-smairt harness list
-smairt harness info codex
-smairt harness select cursor --dry-run
-```
-
-The detailed [harness chooser](docs/HARNESSES.md) explains setup, hooks, permissions, modes,
-cross-model review, and limitations for each tool.
-
-## Human and AI roles
-
-SMAIRT lets an AI assistant propose hypotheses, organize references, draft experiment code, and
-assemble review artifacts. The researcher confirms identity, directs or selects hypotheses and
-exploratory purposes, decides whether runs support claims, approves corrections, and reviews
-manuscript claims. Those choices are recorded as provenance rather than hidden in chat history.
-
-```text
-question + references -> grounded background -> proposals -> human selection
--> experiment + iteration -> immutable run -> human decision -> accepted evidence
--> approved claim -> reviewed manuscript
-```
-
-A generated project has a recognizable scientific home:
+A generated project is a readable directory rather than an opaque application database:
 
 ```text
 my-study/
-├── smairt.yaml             project, people, policy, environment
-├── LICENSE                 managed only while its checksum matches
-├── background/             questions, descriptions, and source summaries
-├── hypotheses/             proposals and selected scientific direction
-├── experiments/            readable protocols and analysis code
-├── runs/                   immutable execution records
-├── evidence/               accepted, superseded, or retracted evidence
-├── paper/                  claims and reviewed manuscript builds
-└── .smairt/                transactions, provenance, manifests, recovery state
+├── smairt.yaml          project identity, policy, people, environment, and active harness
+├── background/          question, description, and source-grounded synthesis
+├── hypotheses/          proposal sets and the researcher-selected direction
+├── experiments/        protocols, iterations, analysis code, and method changes
+├── results/             immutable run bundles, logs, snapshots, and integrity manifests
+├── analysis/            interpretations linked to specific experiments and runs
+├── references/          attributed metadata and optional local PDF checksums
+├── paper/               evidence cards, claims, reviews, figures, and versioned builds
+├── summaries/           contributor-scoped and promoted context summaries
+└── .smairt/             local bindings, locks, transactions, recovery state, and manifests
 ```
 
-## What works today
+Git remains the collaboration and history layer. SMAIRT adds scientific state transitions,
+provenance, and validation; it does not replace peer review or laboratory judgment.
 
-- Terminal-native global setup, project creation, and a five-area project dashboard.
-- Durable project identity, fields of study, license, contributors, and environment settings.
-- Reference indexing, research proposals, registered experiments, immutable runs, decisions,
-  evidence, claims, and Markdown/DOCX paper builds.
-- DOI-first Crossref metadata, optional OpenAlex supplementation, and read-only local or Web
-  Zotero imports. Collection imports are bounded; PDFs are copied only when explicitly selected
-  from a local Zotero library and validated before one atomic commit.
-- Maintained Codex, Zoo Code, Cline, OpenCode, Cursor, and Claude Code adapters with six workflows,
-  isolated adversarial review, and truthful hook coverage.
-- Bounded OpenAlex and Semantic Scholar discovery, cited-by/reference exploration, DataCite
-  not-found fallback, Unpaywall access resolution, and deterministic managed PDF names.
-- Schema-8 scientific protocols with declared inputs, outcomes, checksums, run snapshots, and
-  interpretation gates before evidence can be accepted.
-- Optional native or OpenSSH Slurm submission with typed resources and explicit status, sync, and
-  cancel operations; local execution remains the default.
-- User-local connection profiles, OS-keyring credentials, and a five-tool, metadata-only MCP
-  server for every maintained harness. Shared project YAML contains policy, not account or
-  library IDs.
-- Transactional writes, mutation locks, recovery journals, validation, safety modes, and adapter
-  guidance tailored to each maintained harness.
-- Offline project doctor checks and a setup doctor with an explicit opt-in GitHub auth check.
+## Current capability areas
 
-This is beta software. Safety checks are technical guardrails, not institutional, regulatory,
-export-control, clinical, or human-subject compliance. Controlled data is not supported as a
-compliance claim. Native Windows is not supported; use WSL.
+### Research records and provenance
 
-Continue with the [User Guide](docs/USER_GUIDE.md), [CLI Reference](docs/CLI_REFERENCE.md),
-[Harness chooser](docs/HARNESSES.md), [Safety contract](docs/SAFETY.md), or
-[Architecture](docs/ARCHITECTURE.md).
-Developers can use the [Developer Guide](docs/DEVELOPER_GUIDE.md) and [Release Guide](docs/RELEASE.md).
-Literature setup and its privacy boundaries are in [Integrations](docs/INTEGRATIONS.md).
-Follow the human-run, installation-to-result [SMAIRT demo](DEMO.md). The automated fixture under
-`examples/` exists only to keep that walkthrough numerically tested.
+- Source-grounded background, three-option proposal sets, selected hypotheses, and explicitly
+  exploratory experiments.
+- Versioned experiment protocols, new iterations for meaningful method changes, and immutable local
+  or optional Slurm run records.
+- Human decisions, evidence cards, claims, manuscript reviews, corrections, retractions, and
+  supersessions that preserve history.
 
-SMAIRT itself is distributed under the [MIT License](LICENSE).
+### Literature and context
+
+- Local PDF indexing, DOI metadata through Crossref with a narrow DataCite fallback, and optional
+  Zotero import.
+- Optional OpenAlex and Semantic Scholar discovery plus explicit Unpaywall access resolution.
+- Bounded context packets, state-aware next steps, and copyable prompts for supported coding
+  harnesses.
+
+### Integrity and collaboration
+
+- Typed records, atomic writes, mutation locks, recoverable transactions, checksums, and run
+  manifests.
+- One active adapter for Codex, Zoo Code, Cline, OpenCode, Cursor, or Claude Code while scientific
+  records remain portable.
+- A metadata-only MCP server that does not expose PDF contents, arbitrary filesystem paths, or
+  mutation tools.
+
+## Safety boundary
+
+SMAIRT is not a sandbox and does not certify regulatory, institutional, contractual,
+export-control, clinical, or human-subject compliance. It runs with the researcher's filesystem
+permissions. Its checks reduce accidental policy violations within a documented local scope;
+they do not make controlled-data work compliant or defend against a malicious local user with the
+same access.
+
+Normal status, validation, doctor, and project-menu refreshes are offline. Remote metadata access,
+PDF downloads, repository-visibility refreshes, HPC submission, and project mutations require
+explicit actions. Read the full [Safety model](docs/concepts/safety.md) before private work.
+
+## Limitations of this preview
+
+- There is no tagged release or PyPI distribution; installation is from source.
+- Project and user-local schemas may change during the preview period.
+- Native Windows is not supported; use WSL. Local execution is the default, with Slurm support as
+  an optional transport rather than a general scheduler abstraction.
+- Harness hooks and permissions are defense in depth and depend on each client. SMAIRT's own CLI,
+  integrity checks, and human gates remain authoritative.
+- The enzyme-kinetics walkthrough is retained as unverified preview material and is not an
+  acceptance criterion or scientific validation claim.
+
+## Documentation
+
+Start at the [documentation hub](docs/README.md), or choose the route that matches your goal:
+
+- New researcher: [Installation](docs/getting-started/installation.md) →
+  [Quickstart](docs/getting-started/quickstart.md) →
+  [Research workflow](docs/guides/research-workflow.md)
+- Scientific and safety review: [Scientific workflow](docs/concepts/scientific-workflow.md) →
+  [Safety model](docs/concepts/safety.md) → [Architecture](docs/concepts/architecture.md)
+- Harness selection: [Harness guide](docs/reference/harnesses.md)
+- Command lookup: [CLI reference](docs/reference/cli.md)
+- Development: [Contributing](CONTRIBUTING.md) →
+  [Developer guide](docs/development/developer-guide.md)
+
+## Origins, support, and license
+
+This repository is an independent fork of
+[PNNL-CompBio/smairt-template](https://github.com/PNNL-CompBio/smairt-template). The original
+framework was created by the PNNL Computational Biology Group and its contributors. See
+[Acknowledgments](ACKNOWLEDGMENTS.md) for the provenance and non-endorsement statement.
+
+Use [GitHub Issues](https://github.com/sarodarte2/smairt-toolkit/issues) for questions, defects, and
+feature proposals. Report vulnerabilities privately as described in [Security](SECURITY.md).
+SMAIRT is distributed under the unchanged [MIT License](LICENSE).

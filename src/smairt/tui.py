@@ -105,19 +105,6 @@ SMAIRT_LOGO = r"""  _____ __  __    _    ___ ____ _____
  \___ \| |\/| | / _ \  | || |_) || |
   ___) | |  | |/ ___ \ | ||  _ < | |
  |____/|_|  |_/_/   \_\___|_| \_\|_|"""
-PNNL_MARK = r"""                               /
-                    ______-----/
-   ________--------/  /  _____/
-      \____       /  /--/
-           \_____/  /
-              \ /__/
-               V"""
-UTEP_MARK = r"""        __/\__
-  _____/______\_____
-      \___/|\___/
-          ||
-          ||
-         / /"""
 THEMES: dict[str, tuple[str, str, str, str, str, str, str]] = {
     "scientific": (ORANGE, CYAN, "#f1f1f1", "#8b909c", "#5fd38d", "#ffd166", "#ff6b6b"),
     "pnnl": ("#d97706", "#94a3b8", "#f8fafc", "#94a3b8", "#65a30d", "#f59e0b", "#dc2626"),
@@ -223,7 +210,7 @@ def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyCont
     tier, max_width = _responsive_layout(width, height)
     appearance = _APPEARANCE_PREVIEW or load_user_setup().appearance
     _primary, _secondary, mark = _appearance_values(appearance)
-    mark_label = {"pnnl": "PNNL", "utep": "UTEP", "custom": "CUSTOM"}.get(appearance.mark, "")
+    mark_label = "CUSTOM" if appearance.mark == "custom" else ""
     wide = tier == "wide"
     compact = tier == "compact"
     if wide:
@@ -335,12 +322,7 @@ def _appearance_values(config: AppearanceConfig | None = None) -> tuple[str, str
         secondary = appearance.secondary_color or CYAN
     else:
         primary, secondary, *_rest = THEMES[appearance.theme]
-    mark = {
-        "pnnl": PNNL_MARK,
-        "utep": UTEP_MARK,
-        "none": "",
-        "custom": load_custom_logo() or "",
-    }[appearance.mark]
+    mark = {"none": "", "custom": load_custom_logo() or ""}[appearance.mark]
     return primary, secondary, mark
 
 
@@ -503,11 +485,11 @@ def _header(title: str, subtitle: str = "") -> None:
                 f"[bold]{title}[/] · {subtitle}"
             )
         else:
-            mark_label = {
-                "pnnl": "PNNL",
-                "utep": "UTEP",
-                "custom": "CUSTOM",
-            }.get((_APPEARANCE_PREVIEW or load_user_setup().appearance).mark)
+            mark_label = (
+                "CUSTOM"
+                if (_APPEARANCE_PREVIEW or load_user_setup().appearance).mark == "custom"
+                else None
+            )
             badge = f" [{mark_label}]" if mark_label else ""
             identity = f"[bold {primary}]◆ SMAIRT{badge} · {title}[/]"
             console.print(identity + (f"\n{subtitle}" if subtitle else ""))
@@ -2120,8 +2102,6 @@ def _appearance_menu() -> None:
             "Secondary mark",
             [
                 ("none", "None · SMAIRT wordmark only"),
-                ("pnnl", "PNNL-inspired angular mark"),
-                ("utep", "UTEP Miner pick easter egg"),
                 ("custom", "Custom sanitized ASCII mark"),
             ],
             appearance.mark,
@@ -2142,7 +2122,7 @@ def _appearance_menu() -> None:
     try:
         _header(
             "Appearance preview",
-            "Unofficial easter eggs · respective institutions retain their marks",
+            "Named palettes are informal easter eggs · custom marks remain local",
         )
         _cards(("Theme", appearance.theme), ("Motion", appearance.motion))
         if (

@@ -398,10 +398,10 @@ def _show_splash() -> None:
         f"[bold {primary}]{SMAIRT_LOGO}[/]\n"
         + (f"[bold {secondary}]{escape(mark)}[/]\n" if mark else "")
         + f"[bold {primary}]SMAIRT {escape(__version__)}[/]\n"
-        "Scientific Method with AI Research Toolkit\n\n"
-        "PNNL Computational Biology contributors · MIT License\n"
+        "A scientific method framework for researchers using AI\n\n"
+        "Original framework: PNNL Computational Biology Group and contributors · MIT License\n"
         "Distribution: Python package [bold]smairt[/] · "
-        "github.com/PNNL-CompBio/smairt-template"
+        "github.com/sarodarte2/smairt-toolkit"
     )
     console.print(Panel.fit(body, border_style=primary, padding=(1, 2)))
     if root is None:

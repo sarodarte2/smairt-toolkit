@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Documentation and support
-    url: https://github.com/PNNL-CompBio/smairt-template/blob/main/SUPPORT.md
+    url: https://github.com/sarodarte2/smairt-toolkit/blob/main/SUPPORT.md
     about: Review supported question, defect, feature, and security routes.
   - name: Private security report
-    url: https://github.com/PNNL-CompBio/smairt-template/security/advisories/new
+    url: https://github.com/sarodarte2/smairt-toolkit/security/advisories/new
     about: Report vulnerabilities privately; never include real protected data.

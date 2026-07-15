@@ -1,6 +1,6 @@
 # Initial Background
 
-Status: REVIEWED FOR DEMO
+Status: UNVERIFIED FIXTURE
 
 ## Initial Question
 
@@ -8,7 +8,7 @@ Can the workflow recover known Michaelis-Menten parameters?
 
 ## Project Description
 
-This bounded correctness demonstration tests a deterministic local analysis and its provenance.
+This bounded smoke fixture exercises a deterministic local analysis and its provenance records.
 
 ## Current Context
 
@@ -17,8 +17,8 @@ The indexed historical translation provides context for that model (doi-a04d8aaf
 
 ## What Is Known
 
-The demo dataset was generated independently with Vmax 120.0 micromoles per minute and Km 2.5
-millimolar. Those generating values are stored separately from the analysis code.
+The fixture dataset was generated with Vmax 120.0 micromoles per minute and Km 2.5 millimolar.
+Those generating values are stored separately from the analysis code.
 
 ## What the Available Evidence Can Address
 
@@ -32,8 +32,8 @@ real enzyme measurements remains untested.
 
 ## Evidence Gaps
 
-No wet-laboratory replication, instrument uncertainty, or independent biological dataset is part
-of this software demonstration.
+No wet-laboratory replication, instrument uncertainty, external review, or biological dataset is
+part of this software fixture.
 
 ## References Used
 

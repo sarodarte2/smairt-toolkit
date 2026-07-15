@@ -1,29 +1,34 @@
-# Analysis: EXPERIMENT_001 / ITERATION_001
+# Draft analysis fixture: EXPERIMENT_001 / ITERATION_001
 
-## Executive Summary
+> **Status: unverified fixture.** This document shows the intended record shape. It is not a
+> completed human interpretation or evidence decision.
 
-The deterministic local analysis recovered the known Michaelis-Menten parameters and passed the
-blank-control check.
+## Executive summary
 
-## Observed Results
+The deterministic local script reports the fixture's declared Michaelis-Menten parameters and
+blank-control result.
+
+## Observed results
 
 The fitted values were Vmax = 120.0 micromoles per minute and Km = 2.50 millimolar. The maximum
 absolute blank velocity was 0.1 micromoles per minute.
 
-## Interpretation
+## Draft interpretation
 
-The recovered values match the independently declared generating values. This supports the narrow
-claim that the demo analysis and SMAIRT provenance path behave correctly for this fixture.
+The reported values match the generating values stored separately from the analysis script. A
+reviewer would still need to inspect the inputs, method, run record, and checksums before deciding
+whether this result is acceptable evidence for a software smoke test.
 
-## Limitations and Confounders
+## Limitations and confounders
 
 The dataset is synthetic and deliberately well behaved. It demonstrates computational correctness,
 not biological discovery or general model adequacy.
 
-## Decision
+## Decision status
 
-Accept only after SMAIRT verifies the run bundle and result-summary checksums.
+No decision has been recorded. The automated smoke script intentionally stops before verification
+or acceptance.
 
-## Next Steps
+## Next steps
 
 Use a real dataset only after defining domain-appropriate controls and uncertainty analysis.

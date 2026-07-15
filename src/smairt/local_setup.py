@@ -34,7 +34,7 @@ ThemeName = Literal[
     "monochrome",
     "custom",
 ]
-MarkName = Literal["none", "pnnl", "utep", "custom"]
+MarkName = Literal["none", "custom"]
 
 
 class AppearanceConfig(DurableModel):
@@ -159,7 +159,7 @@ class SlurmProfile(DurableModel):
 class UserSetupConfig(DurableModel):
     """Store named provider and compute profiles in the user's OS configuration area."""
 
-    schema_version: Literal[5] = 5
+    schema_version: Literal[6] = 6
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
     profiles: dict[ProviderName, dict[str, ConnectionProfile]] = Field(default_factory=dict)
     compute_profiles: dict[str, SlurmProfile] = Field(default_factory=dict)
@@ -284,6 +284,17 @@ def load_user_setup() -> UserSetupConfig:
                     grouped.setdefault(provider, {})[str(name)] = raw_profile
         payload["profiles"] = grouped
         payload["schema_version"] = 5
+    if isinstance(payload, dict) and int(payload.get("schema_version", 1)) == 5:
+        appearance = payload.get("appearance")
+        if not isinstance(appearance, dict):
+            appearance = {}
+        # Built-in institutional marks were removed in setup schema 6. Preserve the
+        # independent named color themes while migrating a selected legacy mark to
+        # SMAIRT's neutral wordmark. Custom sanitized marks remain supported.
+        if appearance.get("mark") not in {"none", "custom"}:
+            appearance["mark"] = "none"
+        payload["appearance"] = appearance
+        payload["schema_version"] = 6
     return UserSetupConfig.model_validate(payload)
 
 
