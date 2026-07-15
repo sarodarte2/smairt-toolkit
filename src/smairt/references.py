@@ -35,6 +35,21 @@ DOI_PATTERN = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 MAX_METADATA_BYTES = 10 * 1024 * 1024
 
 
+class CrossrefNotFoundError(ExternalServiceError):
+    """Indicate the only Crossref failure that permits a DataCite fallback."""
+
+
+def managed_pdf_filename(identifier: str, title: str, authors: list[str], year: int | None) -> str:
+    """Return a deterministic, human-readable, collision-resistant managed PDF name."""
+    author = authors[0].split()[-1] if authors and authors[0].split() else "anon"
+    title_words = re.findall(r"[A-Za-z0-9]+", title)[:8]
+    title_slug = slugify("-".join(title_words) or "untitled")
+    stable = hashlib.sha256(identifier.encode("utf-8")).hexdigest()[:8]
+    prefix = slugify(f"{author}-{year or 'nd'}-{title_slug}")
+    maximum_prefix = 120 - len(stable) - len("-.pdf")
+    return f"{prefix[:maximum_prefix].rstrip('-')}-{stable}.pdf"
+
+
 def render_index(records: list[ReferenceRecord]) -> str:
     """Render a validated deterministic reference index for atomic transactions."""
     payload = {
@@ -169,7 +184,9 @@ def add_reference(
     if any(record.sha256 == digest for record in records):
         raise ValueError("this PDF is already indexed")
     record_id = slugify(f"{year or 'undated'}-{title}")[:80]
-    destination = root / "references/pdfs" / f"{record_id}.pdf"
+    destination = (
+        root / "references/pdfs" / managed_pdf_filename(record_id, title, authors or [], year)
+    )
     ensure_within(root, destination)
     parent = destination.parent
     while parent != root.resolve():
@@ -202,7 +219,14 @@ def add_reference(
         citation_key=citation_key,
         identifiers={"doi": normalized_doi} if normalized_doi else {},
         verification_status=VerificationStatus.UNVERIFIED,
-        source_provenance=[{"source": "local_pdf", "captured_at": utc_now(), "sha256": digest}],
+        source_provenance=[
+            {
+                "source": "local_pdf",
+                "captured_at": utc_now(),
+                "sha256": digest,
+                "original_filename": source.name,
+            }
+        ],
     )
     records.append(record)
     transaction = FileTransaction(root, "reference add")
@@ -224,12 +248,80 @@ def _fetch_crossref(doi: str) -> dict[str, Any]:
                 raise ExternalServiceError("Crossref returned an unsuccessful response")
             raw = _read_metadata_response(response, "Crossref")
     except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise CrossrefNotFoundError("Crossref has no record for this DOI") from None
         raise ExternalServiceError(f"Crossref request failed with HTTP {exc.code}") from None
     except (urllib.error.URLError, TimeoutError):
         raise ExternalServiceError("Crossref is unavailable; no reference was changed") from None
     if not isinstance(raw, dict) or not isinstance(raw.get("message"), dict):
         raise ExternalServiceError("Crossref returned an unexpected record shape")
     return raw
+
+
+def _fetch_datacite(doi: str) -> dict[str, Any]:
+    """Fetch one bounded public DataCite DOI record after a Crossref 404."""
+    url = "https://api.datacite.org/dois/" + urllib.parse.quote(normalize_doi(doi))
+    request = urllib.request.Request(  # noqa: S310 - fixed HTTPS endpoint
+        url, headers={"User-Agent": f"SMAIRT/{__version__}"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310
+            if getattr(response, "status", 200) != 200:
+                raise ExternalServiceError("DataCite returned an unsuccessful response")
+            raw = _read_metadata_response(response, "DataCite")
+    except urllib.error.HTTPError as exc:
+        raise ExternalServiceError(f"DataCite request failed with HTTP {exc.code}") from None
+    except (urllib.error.URLError, TimeoutError):
+        raise ExternalServiceError("DataCite is unavailable; no reference was changed") from None
+    if not isinstance(raw, dict) or not isinstance(raw.get("data"), dict):
+        raise ExternalServiceError("DataCite returned an unexpected record shape")
+    attributes = raw["data"].get("attributes")
+    if not isinstance(attributes, dict):
+        raise ExternalServiceError("DataCite returned malformed DOI attributes")
+    return raw
+
+
+def _merge_datacite(record: ReferenceRecord, raw: dict[str, Any]) -> None:
+    """Fill missing, unverified fields from a validated DataCite record."""
+    attributes = raw["data"]["attributes"]
+    titles = attributes.get("titles") or []
+    creators = attributes.get("creators") or []
+    dates = attributes.get("dates") or []
+    title = titles[0].get("title") if titles and isinstance(titles[0], dict) else None
+    authors = [
+        str(
+            item.get("name")
+            or " ".join(filter(None, [item.get("givenName"), item.get("familyName")]))
+        )
+        for item in creators
+        if isinstance(item, dict)
+    ]
+    year = attributes.get("publicationYear")
+    publication_date = next(
+        (
+            item.get("date")
+            for item in dates
+            if isinstance(item, dict) and item.get("dateType") in {"Issued", "Published"}
+        ),
+        None,
+    )
+    values: dict[str, Any] = {
+        "title": title,
+        "authors": [item for item in authors if item],
+        "year": year,
+        "publication_date": publication_date,
+        "publisher": attributes.get("publisher"),
+        "url": attributes.get("url"),
+    }
+    edited = {str(item.get("field")) for item in record.edit_history}
+    for field, value in values.items():
+        fill_empty = value is not None and value != [] and not getattr(record, field)
+        replace_seed = record.verification_status is not VerificationStatus.VERIFIED and field in {
+            "title",
+            "authors",
+        }
+        if value and field not in edited and (fill_empty or replace_seed):
+            setattr(record, field, value)
 
 
 def _merge_crossref(record: ReferenceRecord, raw: dict[str, Any]) -> None:
@@ -350,7 +442,12 @@ def add_doi_reference(
     """Create or merge one metadata-only DOI record from Crossref."""
     _require_remote_permission(root, confirm_remote)
     normalized = normalize_doi(doi)
-    crossref_raw = _fetch_crossref(normalized)
+    provider_name = "crossref"
+    try:
+        authority_raw = _fetch_crossref(normalized)
+    except CrossrefNotFoundError:
+        provider_name = "datacite"
+        authority_raw = _fetch_datacite(normalized)
     openalex_raw = None
     if use_openalex:
         openalex_raw = _fetch_openalex(normalized, _resolve_openalex_key(root))
@@ -364,18 +461,24 @@ def add_doi_reference(
             identifiers={"doi": normalized},
         )
         records.append(record)
-    _merge_crossref(record, crossref_raw)
+    if provider_name == "crossref":
+        _merge_crossref(record, authority_raw)
+    else:
+        _merge_datacite(record, authority_raw)
     if openalex_raw is not None:
         _merge_openalex(record, openalex_raw)
     captured = utc_now()
-    crossref_snapshot = (
-        root / "references/provenance" / record.id / f"crossref-{captured.replace(':', '')}.json"
+    authority_snapshot = (
+        root
+        / "references/provenance"
+        / record.id
+        / f"{provider_name}-{captured.replace(':', '')}.json"
     )
     record.source_provenance.append(
         {
-            "source": "crossref",
+            "source": provider_name,
             "captured_at": captured,
-            "snapshot": str(crossref_snapshot.relative_to(root)),
+            "snapshot": str(authority_snapshot.relative_to(root)),
         }
     )
     openalex_snapshot = None
@@ -397,7 +500,7 @@ def add_doi_reference(
         record.verification_status = VerificationStatus.ENRICHED_UNVERIFIED
     transaction = FileTransaction(root, "reference add DOI")
     transaction.stage_text(
-        crossref_snapshot, json.dumps(crossref_raw, indent=2, sort_keys=True) + "\n"
+        authority_snapshot, json.dumps(authority_raw, indent=2, sort_keys=True) + "\n"
     )
     if openalex_raw is not None and openalex_snapshot is not None:
         transaction.stage_text(
@@ -430,7 +533,11 @@ def attach_reference(root: Path, identifier: str, source: Path) -> ReferenceReco
     digest = sha256_file(source)
     if any(item.sha256 == digest for item in records):
         raise ValueError("this PDF is already indexed")
-    destination = root / "references/pdfs" / f"{record.id}.pdf"
+    destination = (
+        root
+        / "references/pdfs"
+        / managed_pdf_filename(record.id, record.title, record.authors, record.year)
+    )
     ensure_within(root, destination)
     if os.path.lexists(destination):
         raise ValueError("reference attachment destination already exists")
@@ -440,13 +547,63 @@ def attach_reference(root: Path, identifier: str, source: Path) -> ReferenceReco
     record = ReferenceRecord.model_validate(payload)
     records[position] = record
     record.source_provenance.append(
-        {"source": "local_pdf", "captured_at": utc_now(), "sha256": digest}
+        {
+            "source": "local_pdf",
+            "captured_at": utc_now(),
+            "sha256": digest,
+            "original_filename": source.name,
+        }
     )
     transaction = FileTransaction(root, "reference attach")
     transaction.stage_bytes(destination, source.read_bytes(), mode=0o644)
     transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
     transaction.commit()
     return record
+
+
+@mutating("reference organize PDFs")
+def organize_pdfs(root: Path, *, apply: bool = False, confirmed: bool = False) -> dict[str, object]:
+    """Preview or atomically apply deterministic names to managed reference copies."""
+    if apply and not confirmed:
+        raise ValueError("applying PDF organization requires --yes")
+    records = load_index(root)
+    changes: list[dict[str, str]] = []
+    moves: list[tuple[ReferenceRecord, Path, Path]] = []
+    for record in records:
+        if not record.local_path or not record.sha256:
+            continue
+        source = ensure_within(root, root / "references" / record.local_path)
+        if not source.is_file() or sha256_file(source) != record.sha256:
+            raise ValueError(f"managed PDF checksum mismatch: {record.id}")
+        destination = (
+            root
+            / "references/pdfs"
+            / managed_pdf_filename(record.id, record.title, record.authors, record.year)
+        )
+        ensure_within(root, destination)
+        if source == destination:
+            continue
+        if os.path.lexists(destination):
+            raise ValueError(f"managed PDF destination already exists: {destination.name}")
+        changes.append(
+            {
+                "reference": record.id,
+                "from": str(source.relative_to(root)),
+                "to": str(destination.relative_to(root)),
+            }
+        )
+        moves.append((record, source, destination))
+    result: dict[str, object] = {"applied": apply, "changes": changes}
+    if not apply or not moves:
+        return result
+    transaction = FileTransaction(root, "reference organize PDFs")
+    for record, source, destination in moves:
+        transaction.stage_bytes(destination, source.read_bytes(), mode=0o644)
+        transaction.stage_delete(source)
+        record.local_path = str(destination.relative_to(root / "references"))
+    transaction.stage_text(root / "references/index.yaml", _index_yaml(records))
+    transaction.commit()
+    return result
 
 
 def _merge_zotero_item(
@@ -610,7 +767,11 @@ def copy_zotero_attachment(
     digest = hashlib.sha256(content).hexdigest()
     if any(existing.sha256 == digest for existing in records):
         raise ValueError("this PDF is already indexed")
-    destination = root / "references/pdfs" / f"{record.id}.pdf"
+    destination = (
+        root
+        / "references/pdfs"
+        / managed_pdf_filename(record.id, record.title, record.authors, record.year)
+    )
     ensure_within(root, destination)
     if os.path.lexists(destination):
         raise ValueError("reference attachment destination already exists")
@@ -739,14 +900,25 @@ def enrich_reference(
     record = next((item for item in records if item.id == identifier), None)
     if record is None or not record.doi:
         raise ValueError("reference enrichment requires a DOI")
-    raw = _fetch_crossref(record.doi)
+    provider_name = "crossref"
+    try:
+        raw = _fetch_crossref(record.doi)
+    except CrossrefNotFoundError:
+        provider_name = "datacite"
+        raw = _fetch_datacite(record.doi)
     snapshot = (
-        root / "references/provenance" / identifier / f"crossref-{utc_now().replace(':', '')}.json"
+        root
+        / "references/provenance"
+        / identifier
+        / f"{provider_name}-{utc_now().replace(':', '')}.json"
     )
-    _merge_crossref(record, raw)
+    if provider_name == "crossref":
+        _merge_crossref(record, raw)
+    else:
+        _merge_datacite(record, raw)
     record.source_provenance.append(
         {
-            "source": "crossref",
+            "source": provider_name,
             "captured_at": utc_now(),
             "snapshot": str(snapshot.relative_to(root)),
         }

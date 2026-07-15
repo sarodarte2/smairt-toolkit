@@ -8,7 +8,7 @@ and interfaces may still break between prereleases.
 ### Added
 
 - Research-to-publication records, corrections, summaries, provenance, and integrity manifests.
-- Codex, Zoo Code, Cline, OpenCode, and Cursor adapters with truthful capability metadata.
+- Codex, Zoo Code, Cline, OpenCode, Cursor, and Claude Code adapters with capability metadata.
 - Checkout mutation locks and recoverable multi-file transaction journals.
 - Terminal-state run capture for completion, failure, launch failure, and interruption.
 - Explicit cached visibility refresh and experimental Standard/Strict safety modes.
@@ -20,6 +20,16 @@ and interfaces may still break between prereleases.
   identifiers out of shared project configuration.
 - Responsive anchored terminal frames, original SMAIRT ASCII branding, reduced-motion controls,
   and maintained OpenCode and Cursor adapters.
+- Six focused research workflows, native read-only adversarial reviewers, a responsive harness
+  chooser, and per-harness setup guides.
+- Keyless Zotero browsing, DataCite DOI fallback, OpenAlex discovery, explicit Unpaywall access,
+  secure PDF retrieval, and previewed deterministic PDF organization.
+- Semantic Scholar search, citation traversal, and recommendations with optional user-local keys.
+- Fuzzy in-menu command suggestions, standard shell completion, and faster responsive redraws.
+- Schema-8 protocol/result contracts, immutable protocol snapshots, and checksum-backed
+  interpretation gates.
+- Optional typed Slurm submission through native commands or an existing OpenSSH host alias.
+- A local enzyme-kinetics installation-to-evidence demo with independently checked correct results.
 
 ### Changed
 
@@ -29,5 +39,10 @@ and interfaces may still break between prereleases.
 - Project schema v5 moves integration identity to local state, simplifies health and references,
   and defaults new Conda environment names to the project slug.
 - Project schema v6 adds the five-harness vocabulary and a bounded shared hook-policy contract.
+- Harness adapter v6 adds native skill, command, mode, hook, permission, and subagent integrations
+  while preserving each harness's built-in modes.
+- Project schema and harness adapter v7 add Claude Code and merge-safe shared JSON ownership.
+- Project schema v8 adds scientific protocol enforcement and optional compute-job records; the
+  harness adapter format remains v7.
 
 [0.2.0-beta.1]: https://github.com/PNNL-CompBio/smairt-template/releases/tag/v0.2.0-beta.1

@@ -9,17 +9,18 @@ names outside Git-managed project files.
 from __future__ import annotations
 
 import os
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 import yaml
 from platformdirs import user_config_path
 from pydantic import Field, field_validator, model_validator
 
-from smairt.models import DurableModel, ZoteroLibraryType, ZoteroMode
+from smairt.models import ComputeMode, DurableModel, ZoteroLibraryType, ZoteroMode
 from smairt.utils import atomic_write, validate_identifier
 
-ProviderName = Literal["openalex", "zotero"]
+ProviderName = Literal["openalex", "semantic_scholar", "zotero", "unpaywall"]
 
 
 class ConnectionProfile(DurableModel):
@@ -31,6 +32,7 @@ class ConnectionProfile(DurableModel):
     mode: ZoteroMode | None = None
     library_id: str | None = None
     library_type: ZoteroLibraryType | None = None
+    contact_email: str | None = None
 
     @field_validator("credential_profile")
     @classmethod
@@ -51,13 +53,29 @@ class ConnectionProfile(DurableModel):
     @model_validator(mode="after")
     def coherent_provider(self) -> ConnectionProfile:
         """Require only the fields needed by the selected provider and mode."""
-        if self.provider == "openalex":
+        if self.provider in {"openalex", "semantic_scholar"}:
+            if (
+                self.mode is not None
+                or self.library_id is not None
+                or self.library_type is not None
+                or self.contact_email is not None
+            ):
+                raise ValueError(
+                    f"{self.provider.replace('_', ' ').title()} profiles cannot contain "
+                    "Zotero connection fields"
+                )
+            return self
+        if self.provider == "unpaywall":
+            if not self.contact_email or not re.fullmatch(
+                r"[^\s@]+@[^\s@]+\.[^\s@]+", self.contact_email
+            ):
+                raise ValueError("Unpaywall profiles require a valid contact email")
             if (
                 self.mode is not None
                 or self.library_id is not None
                 or self.library_type is not None
             ):
-                raise ValueError("OpenAlex profiles cannot contain Zotero connection fields")
+                raise ValueError("Unpaywall profiles cannot contain Zotero connection fields")
             return self
         if self.mode not in {ZoteroMode.LOCAL, ZoteroMode.WEB}:
             raise ValueError("Zotero profiles require local or web mode")
@@ -68,12 +86,45 @@ class ConnectionProfile(DurableModel):
         return self
 
 
-class UserSetupConfig(DurableModel):
-    """Store named provider profiles in the user's OS configuration area."""
+class SlurmProfile(DurableModel):
+    """Describe a native or existing-OpenSSH Slurm submit host."""
 
-    schema_version: int = 1
+    mode: ComputeMode
+    remote_root: str
+    host_alias: str | None = None
+
+    @field_validator("remote_root")
+    @classmethod
+    def safe_remote_root(cls, value: str) -> str:
+        """Require one absolute POSIX directory without shell metacharacters."""
+        path = PurePosixPath(value)
+        if (
+            not path.is_absolute()
+            or ".." in path.parts
+            or not re.fullmatch(r"/[A-Za-z0-9_./-]+", value)
+        ):
+            raise ValueError("remote root must be a safe absolute POSIX path")
+        return value.rstrip("/") or "/"
+
+    @model_validator(mode="after")
+    def coherent_mode(self) -> SlurmProfile:
+        """Require only SSH mode to name a preconfigured host alias."""
+        if self.mode is ComputeMode.SSH:
+            if not self.host_alias or not re.fullmatch(r"[A-Za-z0-9_.-]+", self.host_alias):
+                raise ValueError("SSH Slurm profiles require a safe OpenSSH host alias")
+        elif self.host_alias is not None:
+            raise ValueError("native Slurm profiles cannot contain a host alias")
+        return self
+
+
+class UserSetupConfig(DurableModel):
+    """Store named provider and compute profiles in the user's OS configuration area."""
+
+    schema_version: Literal[3] = 3
     motion: Literal["automatic", "off"] = "automatic"
     profiles: dict[str, ConnectionProfile] = Field(default_factory=dict)
+    compute_profiles: dict[str, SlurmProfile] = Field(default_factory=dict)
+    default_compute_profile: str | None = None
 
     @field_validator("profiles")
     @classmethod
@@ -84,6 +135,16 @@ class UserSetupConfig(DurableModel):
         for name in values:
             validate_identifier(name, label="connection profile")
         return values
+
+    @model_validator(mode="after")
+    def valid_default_compute(self) -> UserSetupConfig:
+        """Require the selected compute profile to exist in the same local record."""
+        if (
+            self.default_compute_profile is not None
+            and self.default_compute_profile not in self.compute_profiles
+        ):
+            raise ValueError("default compute profile is not configured")
+        return self
 
 
 class LocalIntegrationBindings(DurableModel):
@@ -118,13 +179,35 @@ def load_user_setup() -> UserSetupConfig:
     path = setup_config_path()
     if not path.exists():
         return UserSetupConfig()
-    return UserSetupConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if isinstance(payload, dict) and int(payload.get("schema_version", 1)) in {1, 2}:
+        payload["schema_version"] = 3
+    return UserSetupConfig.model_validate(payload)
 
 
 def save_user_setup(config: UserSetupConfig) -> None:
     """Atomically persist secret-free setup metadata with owner-only mode."""
     content = yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False)
     atomic_write(setup_config_path(), content, mode=0o600)
+
+
+def configure_slurm_profile(name: str, profile: SlurmProfile) -> SlurmProfile:
+    """Create and select one user-local Slurm profile."""
+    validate_identifier(name, label="compute profile")
+    config = load_user_setup()
+    config.compute_profiles[name] = profile
+    config.default_compute_profile = name
+    save_user_setup(config)
+    return profile
+
+
+def selected_slurm_profile() -> tuple[str, SlurmProfile]:
+    """Return the selected profile or a guided setup error."""
+    config = load_user_setup()
+    name = config.default_compute_profile
+    if not name or name not in config.compute_profiles:
+        raise ValueError("Slurm is not configured on this machine; run 'smairt setup'")
+    return name, config.compute_profiles[name]
 
 
 def configure_profile(name: str, profile: ConnectionProfile) -> ConnectionProfile:
@@ -246,33 +329,55 @@ def test_profile(name: str) -> dict[str, object]:
     try:
         import httpx
 
-        if profile.provider == "openalex":
+        if profile.provider in {"openalex", "semantic_scholar"}:
             from smairt.credentials import resolve_credential
 
             key, _ = resolve_credential(
-                "openalex",
+                profile.provider,
                 profile.credential_profile,
-                profile.environment_variable or "OPENALEX_API_KEY",
+                profile.environment_variable
+                or (
+                    "OPENALEX_API_KEY"
+                    if profile.provider == "openalex"
+                    else "SEMANTIC_SCHOLAR_API_KEY"
+                ),
             )
             if not key:
                 raise ValueError("OpenAlex API key is missing")
             response = httpx.get(
-                "https://api.openalex.org/rate-limit",
-                params={"api_key": key},
+                (
+                    "https://api.openalex.org/rate-limit"
+                    if profile.provider == "openalex"
+                    else "https://api.semanticscholar.org/graph/v1/paper/search"
+                ),
+                params=(
+                    {"api_key": key}
+                    if profile.provider == "openalex"
+                    else {"query": "SMAIRT", "limit": 1, "fields": "paperId"}
+                ),
+                headers=({} if profile.provider == "openalex" else {"x-api-key": key}),
                 timeout=15,
             )
             if response.status_code in {401, 403}:
-                raise ValueError("OpenAlex rejected the API key")
+                raise ValueError(f"{profile.provider} rejected the API key")
             if response.status_code != 200:
-                raise ValueError(f"OpenAlex test failed with HTTP {response.status_code}")
+                raise ValueError(f"{profile.provider} test failed with HTTP {response.status_code}")
             payload = response.json()
             return {
                 "ok": True,
-                "provider": "openalex",
+                "provider": profile.provider,
                 "profile": name,
                 "remaining": payload.get("remaining_usd")
                 or response.headers.get("X-RateLimit-Remaining"),
                 "network_accessed": True,
+            }
+        if profile.provider == "unpaywall":
+            return {
+                "ok": True,
+                "provider": "unpaywall",
+                "profile": name,
+                "contact_email_configured": bool(profile.contact_email),
+                "network_accessed": False,
             }
         if profile.mode is ZoteroMode.LOCAL:
             response = httpx.get(

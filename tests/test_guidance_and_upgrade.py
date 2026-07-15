@@ -80,7 +80,7 @@ def test_upgrade_previews_backs_up_and_preserves_research(tmp_path: Path) -> Non
     contribution.write_text("Researcher-authored contribution.\n")
     agents = root / "AGENTS.md"
     agents.write_text(agents.read_text() + "\nLocal laboratory guidance.\n")
-    skill = root / ".agents/skills/smairt-research/SKILL.md"
+    skill = root / ".agents/skills/smairt-next/SKILL.md"
     skill.write_text("Local edited guidance.\n")
 
     preview = upgrade_project(root)
@@ -91,7 +91,7 @@ def test_upgrade_previews_backs_up_and_preserves_research(tmp_path: Path) -> Non
     applied = upgrade_project(root, apply=True)
     assert applied["applied"]
     assert contribution.read_text() == "Researcher-authored contribution.\n"
-    backup = root / str(applied["backup"]) / ".agents/skills/smairt-research/SKILL.md"
+    backup = root / str(applied["backup"]) / ".agents/skills/smairt-next/SKILL.md"
     assert backup.read_text() == "Local edited guidance.\n"
     assert "Local laboratory guidance." in agents.read_text()
     assert upgrade_project(root)["changes"] == []

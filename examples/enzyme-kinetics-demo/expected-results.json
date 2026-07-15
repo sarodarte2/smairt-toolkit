@@ -1,0 +1,7 @@
+{
+  "generating_vmax_umol_min": 120.0,
+  "generating_km_mM": 2.5,
+  "accepted_vmax_range": [119.9, 120.1],
+  "accepted_km_range": [2.49, 2.51],
+  "maximum_absolute_blank_umol_min": 0.1
+}

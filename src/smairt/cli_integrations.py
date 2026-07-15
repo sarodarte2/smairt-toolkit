@@ -27,11 +27,13 @@ from smairt.integrations import (
 from smairt.local_setup import (
     ConnectionProfile,
     ProviderName,
+    bind_profile,
     configure_profile,
     delete_profile,
     load_bindings,
     load_user_setup,
     test_profile,
+    unbind_profile,
 )
 from smairt.models import SmairtConfig, ZoteroLibraryType, ZoteroMode
 from smairt.zotero import ZoteroProvider
@@ -41,12 +43,18 @@ integration_app = typer.Typer(help="Configure read-only literature integrations"
 setup_connection_app = typer.Typer(help="Manage user-local provider connection profiles")
 setup_zotero_app = typer.Typer(help="Configure user-local Zotero profiles")
 setup_openalex_app = typer.Typer(help="Configure user-local OpenAlex profiles")
+setup_semantic_scholar_app = typer.Typer(
+    help="Configure an optional user-local Semantic Scholar API key"
+)
+setup_unpaywall_app = typer.Typer(help="Configure a user-local Unpaywall contact profile")
 zotero_app = typer.Typer(help="Configure and test read-only Zotero access")
 openalex_app = typer.Typer(help="Configure optional OpenAlex supplementation")
 integration_app.add_typer(zotero_app, name="zotero")
 integration_app.add_typer(openalex_app, name="openalex")
 setup_connection_app.add_typer(setup_zotero_app, name="zotero")
 setup_connection_app.add_typer(setup_openalex_app, name="openalex")
+setup_connection_app.add_typer(setup_semantic_scholar_app, name="semantic-scholar")
+setup_connection_app.add_typer(setup_unpaywall_app, name="unpaywall")
 
 
 def _v4_config() -> tuple[Path, SmairtConfig]:
@@ -261,18 +269,73 @@ def setup_openalex_remove(name: Annotated[str, typer.Argument()] = "default") ->
     emit({"name": name, "removed": delete_profile(name)}, False)
 
 
+@setup_semantic_scholar_app.command("configure")
+def setup_semantic_scholar_configure(
+    name: Annotated[str, typer.Argument()] = "default",
+    environment_variable: Annotated[str, typer.Option("--env-var")] = "SEMANTIC_SCHOLAR_API_KEY",
+) -> None:
+    """Create an optional Semantic Scholar profile outside the project."""
+    profile = configure_profile(
+        name,
+        ConnectionProfile(
+            provider="semantic_scholar",
+            credential_profile=name,
+            environment_variable=environment_variable,
+        ),
+    )
+    emit({"name": name, "provider": profile.provider}, False)
+
+
+@setup_semantic_scholar_app.command("test")
+def setup_semantic_scholar_test(name: Annotated[str, typer.Argument()] = "default") -> None:
+    """Test one Semantic Scholar API key without exposing it."""
+    emit(test_profile(name), False)
+
+
+@setup_semantic_scholar_app.command("remove")
+def setup_semantic_scholar_remove(name: Annotated[str, typer.Argument()] = "default") -> None:
+    """Remove a Semantic Scholar profile without deleting its key."""
+    emit({"name": name, "removed": delete_profile(name)}, False)
+
+
+@setup_unpaywall_app.command("configure")
+def setup_unpaywall_configure(
+    name: Annotated[str, typer.Argument()] = "default",
+    email: Annotated[str, typer.Option("--email")] = "",
+) -> None:
+    """Store the contact email required by Unpaywall outside the project."""
+    profile = configure_profile(
+        name,
+        ConnectionProfile(provider="unpaywall", contact_email=email),
+    )
+    emit({"name": name, "provider": profile.provider, "configured": True}, False)
+
+
+@setup_unpaywall_app.command("remove")
+def setup_unpaywall_remove(name: Annotated[str, typer.Argument()] = "default") -> None:
+    """Remove a local Unpaywall contact profile."""
+    emit({"name": name, "removed": delete_profile(name)}, False)
+
+
 @integration_app.command("bind")
 def integration_bind(
     provider: Annotated[str, typer.Argument()], profile: Annotated[str, typer.Argument()]
 ) -> None:
     """Bind a user-local profile to the current project checkout."""
-    if provider not in {"openalex", "zotero"}:
-        raise typer.BadParameter("provider must be openalex or zotero")
+    if provider not in {"openalex", "semantic_scholar", "zotero", "unpaywall"}:
+        raise typer.BadParameter(
+            "provider must be openalex, semantic_scholar, zotero, or unpaywall"
+        )
     root = project_root()
     selected = load_user_setup().profiles.get(profile)
     if selected is None or selected.provider != provider:
         raise typer.BadParameter(f"no {provider} profile named {profile!r} exists")
-    if provider == "openalex":
+    result: dict[str, object]
+    if provider in {"unpaywall", "semantic_scholar"}:
+        typed_provider = cast(ProviderName, provider)
+        bind_profile(root, typed_provider, profile)
+        result = {"ready": True, "network_accessed": False}
+    elif provider == "openalex":
         result = configure_openalex(
             root,
             enabled=True,
@@ -293,11 +356,15 @@ def integration_bind(
 @integration_app.command("unbind")
 def integration_unbind(provider: Annotated[str, typer.Argument()]) -> None:
     """Remove a checkout-local binding and disable its shared project policy."""
-    if provider not in {"openalex", "zotero"}:
-        raise typer.BadParameter("provider must be openalex or zotero")
+    if provider not in {"openalex", "semantic_scholar", "zotero", "unpaywall"}:
+        raise typer.BadParameter(
+            "provider must be openalex, semantic_scholar, zotero, or unpaywall"
+        )
     root = project_root()
     removed = bool(load_bindings(root).providers.get(cast(ProviderName, provider)))
-    if provider == "openalex":
+    if provider in {"unpaywall", "semantic_scholar"}:
+        unbind_profile(root, cast(ProviderName, provider))
+    elif provider == "openalex":
         configure_openalex(root, enabled=False, profile="default")
     else:
         configure_zotero(
@@ -331,8 +398,8 @@ def integration_test(
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Test the profile bound to this checkout for one provider."""
-    if provider not in {"openalex", "zotero"}:
-        raise typer.BadParameter("provider must be openalex or zotero")
+    if provider not in {"openalex", "zotero", "unpaywall"}:
+        raise typer.BadParameter("provider must be openalex, zotero, or unpaywall")
     name = load_bindings(project_root()).providers.get(cast(ProviderName, provider))
     if not name:
         raise typer.BadParameter(f"{provider} is not bound on this machine")

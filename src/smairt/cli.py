@@ -17,13 +17,17 @@ from rich.prompt import Confirm
 
 from smairt import __version__
 from smairt.cli_harness import harness_app
+from smairt.cli_hpc import hpc_app, setup_hpc_app
 from smairt.cli_integrations import (
     credential_app,
     integration_app,
     setup_connection_app,
     setup_openalex_app,
+    setup_semantic_scholar_app,
+    setup_unpaywall_app,
     setup_zotero_app,
 )
+from smairt.cli_literature import literature_app
 from smairt.cli_mcp import mcp_app
 from smairt.cli_publication import paper_app, summary_app
 from smairt.cli_references import reference_app
@@ -117,6 +121,7 @@ setup_app = typer.Typer(
 
 app.add_typer(start_app, name="start")
 app.add_typer(reference_app, name="reference")
+app.add_typer(literature_app, name="literature")
 app.add_typer(background_app, name="background")
 app.add_typer(hypothesis_app, name="hypothesis")
 app.add_typer(experiment_app, name="experiment")
@@ -139,10 +144,14 @@ app.add_typer(setup_app, name="setup")
 app.add_typer(credential_app, name="credential")
 app.add_typer(integration_app, name="integration")
 app.add_typer(mcp_app, name="mcp")
+app.add_typer(hpc_app, name="hpc")
 setup_app.add_typer(credential_app, name="credential")
 setup_app.add_typer(setup_connection_app, name="connection")
 setup_app.add_typer(setup_zotero_app, name="zotero")
 setup_app.add_typer(setup_openalex_app, name="openalex")
+setup_app.add_typer(setup_semantic_scholar_app, name="semantic-scholar")
+setup_app.add_typer(setup_unpaywall_app, name="unpaywall")
+setup_app.add_typer(setup_hpc_app, name="hpc")
 register_root_commands(app)
 
 
@@ -660,13 +669,19 @@ def validate_command(
 
 @app.command("context")
 def context_command(
-    task: Annotated[str, typer.Option(help="planning, code, run, interpretation, or paper")],
+    task: Annotated[
+        str, typer.Option(help="planning, code, run, interpretation, paper, or review")
+    ],
     token_budget: Annotated[int, typer.Option("--token-budget", min=1)] = 8000,
+    target: Annotated[
+        str | None,
+        typer.Option(help="Project-relative textual artifact; valid only for review context"),
+    ] = None,
     save: Annotated[bool, typer.Option("--save")] = False,
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Return only the initial files relevant to the requested research task."""
-    payload = build_context(_root(), task, token_budget)
+    payload = build_context(_root(), task, token_budget, target)
     if save:
         payload["capsule_path"] = str(save_context_capsule(_root(), payload).relative_to(_root()))
     _emit(payload, as_json)

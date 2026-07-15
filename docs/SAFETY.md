@@ -48,8 +48,11 @@ storing the remote URL. Strict release rejects stale or unknown observations.
 - SMAIRT CLI validation, Git hooks, immutable run gates, and publication gates are hard local
   controls within their documented scope.
 - Cline `PreToolUse` is blocking only when Cline hooks are enabled.
-- Codex project `PreToolUse` is advisory validation; it is not described as a guaranteed blocker.
+- Codex project `PreToolUse` can deny matching tool calls after project trust, but its coverage is
+  incomplete and does not replace CLI or integrity gates.
 - Zoo modes and all agent instruction files depend on agent cooperation.
+- Adversarial reviewer agents are read-only defense in depth. Their findings are advisory and
+  cannot accept evidence, approve claims, or replace researcher judgment.
 
 Secret patterns and history scans are defense in depth, not comprehensive data-loss-prevention.
 Stabilizing the safety policy requires team approval, a reviewed threat model, validated security

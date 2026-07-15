@@ -7,7 +7,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-from importlib.resources import files
 from pathlib import Path
 
 import yaml
@@ -31,9 +30,10 @@ from smairt.models import (
 )
 from smairt.transactions import FileTransaction
 from smairt.utils import atomic_write, ensure_within, sha256_text, slugify
+from smairt.workflows import shared_skill_files
 
 DIRECTORIES = (
-    ".agents/skills/smairt-research/references",
+    ".agents/skills",
     ".codex",
     ".cursor",
     ".opencode",
@@ -121,7 +121,7 @@ This repository uses SMAIRT. The authoritative project contract is `smairt.yaml`
 
 Before research work:
 1. Run `smairt status --json` and `smairt next --json`.
-2. Use the repository skill in `.agents/skills/smairt-research/`.
+2. Use the focused workflow in `.agents/skills/smairt-*/` that matches the task.
 3. Load only the convention relevant to the current task.
 4. Create research artifacts through SMAIRT commands.
 5. Execute experiments through `smairt run`.
@@ -139,9 +139,7 @@ Do not activate or finalize a hypothesis without an explicit human decision.
 """
 
 
-SKILL = files("smairt.resources").joinpath("smairt-research.md").read_text(encoding="utf-8")
-SKILL_REFERENCE = files("smairt.resources").joinpath("workflow.md").read_text(encoding="utf-8")
-SKILL_AGENT = files("smairt.resources").joinpath("openai-agent.yaml").read_text(encoding="utf-8")
+SKILL_FILES = shared_skill_files()
 
 
 CODE_CONVENTIONS = """# Code Conventions
@@ -551,9 +549,7 @@ def _create_project_in_place(
         "results/.gitkeep": "",
         ".gitignore": GITIGNORE,
         "AGENTS.md": "",
-        ".agents/skills/smairt-research/SKILL.md": SKILL,
-        ".agents/skills/smairt-research/agents/openai.yaml": SKILL_AGENT,
-        ".agents/skills/smairt-research/references/workflow.md": SKILL_REFERENCE,
+        **SKILL_FILES,
         ".githooks/pre-commit": HOOK,
         "docs/PHILOSOPHY.md": PHILOSOPHY,
         "docs/WORKFLOW.md": WORKFLOW,
@@ -623,9 +619,7 @@ def _create_project_in_place(
     # Managed-file hashes let later upgrades distinguish framework guidance
     # from researcher-authored scientific artifacts, which are never replaced.
     managed = {
-        ".agents/skills/smairt-research/SKILL.md": SKILL,
-        ".agents/skills/smairt-research/agents/openai.yaml": SKILL_AGENT,
-        ".agents/skills/smairt-research/references/workflow.md": SKILL_REFERENCE,
+        **SKILL_FILES,
         "prompts/CODE_CONVENTIONS.md": CODE_CONVENTIONS,
     }
     framework_manifest = {

@@ -12,7 +12,8 @@ from smairt.cli_shared import emit, project_root
 from smairt.code_quality import build_code_index
 from smairt.corrections import amend_artifact, correct_run
 from smairt.guidance import next_guidance
-from smairt.models import Decision
+from smairt.hpc import submit_slurm
+from smairt.models import ComputeResources, Decision
 from smairt.research import (
     activate_hypothesis,
     create_background,
@@ -38,11 +39,23 @@ hypothesis_app.add_typer(proposal_app, name="proposals")
 def _show_next(root: Path) -> None:
     """Render the authoritative recommendation after a successful state transition."""
     guidance = next_guidance(root)
+    recommended = guidance.get("recommended")
+    recommended_label = (
+        recommended.get("label")
+        if isinstance(recommended, dict)
+        else guidance.get("recommended_next")
+    )
+    actions = guidance.get("actions")
+    alternatives = (
+        [item.get("label") for item in actions[1:] if isinstance(item, dict)]
+        if isinstance(actions, list)
+        else guidance.get("alternatives", [])
+    )
     console.print(
         {
             "completed": guidance["completed"],
-            "recommended_next": guidance["recommended_next"],
-            "alternatives": guidance["alternatives"],
+            "recommended_next": recommended_label,
+            "alternatives": alternatives,
         }
     )
 
@@ -114,7 +127,15 @@ def experiment_new(
 ) -> None:
     """Create a linked or exploratory experiment with a readable entrypoint."""
     root = project_root()
-    console.print(create_experiment(root, title=title, hypothesis_id=hypothesis, purpose=purpose))
+    console.print(
+        create_experiment(
+            root,
+            title=title,
+            hypothesis_id=hypothesis,
+            purpose=purpose,
+            enforce_protocol=True,
+        )
+    )
     build_code_index(root)
     _show_next(root)
 
@@ -160,11 +181,39 @@ def run_command(
     ctx: typer.Context,
     experiment: Annotated[str, typer.Option()],
     iteration: Annotated[str, typer.Option()],
+    backend: Annotated[str, typer.Option("--backend")] = "local",
+    cpus: Annotated[int, typer.Option("--cpus", min=1)] = 1,
+    memory_mib: Annotated[int, typer.Option("--memory-mib", min=64)] = 1024,
+    wall_minutes: Annotated[int, typer.Option("--wall-minutes", min=1)] = 60,
+    gpus: Annotated[int, typer.Option("--gpus", min=0)] = 0,
+    partition: Annotated[str | None, typer.Option("--partition")] = None,
+    account: Annotated[str | None, typer.Option("--account")] = None,
+    qos: Annotated[str | None, typer.Option("--qos")] = None,
 ) -> None:
     """Execute an iteration through SMAIRT's provenance-capturing runner."""
     command = list(ctx.args)
     if command and command[0] == "--":
         command = command[1:]
+    if backend == "slurm":
+        job = submit_slurm(
+            project_root(),
+            experiment_id=experiment,
+            iteration_id=iteration,
+            command=command,
+            resources=ComputeResources(
+                cpus=cpus,
+                memory_mib=memory_mib,
+                wall_minutes=wall_minutes,
+                gpus=gpus,
+                partition=partition,
+                account=account,
+                qos=qos,
+            ),
+        )
+        emit(job.model_dump(mode="json", exclude_none=True), False)
+        return
+    if backend != "local":
+        raise typer.BadParameter("backend must be local or slurm")
     record = run_experiment(
         project_root(), experiment_id=experiment, iteration_id=iteration, command=command
     )

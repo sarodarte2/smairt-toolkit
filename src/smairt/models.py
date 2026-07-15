@@ -53,6 +53,7 @@ class HarnessName(StrEnum):
     CLINE = "cline"
     OPENCODE = "opencode"
     CURSOR = "cursor"
+    CLAUDE = "claude"
 
 
 class ZoteroMode(StrEnum):
@@ -106,6 +107,25 @@ class RunStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     INTERRUPTED = "interrupted"
+
+
+class ComputeMode(StrEnum):
+    """Describe how SMAIRT reaches a Slurm submit host."""
+
+    NATIVE = "native"
+    SSH = "ssh"
+
+
+class ComputeJobStatus(StrEnum):
+    """Normalize scheduler states without treating uncertainty as failure."""
+
+    SUBMITTED = "submitted"
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
 
 
 class EvidenceStatus(StrEnum):
@@ -346,7 +366,7 @@ class ActiveState(DurableModel):
 class SmairtConfig(DurableModel):
     """Define the authoritative, versioned project contract in smairt.yaml."""
 
-    schema_version: int = 6
+    schema_version: int = 8
     smairt_version: str = Field(default_factory=lambda: __version__)
     project: ProjectInfo
     data: DataPolicy
@@ -365,7 +385,7 @@ class SmairtConfig(DurableModel):
     @classmethod
     def supported_schema(cls, value: int) -> int:
         """Reject beta schemas that this release cannot safely interpret."""
-        if value not in {2, 3, 4, 5, 6}:
+        if value not in {2, 3, 4, 5, 6, 7, 8}:
             raise ValueError(
                 "incompatible project schema; migrate through a supported SMAIRT release"
             )
@@ -391,6 +411,11 @@ class SmairtConfig(DurableModel):
         if attested_by and attested_by not in contributor_ids:
             raise ValueError("repository attestation contributor is not registered")
         zotero = self.integrations.zotero
+        if self.schema_version < 7 and (
+            self.harness.active is HarnessName.CLAUDE
+            or HarnessName.CLAUDE in self.integrations.mcp.enabled_harnesses
+        ):
+            raise ValueError("Claude Code project state requires schema v7")
         if bool(zotero.mcp_confirmed_by) != bool(zotero.mcp_confirmed_at):
             raise ValueError("Zotero MCP confirmation contributor and timestamp must be paired")
         if zotero.mcp_confirmed_by and zotero.mcp_confirmed_by not in contributor_ids:
@@ -503,6 +528,41 @@ class ReferenceRecord(DurableModel):
         return self
 
 
+class LiteratureCandidate(DurableModel):
+    """Describe one transient provider result without making it project evidence."""
+
+    provider: str
+    external_id: str
+    doi: str | None = None
+    title: str
+    authors: list[str] = Field(default_factory=list)
+    year: int | None = None
+    venue: str | None = None
+    cited_by_count: int | None = None
+    url: str | None = None
+    network_accessed: bool = True
+    request_count: int = 1
+    remaining_budget: str | float | None = None
+    discovery_method: str | None = None
+    abstract_available: bool = False
+
+
+class AccessLocation(DurableModel):
+    """Describe a transient open-access location before any PDF is downloaded."""
+
+    provider: str = "unpaywall"
+    reference_id: str
+    doi: str
+    url: str
+    landing_url: str | None = None
+    host: str
+    license: str | None = None
+    version: str | None = None
+    direct_pdf: bool = False
+    network_accessed: bool = True
+    request_count: int = 1
+
+
 class RunRecord(DurableModel):
     """Capture the immutable execution and provenance metadata for one run."""
 
@@ -518,6 +578,7 @@ class RunRecord(DurableModel):
     log_path: str
     results_directory: str
     config_sha256: str | None = None
+    protocol_sha256: str | None = None
     git_commit: str | None = None
     git_dirty: bool = False
     environment: dict[str, Any] = Field(default_factory=dict)
@@ -557,6 +618,131 @@ class RunRecord(DurableModel):
         if self.status is RunStatus.FAILED and self.exit_code == 0:
             raise ValueError("failed runs require a nonzero exit code")
         return self
+
+
+class ProtocolInput(DurableModel):
+    """Describe one declared scientific input without exposing its contents."""
+
+    name: str
+    path: str | None = None
+    unit: str
+    sha256: str | None = None
+
+    @field_validator("path")
+    @classmethod
+    def safe_path(cls, value: str | None) -> str | None:
+        """Keep declared paths project-relative and traversal-free."""
+        if value is None:
+            return None
+        path = Path(value)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("protocol input paths must be project-relative")
+        return value
+
+
+class ProtocolOutcome(DurableModel):
+    """Name a measured outcome and its unit."""
+
+    name: str
+    unit: str
+
+
+class ScientificProtocol(DurableModel):
+    """Define the minimum machine-checkable scientific plan for an iteration."""
+
+    schema_version: int = Field(default=1, ge=1, le=1)
+    status: str = "draft"
+    question_or_purpose: str
+    design: str
+    unit_of_analysis: str
+    inputs: list[ProtocolInput]
+    primary_outcome: ProtocolOutcome
+    secondary_outcomes: list[ProtocolOutcome] = Field(default_factory=list)
+    controls: list[str]
+    replication_rationale: str
+    randomization_and_blinding: str
+    exclusions_and_missing_data: str
+    analysis_method: str
+    assumptions: list[str]
+    uncertainty_measure: str
+    multiple_comparisons: str
+    seed: int
+    success_criteria: str
+    failure_criteria: str
+    falsifier: str
+    stopping_rule: str
+    declared_outputs: list[str]
+
+    @field_validator("declared_outputs")
+    @classmethod
+    def safe_outputs(cls, values: list[str]) -> list[str]:
+        """Require unique relative output paths."""
+        if not values:
+            raise ValueError("protocol must declare at least one output")
+        for value in values:
+            path = Path(value)
+            if path.is_absolute() or ".." in path.parts:
+                raise ValueError("declared outputs must be relative paths")
+        if len(set(values)) != len(values):
+            raise ValueError("declared outputs must be unique")
+        return values
+
+
+class ScientificResultSummary(DurableModel):
+    """Capture the interpreted primary result before human evidence acceptance."""
+
+    schema_version: int = Field(default=1, ge=1, le=1)
+    primary_result: str
+    unit: str
+    uncertainty: str
+    quality_control: str
+    exclusions: str
+    protocol_deviations: str
+    limitations: str
+    artifact_checksums: dict[str, str]
+
+
+class ComputeResources(DurableModel):
+    """Constrain Slurm resources to typed, non-shell values."""
+
+    nodes: int = Field(default=1, ge=1, le=128)
+    cpus: int = Field(default=1, ge=1, le=1024)
+    memory_mib: int = Field(default=1024, ge=64)
+    wall_minutes: int = Field(default=60, ge=1, le=10080)
+    gpus: int = Field(default=0, ge=0, le=128)
+    partition: str | None = None
+    account: str | None = None
+    qos: str | None = None
+
+    @field_validator("partition", "account", "qos")
+    @classmethod
+    def safe_scheduler_value(cls, value: str | None) -> str | None:
+        """Reject values that could become scheduler or shell syntax."""
+        if value is not None and not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
+            raise ValueError(
+                "scheduler selectors may contain letters, digits, dot, dash, underscore"
+            )
+        return value
+
+
+class ComputeJobRecord(DurableModel):
+    """Record one asynchronous scheduler submission and reconciliation state."""
+
+    schema_version: int = Field(default=1, ge=1, le=1)
+    run_id: str
+    experiment_id: str
+    iteration_id: str
+    scheduler: str = "slurm"
+    mode: ComputeMode
+    scheduler_job_id: str
+    status: ComputeJobStatus
+    submitted_at: str
+    updated_at: str
+    host_alias: str | None = None
+    remote_directory: str | None = None
+    resources: ComputeResources
+    command: list[str]
+    local_run_directory: str
 
 
 class ProjectEvent(DurableModel):

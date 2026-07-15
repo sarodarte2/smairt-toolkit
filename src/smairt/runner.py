@@ -21,6 +21,7 @@ from smairt.integrity import build_manifest
 from smairt.locking import ProjectMutationLock
 from smairt.models import EnvironmentMode, RunRecord, RunStatus, SmairtConfig, utc_now
 from smairt.research import find_hypothesis, validate_hypothesis
+from smairt.science import validate_protocol
 from smairt.utils import (
     atomic_write_bytes,
     ensure_no_symlink,
@@ -265,6 +266,11 @@ def run_experiment(
     if not iteration.is_dir():
         raise FileNotFoundError(iteration)
     iteration_config = iteration / "config.yaml"
+    protocol_path = iteration / "protocol.yaml"
+    if metadata.get("protocol_required"):
+        protocol_errors = validate_protocol(protocol_path)
+        if protocol_errors:
+            raise ValueError("Scientific protocol is incomplete: " + "; ".join(protocol_errors))
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     run_id = f"RUN_{timestamp}"
     run_dir = root / "results" / experiment_id / iteration_id / run_id
@@ -399,6 +405,7 @@ def run_experiment(
         log_path=str(log_path.relative_to(root)),
         results_directory=str(run_dir.relative_to(root)),
         config_sha256=sha256_file(iteration_config) if iteration_config.exists() else None,
+        protocol_sha256=sha256_file(protocol_path) if protocol_path.exists() else None,
         git_commit=git["commit"],
         git_dirty=bool(git["dirty"]),
         environment=environment_info,
@@ -416,6 +423,12 @@ def run_experiment(
                 redactions.append(receipt)
             elif safe is not None:
                 atomic_write_bytes(run_dir / "config.snapshot.yaml", safe)
+        if protocol_path.exists():
+            safe, receipt = _safe_snapshot(protocol_path.read_bytes(), "protocol.snapshot.yaml")
+            if receipt:
+                redactions.append(receipt)
+            elif safe is not None:
+                atomic_write_bytes(run_dir / "protocol.snapshot.yaml", safe)
         entrypoint = _resolved_entrypoint(iteration, original_command, metadata)
         if entrypoint:
             name = f"entrypoint.snapshot{entrypoint.suffix}"

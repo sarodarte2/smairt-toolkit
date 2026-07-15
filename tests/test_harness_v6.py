@@ -9,10 +9,13 @@ from unittest.mock import Mock
 
 from rich.console import Console
 
+from smairt.harness_presentation import HARNESS_PRESENTATIONS
 from smairt.harnesses import configure_mcp, harness_status, select_harness
 from smairt.hook_policy import hook_response, parse_hook_payload, policy_denial
 from smairt.models import DataClassification, HarnessName
+from smairt.project import context
 from smairt.scaffold import create_project
+from smairt.workflows import WORKFLOW_SLUGS
 
 
 def project(tmp_path: Path) -> Path:
@@ -26,6 +29,13 @@ def project(tmp_path: Path) -> Path:
         confirm_contributor=True,
     )
     return root
+
+
+def test_every_harness_has_a_repository_guide() -> None:
+    repository = Path(__file__).parents[1]
+    assert set(HARNESS_PRESENTATIONS) == set(HarnessName)
+    for details in HARNESS_PRESENTATIONS.values():
+        assert (repository / details.guide).is_file()
 
 
 def test_opencode_and_cursor_adapters_are_hardened_and_mcp_capable(tmp_path: Path) -> None:
@@ -55,6 +65,46 @@ def test_all_harnesses_have_truthful_capability_records(tmp_path: Path) -> None:
         assert "protected_operation_hook" in result["capabilities"]
         assert configure_mcp(root, harness, True)["enabled"] is True
     assert harness_status(root, "zoo")["capabilities"]["protected_operation_hook"] == "unsupported"
+
+
+def test_six_workflows_and_native_reviewers_are_generated(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    for slug in WORKFLOW_SLUGS:
+        assert (root / f".agents/skills/{slug}/SKILL.md").exists()
+    assert not (root / ".agents/skills/smairt-research").exists()
+    assert (root / ".codex/agents/smairt-reviewer.toml").exists()
+
+    select_harness(root, "cline")
+    for slug in WORKFLOW_SLUGS:
+        assert (root / f".cline/workflows/{slug}.md").exists()
+
+    select_harness(root, "opencode")
+    assert (root / ".opencode/agents/smairt-reviewer.md").exists()
+    select_harness(root, "cursor")
+    assert (root / ".cursor/agents/smairt-reviewer.md").exists()
+    cursor_permissions = json.loads((root / ".cursor/cli.json").read_text())["permissions"]
+    assert cursor_permissions["deny"]
+    assert "Shell(git)" not in cursor_permissions["allow"]
+
+
+def test_review_context_is_bounded_and_rejects_protected_targets(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    target = root / "plans/review-me.md"
+    target.write_text("# Review me\n")
+    packet = context(root, "review", target="plans/review-me.md")
+    assert packet["review_target"] == "plans/review-me.md"
+    assert packet["mutation_allowed"] is False
+    assert "plans/review-me.md" in packet["read"]
+
+    protected = root / "data/raw/secret.txt"
+    protected.parent.mkdir(parents=True, exist_ok=True)
+    protected.write_text("protected\n")
+    try:
+        context(root, "review", target="data/raw/secret.txt")
+    except ValueError as exc:
+        assert "protected" in str(exc)
+    else:
+        raise AssertionError("protected review target was accepted")
 
 
 def test_hook_policy_bounds_and_denies_protected_or_human_gate_operations(tmp_path: Path) -> None:

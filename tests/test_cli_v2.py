@@ -19,6 +19,16 @@ def invoke_ok(arguments: list[str]):
     return result
 
 
+def test_harness_chooser_works_before_project_creation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    listed = json.loads(invoke_ok(["harness", "list", "--json"]).stdout)["data"]
+    assert len(listed) == 6
+    assert all(item["active"] is None for item in listed)
+    cursor = json.loads(invoke_ok(["harness", "info", "cursor", "--json"]).stdout)["data"]
+    assert cursor["display_name"] == "Cursor"
+    assert cursor["guide"] == "docs/harnesses/cursor.md"
+
+
 def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "cli-v2"
     invoke_ok(
@@ -49,7 +59,7 @@ def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None
         json.loads(invoke_ok(["safety", "status", "--json"]).stdout)["data"]["mode"] == "standard"
     )
     assert json.loads(invoke_ok(["harness", "status", "--json"]).stdout)["data"]["active"]
-    assert len(json.loads(invoke_ok(["harness", "list", "--json"]).stdout)["data"]) == 5
+    assert len(json.loads(invoke_ok(["harness", "list", "--json"]).stdout)["data"]) == 6
 
     preview = invoke_ok(["harness", "select", "cline", "--dry-run"])
     assert "create_or_update" in preview.stdout
@@ -69,7 +79,7 @@ def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None
     )["data"]
     assert capsule["capsule_path"].startswith(".smairt/local/context/")
 
-    assert json.loads(invoke_ok(["migrate", "plan", "--json"]).stdout)["data"]["detected"] == "v6"
+    assert json.loads(invoke_ok(["migrate", "plan", "--json"]).stdout)["data"]["detected"] == "v8"
     invoke_ok(["contract", "export"])
     invoke_ok(["contract", "check"])
     invoke_ok(["reference", "list", "--json"])

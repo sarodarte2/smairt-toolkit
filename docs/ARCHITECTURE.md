@@ -56,3 +56,8 @@ Harness adapters are defense in depth. Codex, Cline, and Cursor translate upstre
 payloads through a bounded offline policy evaluator; OpenCode uses project permissions; Zoo Code
 is explicitly advisory because it has no documented blocking hook. No adapter replaces SMAIRT's
 human gates, transaction boundaries, or immutable-record validation.
+
+Six focused Agent Skills or harness-native command wrappers expose next-step, literature, design,
+adversarial-review, interpretation, and paper workflows. Reviewer agents receive bounded read-only
+context; their findings return to the primary conversation and cannot approve or mutate scientific
+records.

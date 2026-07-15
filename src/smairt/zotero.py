@@ -186,6 +186,12 @@ class ZoteroProvider:
             raise ValueError("Zotero search query must contain 1 to 500 characters")
         return self._page("items", q=query, limit=limit, maximum=MAX_QUERY_RESULTS)
 
+    def recent(self, limit: int = 25) -> list[dict[str, Any]]:
+        """Return recently modified top-level library items within the UI bound."""
+        return self._page(
+            "top", limit=limit, maximum=MAX_QUERY_RESULTS, sort="dateModified", direction="desc"
+        )
+
     def local_attachment(self, key: str) -> tuple[dict[str, Any], bytes]:
         """Retrieve one explicit local PDF attachment through Zotero's loopback API."""
         if self.config.mode is not ZoteroMode.LOCAL:
@@ -235,5 +241,9 @@ def public_item(item: dict[str, Any]) -> dict[str, Any]:
         "DOI": data.get("DOI"),
         "url": data.get("url"),
         "publicationTitle": data.get("publicationTitle"),
+        "filename": data.get("filename"),
+        "contentType": data.get("contentType"),
+        "linkMode": data.get("linkMode"),
+        "parentItem": data.get("parentItem"),
         "tags": [tag.get("tag") for tag in tags if isinstance(tag, dict)],
     }

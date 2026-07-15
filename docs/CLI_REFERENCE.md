@@ -14,6 +14,9 @@ smairt setup doctor [--check-github] [--json]
 smairt setup credential list|set|delete|doctor
 smairt setup zotero configure|test|remove
 smairt setup openalex configure|test|remove
+smairt setup semantic-scholar configure|test|remove
+smairt setup unpaywall configure default --email EMAIL
+smairt setup hpc configure default --mode native|ssh [--host HOST] --remote-root PATH
 smairt new [DESTINATION]
 smairt menu
 smairt settings show --json
@@ -22,15 +25,24 @@ smairt env select --mode none
 smairt env select --mode existing_conda --prefix PATH
 smairt env select --mode new_conda --name NAME --create
 smairt next --json|--prompt
+smairt context --task planning|code|run|interpretation|paper|review [--target PATH]
 smairt integration bind|unbind|status|test
 smairt harness list|status [HARNESS] [--json]
+smairt harness info HARNESS [--json]
 smairt harness select HARNESS [--dry-run|--backup-and-switch]
 smairt harness upgrade HARNESS
 smairt reference add-doi DOI [--openalex] [--confirm-remote]
 smairt reference import-zotero --item KEY
 smairt reference import-zotero --collection KEY [--limit 1..1000]
 smairt reference attach REFERENCE_ID PDF
-smairt mcp status|enable|disable --harness codex|zoo|cline|opencode|cursor [--dry-run]
+smairt reference organize-pdfs [--apply --yes]
+smairt literature search QUERY [--provider openalex|semantic-scholar|all] [--limit 20] [--json]
+smairt literature related REFERENCE_ID --direction references|cited-by [--provider PROVIDER]
+smairt literature recommend REFERENCE_ID [--limit 20] [--json]
+smairt literature access REFERENCE_ID [--download --yes] [--confirm-remote]
+smairt run --backend local|slurm [--compute-profile NAME] [--cpus N] [--memory-mib N] -- COMMAND
+smairt hpc status|sync|cancel RUN_ID
+smairt mcp status|enable|disable --harness codex|zoo|cline|opencode|cursor|claude [--dry-run]
 smairt mcp serve
 ```
 
@@ -45,7 +57,9 @@ smairt mcp serve
 | `experiment`, `iteration`, `run`, `decision`            | Execute and interpret immutable research work                                  |
 | `summary`, `paper`, `amend`, `retract`, `supersede`     | Curate evidence, publication, and corrections                                  |
 | `safety`                                                | Inspect modes, attest visibility, explicitly refresh, and run release gates    |
-| `harness`                                               | Preview, install, select, and diagnose five maintained coding harness adapters |
+| `harness`                                               | Preview, install, select, and diagnose six maintained coding harness adapters |
+| `literature`, `reference`                               | Discover works, import DOI metadata, resolve access, and organize PDFs         |
+| `hpc`                                                   | Reconcile optional Slurm jobs; local runs remain the default                   |
 | `lock`, `recovery`                                      | Inspect writer ownership and resolve interrupted transactions                  |
 | `verify`, `contract`, `code`, `env`, `model`, `upgrade` | Integrity, portability, readability, environment, economy, and framework tools |
 
@@ -77,3 +91,9 @@ surfaces; new setup should use `smairt setup ...` plus `smairt integration bind`
 
 `smairt run` propagates the child exit status where applicable; launch failure uses 126 or 127 and
 interruption uses 130/143 conventions.
+
+## Completion
+
+Run `smairt --install-completion` once for Bash, Zsh, Fish, or PowerShell completion. The project
+menu's action finder provides a fuzzy, multi-column popup without networking or reading outside the
+current project. See [Terminal completion](TERMINAL_COMPLETION.md).

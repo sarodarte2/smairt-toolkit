@@ -12,6 +12,12 @@ from smairt.integrity import verify_run
 from smairt.locking import mutating
 from smairt.models import Decision, RunRecord, RunStatus, SmairtConfig, utc_now
 from smairt.provenance import require_contributor, stage_event
+from smairt.science import (
+    protocol_template,
+    validate_interpretation,
+    validate_protocol,
+    validate_result_summary,
+)
 from smairt.transactions import FileTransaction
 from smairt.utils import atomic_write, next_numeric_id, sha256_file, slugify, validate_identifier
 
@@ -310,6 +316,7 @@ def create_experiment(
     title: str,
     hypothesis_id: str | None = None,
     purpose: str | None = None,
+    enforce_protocol: bool = False,
 ) -> Path:
     """Create a numbered experiment, readable entrypoint, and first iteration."""
     if not hypothesis_id and not purpose:
@@ -334,6 +341,7 @@ def create_experiment(
         "created_at": utc_now(),
         "status": "ACTIVE",
         "entrypoint": script_name,
+        "protocol_required": enforce_protocol,
     }
     analysis = root / "analysis" / experiment_id
     config = SmairtConfig.load(root / "smairt.yaml")
@@ -342,6 +350,11 @@ def create_experiment(
     transaction = FileTransaction(root, "experiment create")
     transaction.stage_text(path / "experiment.yaml", yaml.safe_dump(metadata, sort_keys=False))
     transaction.stage_text(iteration / "config.yaml", "seed: 1024\ndata: {}\nparameters: {}\n")
+    if enforce_protocol:
+        transaction.stage_text(
+            iteration / "protocol.yaml",
+            protocol_template(str(hypothesis_id or purpose or title)),
+        )
     transaction.stage_text(
         iteration / script_name,
         _experiment_script(
@@ -388,7 +401,7 @@ def new_iteration(root: Path, experiment_id: str, source_id: str) -> Path:
     if Path(entrypoint).name != entrypoint:
         raise ValueError("experiment entrypoint must be a filename")
     transaction = FileTransaction(root, "iteration create")
-    for name in ("config.yaml", entrypoint):
+    for name in ("config.yaml", "protocol.yaml", entrypoint):
         if (source / name).exists():
             content = (source / name).read_text(encoding="utf-8")
             if name == entrypoint:
@@ -543,6 +556,29 @@ def record_decision(
         raise ValueError("accepted evidence requires known Git provenance")
     if decision is Decision.ACCEPT and not verify_run(root, run_id)["ok"]:
         raise ValueError("only integrity-verified runs can become accepted evidence")
+    experiment_path = _experiment_for_id(root, experiment_id)
+    experiment_metadata = yaml.safe_load((experiment_path / "experiment.yaml").read_text()) or {}
+    if decision is Decision.ACCEPT and experiment_metadata.get("protocol_required"):
+        protocol_path = experiment_path / "iterations" / iteration_id / "protocol.yaml"
+        protocol_errors = validate_protocol(protocol_path)
+        if protocol_errors or not run_record.protocol_sha256:
+            raise ValueError(
+                "accepted evidence requires the validated protocol snapshot: "
+                + "; ".join(protocol_errors or ["run has no protocol digest"])
+            )
+        summary_errors = validate_result_summary(run_path.parent / "result-summary.yaml")
+        if summary_errors:
+            raise ValueError(
+                "accepted evidence requires a complete result summary: " + "; ".join(summary_errors)
+            )
+        analysis_errors = validate_interpretation(
+            root / "analysis" / experiment_id / f"ANALYSIS_{iteration_id}.md"
+        )
+        if analysis_errors:
+            raise ValueError(
+                "accepted evidence requires a complete interpretation: "
+                + "; ".join(analysis_errors)
+            )
     analysis_dir = root / "analysis" / experiment_id
     analysis_dir.mkdir(parents=True, exist_ok=True)
     path = analysis_dir / "decisions.yaml"
@@ -591,3 +627,11 @@ def record_decision(
     )
     transaction.commit()
     return path
+
+
+def _experiment_for_id(root: Path, experiment_id: str) -> Path:
+    """Resolve one experiment directory for scientific-gate checks."""
+    matches = list((root / "experiments").glob(f"{experiment_id}_*"))
+    if len(matches) != 1:
+        raise FileNotFoundError(f"Experiment {experiment_id} not found or ambiguous")
+    return matches[0]

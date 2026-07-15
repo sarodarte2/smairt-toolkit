@@ -24,13 +24,13 @@ Need the prerequisites? Follow [Installation](docs/INSTALL.md),
 
 ## Science is the hard part
 
-The hard problem of science is not producing more text or code. It is keeping a trustworthy line
-from a question, through sources and experiments, to the judgment a researcher is prepared to
-defend. AI can help search, summarize, propose, and implement; it must not quietly become the
-author of scientific decisions.
+The hard problem of science is not producing more text or code. It is maintaining a trustworthy
+line from a question, through sources and experiments, to the judgment a researcher is prepared to
+defend. AI can help researchers search, summarize, propose, and implement, but it must not quietly
+become the author of scientific decisions.
 
-SMAIRT (Scientific Method with AI Research Toolkit) is a local-first workspace for that division
-of labor. It keeps research state in readable YAML, JSON, and Markdown, asks humans to approve the
+SMAIRT—the Scientific Method with AI Research Toolkit—is a local-first workspace for that division
+of labor. It keeps research state in readable YAML, JSON, and Markdown, asks humans to approve
 consequential steps, and gives coding agents a bounded, inspectable place to work.
 
 ## Start working
@@ -43,14 +43,20 @@ smairt
 
 It shows the installed version, credits, license, and the three useful entry points. Run `smairt
 setup` for machine-wide keys and literature connections, `smairt new` to create a project, and
-`smairt menu` inside a project for its dashboard. Menus remain in terminal scrollback. Use
-Up/Down (or j/k) to move, Enter to accept, Escape to go back, and Ctrl-C to stop. Selection wraps:
-Down from the final choice returns to the first, and Up from the first returns to the final choice.
+`smairt menu` inside a project for its dashboard. Screens redraw in place and adapt from a branded
+four-card workspace to a compact single-column view as the terminal changes size. Use Up/Down (or
+j/k) to move, Enter to accept, Escape to go back exactly one level, and Ctrl-C to stop. Selection
+wraps, and the project home includes a fuzzy action finder that filters commands as you type.
+
+For beginners, the workflow hub keeps each screen in the terminal rather than opening a separate
+application. Outside a project it helps create or initialize one. Inside a project it opens
+research guidance, references, settings, people, environments, safety, and validation tools.
 
 The project wizard first asks whether to create a named child folder or initialize the folder you
 already chose. It never treats an unrelated project above a Git worktree as the current project.
 
-For scripts or experienced users, every important setup action also has an explicit command:
+For scripts or experienced terminal users, every important setup action also has an explicit
+command:
 
 ```bash
 smairt new my-study --name "My Study" --author "Researcher Name" \
@@ -61,12 +67,41 @@ smairt next --json
 smairt next --prompt
 ```
 
+Enable normal shell Tab completion once with `smairt --install-completion`, then restart the shell.
+See [Terminal completion](docs/TERMINAL_COMPLETION.md) for supported shells and the local-only
+privacy boundary.
+
+## Choose your coding harness
+
+SMAIRT generates a native project adapter for one harness at a time. Scientific records remain
+portable when you switch.
+
+| Harness | Best fit | SMAIRT workflow | Review isolation |
+| --- | --- | --- | --- |
+| Codex | Terminal-first OpenAI agent work | `$smairt-*` skills | Read-only project subagent |
+| Zoo Code | Modes and orchestrated handoffs | `/smairt-*` skills | Dedicated review mode |
+| Cline | Explicit Plan/Act transitions | `/smairt-*` workflows | Standard read-only subagent |
+| OpenCode | Provider-flexible terminal work | `/smairt-*` commands | Read-only project subagent |
+| Cursor | IDE-centered research coding | `/smairt-*` skills | Read-only project subagent |
+| Claude Code | Terminal-native Claude projects | `/smairt-*` skills | Read-only plan-mode subagent |
+
+Compare them before or after creating a project:
+
+```bash
+smairt harness list
+smairt harness info codex
+smairt harness select cursor --dry-run
+```
+
+The detailed [harness chooser](docs/HARNESSES.md) explains setup, hooks, permissions, modes,
+cross-model review, and limitations for each tool.
+
 ## Human and AI roles
 
 SMAIRT lets an AI assistant propose hypotheses, organize references, draft experiment code, and
-assemble review artifacts. The researcher confirms identity, chooses hypotheses or exploratory
-purposes, decides whether runs support a claim, approves corrections, and reviews manuscript
-claims. Those choices are recorded as provenance rather than hidden in chat history.
+assemble review artifacts. The researcher confirms identity, directs or selects hypotheses and
+exploratory purposes, decides whether runs support claims, approves corrections, and reviews
+manuscript claims. Those choices are recorded as provenance rather than hidden in chat history.
 
 ```text
 question + references -> grounded background -> proposals -> human selection
@@ -98,7 +133,14 @@ my-study/
 - DOI-first Crossref metadata, optional OpenAlex supplementation, and read-only local or Web
   Zotero imports. Collection imports are bounded; PDFs are copied only when explicitly selected
   from a local Zotero library and validated before one atomic commit.
-- Maintained Codex, Zoo Code, Cline, OpenCode, and Cursor adapters with truthful hook coverage.
+- Maintained Codex, Zoo Code, Cline, OpenCode, Cursor, and Claude Code adapters with six workflows,
+  isolated adversarial review, and truthful hook coverage.
+- Bounded OpenAlex and Semantic Scholar discovery, cited-by/reference exploration, DataCite
+  not-found fallback, Unpaywall access resolution, and deterministic managed PDF names.
+- Schema-8 scientific protocols with declared inputs, outcomes, checksums, run snapshots, and
+  interpretation gates before evidence can be accepted.
+- Optional native or OpenSSH Slurm submission with typed resources and explicit status, sync, and
+  cancel operations; local execution remains the default.
 - User-local connection profiles, OS-keyring credentials, and a five-tool, metadata-only MCP
   server for every maintained harness. Shared project YAML contains policy, not account or
   library IDs.
@@ -111,8 +153,10 @@ export-control, clinical, or human-subject compliance. Controlled data is not su
 compliance claim. Native Windows is not supported; use WSL.
 
 Continue with the [User Guide](docs/USER_GUIDE.md), [CLI Reference](docs/CLI_REFERENCE.md),
-[Safety contract](docs/SAFETY.md), or [Architecture](docs/ARCHITECTURE.md). Developers can use the
-[Developer Guide](docs/DEVELOPER_GUIDE.md) and [Release Guide](docs/RELEASE.md).
+[Harness chooser](docs/HARNESSES.md), [Safety contract](docs/SAFETY.md), or
+[Architecture](docs/ARCHITECTURE.md).
+Developers can use the [Developer Guide](docs/DEVELOPER_GUIDE.md) and [Release Guide](docs/RELEASE.md).
 Literature setup and its privacy boundaries are in [Integrations](docs/INTEGRATIONS.md).
+Try the fully local, numerically checked [enzyme-kinetics demo](examples/enzyme-kinetics-demo/README.md).
 
 SMAIRT itself is distributed under the [MIT License](LICENSE).

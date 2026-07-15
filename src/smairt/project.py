@@ -19,7 +19,7 @@ from smairt.model_policy import recommend_model
 from smairt.models import Decision, RunRecord, RunStatus, SmairtConfig
 from smairt.provenance import require_contributor, stage_event
 from smairt.transactions import FileTransaction
-from smairt.utils import sha256_file, write_json
+from smairt.utils import ensure_no_symlink, sha256_file, write_json
 
 PROHIBITED_SUFFIXES = {
     ".fast5",
@@ -374,6 +374,29 @@ def validate_project(
                     message,
                 )
 
+    from smairt.science import validate_protocol
+
+    for experiment_path in sorted((root / "experiments").glob("EXPERIMENT_*")):
+        metadata_path = experiment_path / "experiment.yaml"
+        metadata = yaml.safe_load(metadata_path.read_text()) if metadata_path.exists() else {}
+        for iteration_path in sorted((experiment_path / "iterations").glob("ITERATION_*")):
+            protocol_path = iteration_path / "protocol.yaml"
+            if metadata.get("protocol_required"):
+                for message in validate_protocol(protocol_path):
+                    report.add(
+                        "error",
+                        "protocol.incomplete",
+                        str(protocol_path.relative_to(root)),
+                        message,
+                    )
+            elif config.schema_version >= 8 and not protocol_path.exists():
+                report.add(
+                    "warning",
+                    "protocol.legacy",
+                    str(iteration_path.relative_to(root)),
+                    "Legacy iteration has no schema-8 scientific protocol",
+                )
+
     # Run records are the bridge between executed code and later scientific claims.
     # Validate them without executing or importing any researcher-authored code.
     for run_path in sorted((root / "results").glob("EXPERIMENT_*/ITERATION_*/RUN_*/run.json")):
@@ -590,13 +613,35 @@ CONTEXT_MAP = {
         "paper/manifest.yaml",
         "prompts/INTERPRETATION_CONVENTIONS.md",
     ],
+    "review": [
+        "prompts/RESEARCH_CONVENTIONS.md",
+        "prompts/INTERPRETATION_CONVENTIONS.md",
+        "plans/README.md",
+    ],
 }
 
 
-def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object]:
+def context(
+    root: Path, task: str, token_budget: int = 8000, target: str | None = None
+) -> dict[str, object]:
     """Select the smallest initial file set needed for a particular research task."""
     if task not in CONTEXT_MAP:
         raise ValueError(f"Unknown task {task!r}; choose {', '.join(CONTEXT_MAP)}")
+    review_target: str | None = None
+    if target is not None:
+        if task != "review":
+            raise ValueError("--target is supported only with --task review")
+        target_path = ensure_no_symlink(root, root / target)
+        if not target_path.is_file():
+            raise ValueError("review target must be an existing project file")
+        relative_target = str(target_path.relative_to(root.resolve()))
+        if is_prohibited(relative_target):
+            raise ValueError("review target is protected by SMAIRT data policy")
+        if target_path.suffix.lower() not in {".md", ".json", ".yaml", ".yml", ".py", ".r", ".txt"}:
+            raise ValueError("review target must be a bounded textual research artifact")
+        if target_path.stat().st_size > 1024 * 1024:
+            raise ValueError("review target exceeds the 1 MiB context safety bound")
+        review_target = relative_target
     current = status(root)
     included = []
     deferred = []
@@ -605,6 +650,8 @@ def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object
     candidates: list[tuple[int, str, str]] = [
         (30, relative, f"default {task} context") for relative in CONTEXT_MAP[task]
     ]
+    if review_target:
+        candidates.append((0, review_target, "explicit adversarial-review target"))
     config = SmairtConfig.load(root / "smairt.yaml")
     if config.active.hypothesis:
         hypothesis = next((root / "hypotheses").glob(f"{config.active.hypothesis}_*.md"), None)
@@ -617,7 +664,7 @@ def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object
             for path in sorted(iteration.glob("*")):
                 if path.is_file() and path.suffix in {".py", ".yaml", ".md"}:
                     candidates.append((10, str(path.relative_to(root)), "active iteration"))
-    if task in {"interpretation", "paper"}:
+    if task in {"interpretation", "paper", "review"}:
         for path in sorted((root / "paper/evidence").glob("*.json")):
             candidates.append((12, str(path.relative_to(root)), "current paper evidence"))
         for path in sorted((root / "paper/claims").glob("*.json")):
@@ -651,7 +698,7 @@ def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object
             used += estimated
         else:
             deferred.append({**item, "reason": "token budget exceeded"})
-    return {
+    payload: dict[str, object] = {
         "task": task,
         "status": current,
         "token_budget": token_budget,
@@ -664,6 +711,19 @@ def context(root: Path, task: str, token_budget: int = 8000) -> dict[str, object
         "deferred": deferred,
         "rule": "Read only these files initially; load logs, PDFs, and older iterations on demand.",
     }
+    if task == "review":
+        payload["review_target"] = review_target or "current active research state"
+        payload["review_rubric"] = [
+            "strongest objection",
+            "unsupported assumptions",
+            "alternative explanations",
+            "missing controls or falsifiers",
+            "provenance and citation gaps",
+            "severity and confidence",
+            "smallest useful follow-up test",
+        ]
+        payload["mutation_allowed"] = False
+    return payload
 
 
 def save_context_capsule(root: Path, payload: dict[str, object]) -> Path:

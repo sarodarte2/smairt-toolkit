@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
-  <title id="title">SMAIRT</title><desc id="desc">Scientific method and research provenance in the terminal</desc>
-  <rect width="1200" height="300" rx="28" fill="#101820"/>
+  <title id="title">SMAIRT</title><desc id="desc">Scientific Methodology and Research Provenance for Agentic Workflows</desc>
+  <rect width="1600" height="400" rx="28" fill="#101820"/>
   <g transform="translate(72 66)"><rect width="168" height="168" rx="22" fill="#17242d" stroke="#f28c28" stroke-width="4"/><path d="m35 52 31 31-31 31M78 116h55" fill="none" stroke="#f4f4f4" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/><circle cx="136" cy="34" r="10" fill="#1f8a70"/></g>
   <text x="290" y="137" fill="#f4f4f4" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="92" font-weight="700">SMAIRT</text>
-  <text x="294" y="196" fill="#f28c28" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="27">research provenance · human gates · portable records</text>
+  <text x="294" y="196" fill="#f28c28" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="27">Research Provenance · Human Gated · Scientific Framework</text>
   <text x="294" y="235" fill="#a9bac5" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="21">Scientific Method with AI Research Toolkit</text>
 </svg>

@@ -31,7 +31,7 @@ def detect_scaffold(root: Path) -> str:
     version = int(payload.get("schema_version", 1))
     if legacy and version >= 2:
         return "mixed"
-    if version in {3, 4, 5, 6}:
+    if version in {3, 4, 5, 6, 7, 8}:
         return f"v{version}"
     return "v2" if version == 2 else "v1"
 
@@ -42,7 +42,7 @@ def migration_plan(root: Path) -> dict[str, object]:
     conflicts = []
     if kind in {"unknown", "mixed", "original"}:
         conflicts.append(f"automatic migration is not safe for {kind} scaffold")
-    applicable = kind in {"v1", "v2", "v3", "v4", "v5"} and not conflicts
+    applicable = kind in {"v1", "v2", "v3", "v4", "v5", "v6", "v7"} and not conflicts
     from_version = (
         1
         if kind == "v1"
@@ -53,8 +53,12 @@ def migration_plan(root: Path) -> dict[str, object]:
         else 4
         if kind == "v4"
         else 5
+        if kind == "v5"
+        else 6
+        if kind == "v6"
+        else 7
     )
-    to_version = min(from_version + 1, 6)
+    to_version = min(from_version + 1, 8)
     migration_name = f"v{from_version}-to-v{to_version}-<id>.json"
     writes = ["smairt.yaml", f".smairt/migrations/{migration_name}"] if applicable else []
     if applicable and to_version == 4:

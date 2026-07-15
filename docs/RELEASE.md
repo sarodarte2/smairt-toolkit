@@ -12,7 +12,10 @@ journeys, CodeQL, pip-audit, dependency review, gitleaks, and the formal reposit
 - Confirm compact, medium, and wide layouts without alternate-screen behavior; resize each live
   menu and verify submenu transitions remain anchored.
 - Verify reduced motion through Setup → Appearance and `SMAIRT_REDUCED_MOTION=1`.
-- Install, switch, inspect, and toggle MCP for Codex, Zoo Code, Cline, OpenCode, and Cursor.
+- Install, switch, inspect, and toggle MCP for Codex, Zoo Code, Cline, OpenCode, Cursor, and
+  Claude Code.
+- Run the local enzyme-kinetics demo from the built wheel and confirm its exact recovery checks.
+- Exercise Slurm through mocked fixtures; a cluster is not required for the release or demo gate.
 - Execute allow/deny hook fixtures and confirm unsupported Zoo enforcement remains clearly labeled.
 - Confirm ordinary status, validation, doctor, and workflow refresh have no network access.
 - Review experimental safety wording and controlled-data refusal with the team.

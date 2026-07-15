@@ -71,7 +71,7 @@ def test_run_manifest_detects_mutation_and_contracts_export(tmp_path: Path) -> N
     assert not verify_run(root, run.run_id)["ok"]
 
     destination = root / ".smairt/contracts/v1"
-    assert len(export_contracts(destination)) == 19
+    assert len(export_contracts(destination)) == 24
     assert check_contracts(destination)["ok"]
 
 

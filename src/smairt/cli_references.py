@@ -23,6 +23,7 @@ from smairt.references import (
     import_zotero_item,
     inspect_pdf,
     load_index,
+    organize_pdfs,
     unindexed_pdfs,
     verify_reference,
 )
@@ -53,6 +54,16 @@ def reference_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> 
 def reference_scan(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
     """Report local PDFs that have not been indexed by checksum."""
     emit({"unindexed": [str(path) for path in unindexed_pdfs(project_root())]}, as_json)
+
+
+@reference_app.command("organize-pdfs")
+def reference_organize_pdfs(
+    apply: Annotated[bool, typer.Option("--apply")] = False,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Preview or apply deterministic names to SMAIRT-managed PDF copies."""
+    emit(organize_pdfs(project_root(), apply=apply, confirmed=yes), as_json)
 
 
 @reference_app.command("inspect")

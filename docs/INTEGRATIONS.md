@@ -12,6 +12,7 @@ directory. Then, inside a project, use Project setup → Integrations or:
 
 ```bash
 smairt setup openalex configure default
+smairt setup semantic-scholar configure default
 smairt setup zotero configure default
 smairt integration bind openalex default
 smairt integration bind zotero default
@@ -84,6 +85,21 @@ entry while retaining lifecycle hooks, rules, permissions, and unrelated server 
 
 Third-party Zotero MCP servers may expose write operations. SMAIRT does not install, configure, or
 represent them as read-only.
+
+## Literature discovery and access
+
+OpenAlex is the default bounded discovery provider. Semantic Scholar can search, traverse
+references or citations, and recommend related papers. Its API key is optional for public calls and,
+when configured, is stored in the OS keyring. `--provider all` merges and deduplicates search
+results. Every candidate remains provisional: DOI-bearing candidates must be imported through
+Crossref, with DataCite used only when Crossref returns a typed not-found response. A timeout, rate
+limit, or server failure never triggers the fallback.
+
+Unpaywall requires a contact email stored only in a user-local profile. It resolves access rather
+than bibliographic truth. Before any download SMAIRT shows the domain, license, version, and access
+status. Direct downloads require confirmation and enforce HTTPS port 443, bounded redirects,
+address checks at every hop, a 15-second timeout, a 100 MiB limit, PDF signature/parser validation,
+and an atomic project update.
 
 ## Upgrading older projects
 

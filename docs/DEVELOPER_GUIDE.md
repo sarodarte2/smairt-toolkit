@@ -37,7 +37,7 @@ upstream JSON, MCP enable/disable, and custom-file preservation. New lifecycle p
 through the 1 MiB-bounded offline hook policy and emit the harness's documented response shape.
 Capabilities must distinguish `blocking`, `permissions`, `advisory`, `manual`, and `unsupported`.
 
-Schema v6 currently maintains Codex, Zoo Code, Cline, OpenCode, and Cursor. Executable project
+Schema v7 maintains Codex, Zoo Code, Cline, OpenCode, Cursor, and Claude Code. Executable project
 plugins are never generated merely to gain hook parity when a safer native permission surface is
 available.
 

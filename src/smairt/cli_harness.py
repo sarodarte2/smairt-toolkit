@@ -2,11 +2,16 @@
 
 import json
 import sys
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.panel import Panel
+from rich.table import Table
 
-from smairt.cli_shared import emit, project_root
+from smairt.cli_shared import console, emit, project_root
+from smairt.harness_presentation import harness_info
 from smairt.harnesses import (
     harness_status,
     install_harness,
@@ -15,14 +20,108 @@ from smairt.harnesses import (
     switch_plan,
 )
 from smairt.hook_policy import hook_response, parse_hook_payload
+from smairt.models import HarnessName
+from smairt.project import find_project
 
 harness_app = typer.Typer(help="Install and inspect coding-harness adapters")
+
+
+def _optional_project_root() -> Path | None:
+    """Return the current project when present without making chooser commands project-only."""
+    try:
+        return find_project(Path.cwd())
+    except FileNotFoundError:
+        return None
+
+
+def _details(item: Mapping[str, object]) -> Mapping[str, object]:
+    """Normalize project status and global chooser records for presentation."""
+    nested = item.get("presentation")
+    return nested if isinstance(nested, dict) else item
+
+
+def _render_harness_list(items: list[dict[str, object]]) -> None:
+    """Render a wide comparison table or readable stacked cards."""
+    if console.width >= 104:
+        table = Table(title="SMAIRT · Choose a Coding Harness", header_style="bold #f28c28")
+        table.add_column("", width=2)
+        table.add_column("Harness", style="bold")
+        table.add_column("Best for", ratio=2)
+        table.add_column("Workflow", ratio=1)
+        table.add_column("Safety and review", ratio=2)
+        for item in items:
+            details = _details(item)
+            table.add_row(
+                "◆" if item.get("active") else "",
+                str(details["display_name"]),
+                str(details["best_for"]),
+                str(details["invocation"]),
+                f"{details['safety']}\n{details['reviewer']}",
+            )
+        console.print(table)
+    else:
+        console.print("[bold #f28c28]SMAIRT · Choose a Coding Harness[/]\n")
+        for item in items:
+            details = _details(item)
+            marker = " · ACTIVE" if item.get("active") else ""
+            body = (
+                f"[bold]{details['tagline']}[/]\n\n"
+                f"Best for: {details['best_for']}\n"
+                f"Workflow: {details['invocation']}\n"
+                f"Review: {details['reviewer']}"
+            )
+            console.print(Panel(body, title=f"{details['display_name']}{marker}", expand=True))
+    console.print(
+        "[dim]Inspect one: smairt harness info HARNESS · Preview a switch inside a project: "
+        "smairt harness select HARNESS --dry-run[/dim]"
+    )
+
+
+def _render_harness_info(payload: Mapping[str, object]) -> None:
+    """Render one concise native-adapter guide."""
+    details = _details(payload)
+    lines = [
+        f"[bold]{details['tagline']}[/]",
+        "",
+        f"Best for: {details['best_for']}",
+        f"Orientation: {details['orientation']}",
+        f"Workflow: {details['invocation']}",
+        f"Safety: {details['safety']}",
+        f"Reviewer: {details['reviewer']}",
+        f"Setup: {details['setup']}",
+        f"Limitation: {details['limitation']}",
+        f"Guide: {details['guide']}",
+    ]
+    if "installed" in payload:
+        state = "active" if payload.get("active") else "inactive"
+        freshness = "current" if payload.get("adapter_supported") else "not installed/current"
+        lines.extend(["", f"Project state: {state} · {freshness}"])
+    console.print(Panel("\n".join(lines), title=f"SMAIRT · {details['display_name']}", expand=True))
 
 
 @harness_app.command("list")
 def harness_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
     """List supported harness adapters and active state."""
-    emit(list_harnesses(project_root()), as_json)
+    root = _optional_project_root()
+    payload = list_harnesses(root)
+    if as_json:
+        emit(payload, True)
+    else:
+        _render_harness_list(payload)
+
+
+@harness_app.command("info")
+def harness_info_command(
+    harness: Annotated[HarnessName, typer.Argument()],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Explain who one harness suits and how its SMAIRT adapter behaves."""
+    root = _optional_project_root()
+    payload = harness_status(root, harness.value) if root else harness_info(harness)
+    if as_json:
+        emit(payload, True)
+    else:
+        _render_harness_info(payload)
 
 
 @harness_app.command("status")
@@ -31,7 +130,11 @@ def harness_status_command(
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Inspect one harness or the active harness."""
-    emit(harness_status(project_root(), harness), as_json)
+    payload = harness_status(project_root(), harness)
+    if as_json:
+        emit(payload, True)
+    else:
+        _render_harness_info(payload)
 
 
 @harness_app.command("install")

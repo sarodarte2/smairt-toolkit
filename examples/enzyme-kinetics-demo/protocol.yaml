@@ -1,0 +1,33 @@
+schema_version: 1
+status: ready
+question_or_purpose: Can a deterministic analysis recover known Michaelis-Menten parameters?
+design: Fixed substrate series with triplicate measurements and blank controls
+unit_of_analysis: Mean reaction velocity at each nonzero substrate concentration
+inputs:
+  - name: fixed synthetic replicate dataset
+    path: data.csv
+    unit: millimolar substrate and micromoles per minute velocity
+primary_outcome:
+  name: recovered Vmax and Km
+  unit: micromoles per minute and millimolar
+secondary_outcomes:
+  - name: maximum absolute blank velocity
+    unit: micromoles per minute
+controls:
+  - Zero-substrate blank measured in triplicate
+replication_rationale: Three deterministic replicates expose aggregation and control handling.
+randomization_and_blinding: Not applicable; this is a fixed synthetic correctness fixture.
+exclusions_and_missing_data: No exclusions are allowed; missing rows fail the analysis.
+analysis_method: Nonlinear least-squares grid search against mean velocity by concentration.
+assumptions:
+  - Michaelis-Menten kinetics describe the generated nonzero concentrations.
+  - Replicates have equal weight within concentration.
+uncertainty_measure: Predeclared recovery intervals around the known generating values.
+multiple_comparisons: Not applicable; two prespecified parameters are checked once.
+seed: 1024
+success_criteria: Both parameters and the blank control fall inside their expected ranges.
+failure_criteria: Any parameter or control lies outside its expected range.
+falsifier: A perturbed dataset that cannot recover Vmax 120 and Km 2.5 within tolerance.
+stopping_rule: Stop after one complete deterministic local run.
+declared_outputs:
+  - artifacts/results.json

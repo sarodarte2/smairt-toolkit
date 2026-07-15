@@ -2,35 +2,48 @@
 
 from __future__ import annotations
 
-import importlib
 import os
+import re
 import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, TypedDict, TypeVar, cast
 
-from prompt_toolkit import PromptSession
+from prompt_toolkit import Application, PromptSession
+from prompt_toolkit.application.current import get_app
+from prompt_toolkit.completion import FuzzyCompleter, WordCompleter
+from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
-from prompt_toolkit.shortcuts.choice_input import ChoiceInput
-from prompt_toolkit.widgets import RadioList
+from prompt_toolkit.layout import Dimension, DynamicContainer, HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout.containers import AnyContainer
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.shortcuts import CompleteStyle
+from prompt_toolkit.styles import Style
+from prompt_toolkit.widgets import Box, Frame, RadioList
 from rich.columns import Columns
 from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 
+from smairt.completion import PROJECT_ACTIONS
 from smairt.credentials import delete_credential, keyring_health, set_credential
 from smairt.diagnostics import doctor, setup_doctor
 from smairt.guidance import next_guidance, render_suggested_prompt
+from smairt.harness_presentation import HARNESS_PRESENTATIONS
 from smairt.harnesses import configure_mcp, install_harness, list_harnesses, select_harness
 from smairt.integrations import (
     configure_openalex,
     configure_zotero,
     integration_health,
 )
+from smairt.literature import literature_access, literature_related, literature_search
 from smairt.local_setup import (
     ConnectionProfile,
     ProviderName,
+    SlurmProfile,
     configure_profile,
+    configure_slurm_profile,
     delete_profile,
     discover_zotero_libraries,
     load_bindings,
@@ -39,6 +52,7 @@ from smairt.local_setup import (
 )
 from smairt.migrations import apply_migration, migration_plan
 from smairt.models import (
+    ComputeMode,
     DataClassification,
     EnvironmentMode,
     HarnessName,
@@ -67,6 +81,7 @@ from smairt.scaffold import conda_environments, create_project
 from smairt.settings import select_environment, update_project_settings
 from smairt.upgrade import upgrade_project
 from smairt.utils import slugify
+from smairt.zotero import ZoteroProvider, public_item
 
 ORANGE = "#f28c28"
 CYAN = "#62d6e8"
@@ -75,7 +90,10 @@ SMAIRT_LOGO = r"""  _____ __  __    _    ___ ____ _____
  \___ \| |\/| | / _ \  | || |_) || |
   ___) | |  | |/ ___ \ | ||  _ < | |
  |____/|_|  |_/_/   \_\___|_| \_\|_|"""
-_ANIMATED_TITLES: set[str] = set()
+_LAUNCH_ANIMATED = False
+_SCREEN_TITLE = "SMAIRT"
+_SCREEN_SUBTITLE = ""
+_SCREEN_CARDS: tuple[tuple[str, str], ...] = ()
 FIELD_SUGGESTIONS = (
     "Machine learning, Data science, Computational biology, Physics, Chemistry, Engineering"
 )
@@ -123,14 +141,14 @@ class _WrappingRadioList(RadioList[T]):
         def move_up(event: KeyPressEvent) -> None:
             del event
             self._selected_index = (self._selected_index - 1) % len(self.values)
-            self._handle_enter()
+            self.current_value = self.values[self._selected_index][0]
 
         @bindings.add("down", eager=True)
         @bindings.add("j", eager=True)
         def move_down(event: KeyPressEvent) -> None:
             del event
             self._selected_index = (self._selected_index + 1) % len(self.values)
-            self._handle_enter()
+            self.current_value = self.values[self._selected_index][0]
 
 
 def _back_bindings() -> KeyBindings:
@@ -141,30 +159,133 @@ def _back_bindings() -> KeyBindings:
     def go_back(event: KeyPressEvent) -> None:
         event.app.exit(exception=BackNavigation())
 
+    @bindings.add("c-c", eager=True)
+    def interrupt(event: KeyPressEvent) -> None:
+        event.app.exit(exception=KeyboardInterrupt())
+
     return bindings
 
 
-def _select(message: str, options: list[tuple[T, str]], default: T | None = None) -> T:
-    """Select one inline option with circular arrows, Enter, and Escape."""
-    chooser = ChoiceInput(
-        message=message,
-        options=options,
-        default=default,
-        symbol=">",
-        key_bindings=_back_bindings(),
+def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyContainer:
+    """Build the current menu from the live terminal dimensions on every redraw."""
+    size = get_app().output.get_size()
+    width, height = size.columns, size.rows
+    tier, max_width = _responsive_layout(width, height)
+    wide = tier == "wide"
+    compact = tier == "compact"
+    if wide:
+        identity = HTML(
+            f"<orange>{SMAIRT_LOGO}</orange>\n\n"
+            f"<cyan>Research workspace</cyan>  <orange>{_SCREEN_TITLE}</orange>\n"
+            f"<muted>{_SCREEN_SUBTITLE}</muted>"
+        )
+    elif compact:
+        identity = HTML(
+            f"<orange>◆ SMAIRT</orange>  <cyan>{_SCREEN_TITLE}</cyan>\n"
+            f"<muted>{_SCREEN_SUBTITLE}</muted>"
+        )
+    else:
+        identity = HTML(f"<orange>◆ SMAIRT · {_SCREEN_TITLE}</orange>")
+        if _SCREEN_SUBTITLE and height >= 16:
+            identity = HTML(
+                f"<orange>◆ SMAIRT · {_SCREEN_TITLE}</orange>\n<muted>{_SCREEN_SUBTITLE}</muted>"
+            )
+    header_height = 9 if wide else 3 if compact else 2
+    cards: list[AnyContainer] = []
+    if _SCREEN_CARDS and height >= 18:
+        card_windows = [
+            Frame(
+                Box(Window(FormattedTextControl(value), height=1), padding=0),
+                title=label,
+                style="class:card",
+            )
+            for label, value in _SCREEN_CARDS
+        ]
+        if wide:
+            cards = [VSplit(card_windows, padding=1, padding_char=" ", height=3)]
+        elif compact:
+            midpoint = (len(card_windows) + 1) // 2
+            cards = [
+                VSplit(card_windows[:midpoint], padding=1, height=3),
+                VSplit(card_windows[midpoint:], padding=1, height=3),
+            ]
+        else:
+            cards = [HSplit(card_windows)]
+    body = HSplit(
+        [
+            Frame(
+                Box(Window(FormattedTextControl(identity), height=header_height), padding=1),
+                style="class:brand",
+            ),
+            *cards,
+            Window(FormattedTextControl(HTML(f"<question>{message}</question>")), height=1),
+            chooser,
+            Window(
+                FormattedTextControl(HTML("<footer>↑↓ move · Enter select · Esc back</footer>")),
+                height=1,
+            ),
+        ],
+        padding=1,
     )
-    # ChoiceInput does not expose a radio-list factory.  Swap the module-level
-    # class only while constructing this single-threaded terminal application;
-    # the resulting instance keeps the circular bindings after restoration.
-    choice_module = importlib.import_module("prompt_toolkit.shortcuts.choice_input")
-    original_radio_list = choice_module.RadioList
-    choice_module.RadioList = _WrappingRadioList  # type: ignore[attr-defined]
-    try:
-        application = chooser._create_application()
-    finally:
-        choice_module.RadioList = original_radio_list  # type: ignore[attr-defined]
+    return VSplit(
+        [
+            Window(width=Dimension(weight=1)),
+            Box(body, width=Dimension(preferred=max_width, max=max_width), padding=0),
+            Window(width=Dimension(weight=1)),
+        ]
+    )
+
+
+def _responsive_layout(width: int, height: int) -> tuple[str, int]:
+    """Return the deterministic renderer tier and centered content-width cap."""
+    if width >= 120 and height >= 28:
+        return "wide", min(width, 132)
+    if width >= 80 and height >= 24:
+        return "compact", min(width, 132)
+    return "narrow", min(width, 132)
+
+
+def _select(message: str, options: list[tuple[T, str]], default: T | None = None) -> T:
+    """Select one responsive option with retained focus, circular movement, and Back."""
+    if not options:
+        raise ValueError("selection requires at least one option")
+    visible_options = list(options)
+    selected = default if default is not None else visible_options[0][0]
+    chooser: _WrappingRadioList[Any] = _WrappingRadioList(
+        visible_options,
+        default=selected,
+    )
+    bindings = _back_bindings()
+
+    @bindings.add("enter", eager=True)
+    def accept(event: KeyPressEvent) -> None:
+        value = chooser.current_value
+        event.app.exit(result=value)
+
+    application: Application[Any] = Application(
+        layout=Layout(DynamicContainer(lambda: _responsive_menu_container(message, chooser))),
+        key_bindings=bindings,
+        style=Style.from_dict(
+            {
+                "orange": ORANGE,
+                "cyan": CYAN,
+                "muted": "#8b909c",
+                "question": "bold #f1f1f1",
+                "footer": "#8b909c",
+                "radio-selected": f"bold {ORANGE}",
+                "radio-checked": CYAN,
+                "frame.label": CYAN,
+                "brand": "#f1f1f1",
+                "card": "#f1f1f1",
+            }
+        ),
+        full_screen=False,
+        erase_when_done=True,
+        terminal_size_polling_interval=0.25,
+        min_redraw_interval=0.03,
+    )
     application.ttimeoutlen = 0.05
-    return application.run()
+    return cast(T, application.run())
 
 
 def _text(message: str, default: str = "") -> str:
@@ -172,6 +293,35 @@ def _text(message: str, default: str = "") -> str:
     session: PromptSession[str] = PromptSession()
     session.app.ttimeoutlen = 0.05
     return session.prompt(f"{message}: ", default=default, key_bindings=_back_bindings()).strip()
+
+
+def _command_palette() -> str:
+    """Search project actions in a local multi-column popup beneath the cursor."""
+    display = {
+        f"{item.value}  {item.label}": f"{item.description} · {item.effect}"
+        for item in PROJECT_ACTIONS
+    }
+    completer = FuzzyCompleter(
+        WordCompleter(
+            list(display),
+            meta_dict=display,
+            sentence=True,
+            match_middle=True,
+        )
+    )
+    session: PromptSession[str] = PromptSession(completer=completer)
+    session.app.ttimeoutlen = 0.05
+    value = session.prompt(
+        "Find an action: ",
+        complete_while_typing=True,
+        complete_style=CompleteStyle.MULTI_COLUMN,
+        key_bindings=_back_bindings(),
+    ).strip()
+    token = value.split(maxsplit=1)[0] if value else ""
+    valid = {item.value for item in PROJECT_ACTIONS}
+    if token not in valid:
+        raise ValueError("choose one of the suggested SMAIRT actions")
+    return token
 
 
 def _secret(message: str) -> str:
@@ -196,15 +346,17 @@ def _pause() -> None:
 
 
 def _header(title: str, subtitle: str = "") -> None:
-    """Render a responsive, anchored terminal frame without an alternate screen."""
+    """Set identity for the next responsive screen and animate only once per launch."""
+    global _LAUNCH_ANIMATED, _SCREEN_CARDS, _SCREEN_SUBTITLE, _SCREEN_TITLE
+    _SCREEN_TITLE = title
+    _SCREEN_SUBTITLE = subtitle
+    _SCREEN_CARDS = ()
     width, height = console.size
     if console.is_terminal:
-        # Erasing the visible screen prevents each nested menu from walking down
-        # the terminal while keeping the terminal's normal scrollback buffer.
         console.clear(home=True)
     motion = (
         console.is_terminal
-        and title not in _ANIMATED_TITLES
+        and not _LAUNCH_ANIMATED
         and load_user_setup().motion == "automatic"
         and os.environ.get("SMAIRT_REDUCED_MOTION") != "1"
         and not os.environ.get("CI")
@@ -213,40 +365,49 @@ def _header(title: str, subtitle: str = "") -> None:
         and height >= 20
     )
     if motion:
-        with console.status(f"[bold {ORANGE}]Waking SMAIRT…[/]", spinner="dots12"):
-            time.sleep(0.16)
-        _ANIMATED_TITLES.add(title)
-    identity = f"[bold {ORANGE}]{title}[/]"
-    if subtitle:
-        identity += f"\n[dim]{subtitle}[/dim]"
-    if width >= 110 and height >= 24:
-        console.print(
-            Columns(
-                [
-                    Panel(
-                        f"[bold {ORANGE}]{SMAIRT_LOGO}[/]",
-                        border_style=ORANGE,
-                        padding=(0, 1),
-                    ),
-                    Panel(
-                        identity + f"\n\n[bold {CYAN}]Scientific Method[/]\n"
-                        "[dim]AI-assisted · researcher governed[/]",
-                        title="Research workspace",
-                        border_style=CYAN,
-                        padding=(1, 2),
-                    ),
-                ],
-                expand=True,
-                equal=True,
+        time.sleep(0.06)
+        _LAUNCH_ANIMATED = True
+    # Redirected output and test captures cannot run the interactive renderer;
+    # retain a concise identity line for logs and accessibility tooling.
+    if hasattr(console.file, "getvalue"):
+        if width >= 120 and height >= 28:
+            console.print(
+                f"[bold {ORANGE}]{SMAIRT_LOGO}[/]\n[bold {CYAN}]Scientific Method[/]\n"
+                f"[bold]{title}[/] · {subtitle}"
             )
-        )
-    elif width >= 72:
-        console.print(Panel(identity, title="◆ SMAIRT", border_style=ORANGE, expand=True))
+        else:
+            identity = f"[bold {ORANGE}]◆ SMAIRT · {title}[/]"
+            console.print(identity + (f"\n{subtitle}" if subtitle else ""))
+
+
+def _cards(*values: tuple[str, object]) -> None:
+    """Attach compact status cards to the next menu render."""
+    global _SCREEN_CARDS
+    _SCREEN_CARDS = tuple((label, str(value)) for label, value in values)
+
+
+def _render_harness_chooser(active: HarnessName | None = None) -> None:
+    """Show concise harness tradeoffs before asking the researcher to choose."""
+    if console.width >= 96:
+        table = Table(header_style=f"bold {ORANGE}", box=None, expand=True)
+        table.add_column("Harness", style="bold", no_wrap=True)
+        table.add_column("Best for", ratio=2)
+        table.add_column("Workflow", ratio=1)
+        table.add_column("Review", ratio=2)
+        for name, details in HARNESS_PRESENTATIONS.items():
+            marker = "◆ " if name is active else ""
+            table.add_row(
+                marker + details.display_name,
+                details.best_for,
+                details.invocation,
+                details.reviewer,
+            )
+        console.print(table)
     else:
-        compact = f"[bold {ORANGE}]◆ SMAIRT · {title}[/]"
-        if subtitle and height >= 16:
-            compact += f"\n[dim]{subtitle}[/dim]"
-        console.print(Panel(compact, border_style=ORANGE, expand=True, padding=(0, 1)))
+        for name, details in HARNESS_PRESENTATIONS.items():
+            marker = "◆ " if name is active else "  "
+            console.print(f"{marker}[bold]{details.display_name}[/] · {details.tagline}")
+    console.print("[dim]No harness replaces SMAIRT's CLI and human scientific gates.[/dim]\n")
 
 
 def _preflight_destination(destination: Path, *, allow_existing: bool) -> None:
@@ -394,9 +555,10 @@ def run_new_project(
                 if values["environment"] is EnvironmentMode.NEW_CONDA:
                     default_name = values["environment_name"] or slugify(values["name"])
                     values["environment_name"] = _text("Conda environment name", default_name)
+                _render_harness_chooser(values["harness"])
                 values["harness"] = _select(
                     "Coding harness",
-                    [(item, item.value.title()) for item in HarnessName],
+                    [(item, HARNESS_PRESENTATIONS[item].display_name) for item in HarnessName],
                     values["harness"],
                 )
                 values["safety_mode"] = _select(
@@ -845,6 +1007,104 @@ def _render_integration_health(payload: dict[str, object]) -> None:
             )
 
 
+def _zotero_item_label(raw: dict[str, Any]) -> str:
+    """Render useful Zotero identity while deliberately hiding internal keys."""
+    item = public_item(raw)
+    creators = cast(list[dict[str, object]], item.get("creators") or [])
+    creator = creators[0] if creators else {}
+    author = str(creator.get("lastName") or creator.get("name") or "Unknown author")
+    year_match = re.search(r"\b(\d{4})\b", str(item.get("date") or ""))
+    year = year_match.group(1) if year_match else "n.d."
+    title = str(item.get("title") or "Untitled item")
+    return f"{title} · {author} · {year}"
+
+
+def _zotero_key(raw: dict[str, Any], label: str) -> str:
+    """Extract an internal key only after a human-facing selection."""
+    item = public_item(raw)
+    key = item.get("key")
+    if not isinstance(key, str) or not key:
+        raise ValueError(f"selected Zotero {label} has no usable internal key")
+    return key
+
+
+def _choose_zotero_collection(provider: ZoteroProvider) -> tuple[str, str]:
+    """Select one collection by name without exposing its key."""
+    collections = provider.collections(50)
+    choices: list[tuple[str, str]] = []
+    for raw in collections:
+        data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+        key = raw.get("key") or cast(dict[str, Any], data).get("key")
+        name = cast(dict[str, Any], data).get("name") or "Unnamed collection"
+        if isinstance(key, str) and key:
+            choices.append((key, str(name)))
+    if not choices:
+        raise ValueError("no Zotero collections were found")
+    key = _select("Zotero collection", sorted(choices, key=lambda item: item[1].casefold()))
+    return key, next(name for value, name in choices if value == key)
+
+
+def _choose_zotero_item(root: Path) -> tuple[ZoteroProvider, str]:
+    """Discover and select a Zotero item through search, collections, or recency."""
+    provider = ZoteroProvider(root)
+    method = _select(
+        "Find a Zotero item",
+        [
+            ("search", "Search title, author, or tag"),
+            ("collection", "Browse a named collection"),
+            ("recent", "Browse 25 recent items"),
+            ("back", "Back"),
+        ],
+    )
+    if method == "back":
+        raise BackNavigation()
+    if method == "search":
+        items = provider.search(_text("Title, author, or tag"), 20)
+    elif method == "collection":
+        collection_key, _ = _choose_zotero_collection(provider)
+        items = provider.collection_items(collection_key, 100)
+    else:
+        items = provider.recent(25)
+    top_level = [
+        raw
+        for raw in items
+        if public_item(raw).get("itemType") not in {"attachment", "note", "annotation"}
+    ]
+    if not top_level:
+        raise ValueError("no matching top-level Zotero items were found")
+    key = _select(
+        "Zotero item",
+        [(_zotero_key(raw, "item"), _zotero_item_label(raw)) for raw in top_level],
+    )
+    return provider, key
+
+
+def _choose_zotero_attachment(provider: ZoteroProvider, item_key: str) -> str:
+    """Choose one local PDF child by filename rather than attachment key."""
+    if provider.config.mode is not ZoteroMode.LOCAL:
+        raise ValueError("copying PDFs requires the local Zotero app connection")
+    children = [public_item(raw) for raw in provider.children(item_key, 50)]
+    pdfs = [
+        child
+        for child in children
+        if child.get("itemType") == "attachment"
+        and (
+            str(child.get("contentType") or "").lower() == "application/pdf"
+            or str(child.get("filename") or "").lower().endswith(".pdf")
+        )
+    ]
+    if not pdfs:
+        raise ValueError("the selected Zotero item has no local PDF attachment")
+    return _select(
+        "PDF attachment",
+        [
+            (str(child["key"]), str(child.get("filename") or "PDF attachment"))
+            for child in pdfs
+            if child.get("key")
+        ],
+    )
+
+
 def _references_menu(root: Path) -> None:
     """Separate metadata, documents, and human verification with visible receipts."""
     while True:
@@ -852,22 +1112,17 @@ def _references_menu(root: Path) -> None:
         verified = sum(item.verification_status.value == "verified" for item in records)
         attached = sum(bool(item.local_path) for item in records)
         _header("References", "Add metadata → attach PDFs → review and verify")
-        console.print(
-            Columns(
-                [
-                    Panel(str(len(records)), title="Indexed", border_style=ORANGE),
-                    Panel(str(attached), title="PDFs attached", border_style=ORANGE),
-                    Panel(str(verified), title="Human verified", border_style=ORANGE),
-                ],
-                equal=True,
-                expand=True,
-            )
+        _cards(
+            ("Indexed", len(records)),
+            ("PDFs attached", attached),
+            ("Human verified", verified),
         )
         try:
             action = _select(
                 "References",
                 [
                     ("metadata", "Add metadata · DOI or Zotero"),
+                    ("discover", "Discover literature · search, citation trails, or OA copy"),
                     ("document", "Add a local PDF · standalone or attach"),
                     ("review", "Review, edit, and human-verify metadata"),
                     ("zotero-pdf", "Copy one selected local Zotero PDF"),
@@ -882,10 +1137,13 @@ def _references_menu(root: Path) -> None:
                     "Metadata source",
                     [
                         ("doi", "DOI · Crossref metadata, no PDF"),
-                        ("zotero-item", "One Zotero item · metadata only"),
-                        ("zotero-collection", "Zotero collection · metadata only"),
+                        ("zotero-item", "Find one Zotero item · metadata only"),
+                        ("zotero-collection", "Browse a Zotero collection · metadata only"),
+                        ("back", "Back"),
                     ],
                 )
+                if source == "back":
+                    continue
                 if source == "doi":
                     record = add_doi_reference(
                         root,
@@ -897,21 +1155,81 @@ def _references_menu(root: Path) -> None:
                     )
                     _reference_receipt(root, [record], "Metadata imported; no PDF was added")
                 elif source == "zotero-item":
-                    record = import_zotero_item(root, _text("Zotero item key"))
+                    _, item_key = _choose_zotero_item(root)
+                    record = import_zotero_item(root, item_key)
                     _reference_receipt(
                         root,
                         [record],
                         "Zotero metadata imported; the item key is retained as source provenance",
                     )
                 else:
-                    key = _text("Zotero collection key")
-                    limit_text = _text("Maximum metadata records (1-1000)", "500")
-                    imported = import_zotero_collection(root, key, limit=int(limit_text))
+                    provider = ZoteroProvider(root)
+                    key, collection_name = _choose_zotero_collection(provider)
+                    preview = provider.collection_items(key, 101)
+                    truncated = len(preview) > 100
+                    console.print(
+                        f"{collection_name}: {min(len(preview), 100)} item(s) will be considered "
+                        + ("(additional items will be left unchanged)." if truncated else "")
+                    )
+                    if not _yes_no("Import this collection metadata?", False):
+                        continue
+                    imported = import_zotero_collection(root, key, limit=100)
                     _reference_receipt(
                         root,
                         imported,
                         "Collection metadata imported; PDFs were not copied",
                     )
+            elif action == "discover":
+                discovery = _select(
+                    "Discover literature",
+                    [
+                        ("search", "Search OpenAlex candidates"),
+                        ("references", "Works referenced by an indexed DOI"),
+                        ("cited-by", "Works citing an indexed DOI"),
+                        ("access", "Find an open-access copy"),
+                        ("back", "Back"),
+                    ],
+                )
+                if discovery == "back":
+                    continue
+                if discovery == "search":
+                    candidates = literature_search(root, _text("Search query"), 20)
+                    for item in candidates:
+                        console.print(
+                            f"• {item.title} · {item.year or 'n.d.'} · {item.doi or 'no DOI'}"
+                        )
+                else:
+                    eligible = [record for record in records if record.doi]
+                    if not eligible:
+                        raise ValueError("add a DOI-backed reference before using this discovery")
+                    identifier = _select(
+                        "Reference",
+                        [
+                            (record.id, f"{record.title} · {record.year or 'n.d.'}")
+                            for record in eligible
+                        ],
+                    )
+                    if discovery in {"references", "cited-by"}:
+                        candidates = literature_related(root, identifier, discovery, 20)
+                        for item in candidates:
+                            console.print(
+                                f"• {item.title} · {item.year or 'n.d.'} · {item.doi or 'no DOI'}"
+                            )
+                    else:
+                        access_preview = literature_access(root, identifier)
+                        location = cast(dict[str, object], access_preview["location"])
+                        console.print(
+                            f"Source: {location.get('host')} · "
+                            f"License: {location.get('license') or 'not reported'} · "
+                            f"Version: {location.get('version') or 'not reported'}\n"
+                            f"URL: {location.get('url')}"
+                        )
+                        if location.get("direct_pdf") and _yes_no(
+                            "Download and validate this PDF into the project?", False
+                        ):
+                            console.print(
+                                literature_access(root, identifier, download=True, confirmed=True)
+                            )
             elif action == "document":
                 document_action = _select(
                     "Local PDF",
@@ -1002,8 +1320,8 @@ def _references_menu(root: Path) -> None:
                     root, [record], "Human review recorded with contributor attribution"
                 )
             elif action == "zotero-pdf":
-                item_key = _text("Parent Zotero item key")
-                attachment_key = _text("Zotero attachment key")
+                provider, item_key = _choose_zotero_item(root)
+                attachment_key = _choose_zotero_attachment(provider, item_key)
                 if not _yes_no(
                     "Copy this selected PDF into references/pdfs and record its checksum?", False
                 ):
@@ -1194,14 +1512,10 @@ def _advanced_menu(root: Path) -> None:
                 elif safety_action == "release":
                     _render_validation(release_check(root))
             elif action == "harness":
-                for item in list_harnesses(root):
-                    console.print(
-                        f"{'*' if item['active'] else ' '} {item['harness']} · "
-                        f"{'ready' if item.get('adapter_supported') else 'not installed/current'}"
-                    )
+                _render_harness_chooser(config.harness.active)
                 selected = _select(
                     "Active harness",
-                    [(item, item.value.title()) for item in HarnessName],
+                    [(item, HARNESS_PRESENTATIONS[item].display_name) for item in HarnessName],
                     config.harness.active,
                 )
                 if selected != config.harness.active and _yes_no(
@@ -1249,26 +1563,18 @@ def run_project_menu(root: Path) -> None:
             if integration
             else 0
         )
-        console.print(
-            Columns(
-                [
-                    Panel(str(guidance["stage"]).replace("_", " ").title(), title="Workflow"),
-                    Panel(f"{reference_count} indexed", title="References"),
-                    Panel(
-                        f"{config.environment.mode.value}\n{ready_connections} connection(s) ready",
-                        title="Tools",
-                    ),
-                    Panel("Healthy" if validation["ok"] else "Needs attention", title="Health"),
-                ],
-                equal=True,
-                expand=True,
-            )
+        _cards(
+            ("Workflow", str(guidance["stage"]).replace("_", " ").title()),
+            ("References", f"{reference_count} indexed"),
+            ("Tools", f"{config.environment.mode.value} · {ready_connections} ready"),
+            ("Health", "Healthy" if validation["ok"] else "Needs attention"),
         )
         try:
             action = _select(
                 "What would you like to do?",
                 [
                     ("next", "Continue research · recommended action and prompt"),
+                    ("palette", "Find an action · type to filter commands and options"),
                     ("references", "References"),
                     ("setup", "Project setup"),
                     ("health", "Health and safe repairs"),
@@ -1280,6 +1586,17 @@ def run_project_menu(root: Path) -> None:
             return
         if action == "exit":
             return
+        if action == "palette":
+            try:
+                action = _command_palette()
+            except BackNavigation:
+                continue
+            except ValueError as exc:
+                console.print(f"[yellow]{exc}[/yellow]")
+                _pause()
+                continue
+            if action == "exit":
+                return
         if action == "next":
             _show_guidance(root, "Continue Research")
         elif action == "references":
@@ -1325,6 +1642,8 @@ def run_setup_menu() -> None:
                     ("keys", "Add or remove an API key"),
                     ("zotero", "Configure and test Zotero"),
                     ("openalex", "Configure and test OpenAlex"),
+                    ("semantic", "Configure Semantic Scholar discovery"),
+                    ("hpc", "Configure optional Slurm execution"),
                     ("profiles", "Review or remove connection profiles"),
                     ("appearance", "Appearance and motion"),
                     ("exit", "Return to shell"),
@@ -1335,7 +1654,14 @@ def run_setup_menu() -> None:
             if action == "doctor":
                 _render_setup_health(health)
             elif action == "keys":
-                provider = _select("Provider", [("openalex", "OpenAlex"), ("zotero", "Zotero Web")])
+                provider = _select(
+                    "Provider",
+                    [
+                        ("openalex", "OpenAlex"),
+                        ("semantic_scholar", "Semantic Scholar"),
+                        ("zotero", "Zotero Web"),
+                    ],
+                )
                 profile_name = _text("Profile name", "default")
                 operation = _select(
                     "API key", [("set", "Store or replace key"), ("delete", "Delete key")]
@@ -1354,6 +1680,10 @@ def run_setup_menu() -> None:
                 _configure_zotero_setup()
             elif action == "openalex":
                 _configure_openalex_setup()
+            elif action == "semantic":
+                _configure_semantic_scholar_setup()
+            elif action == "hpc":
+                _configure_hpc_setup()
             elif action == "profiles":
                 if not profiles:
                     console.print("No connection profiles are configured.")
@@ -1374,7 +1704,7 @@ def run_setup_menu() -> None:
                     elif _yes_no(f"Remove local profile '{selected}'?", False):
                         delete_profile(selected)
                         console.print("[green]Local profile removed.[/green]")
-            else:
+            elif action == "appearance":
                 setup = load_user_setup()
                 setup.motion = _select(
                     "Motion",
@@ -1436,6 +1766,47 @@ def _configure_openalex_setup() -> None:
         ),
     )
     console.print(_connection_receipt(test_profile(name)))
+
+
+def _configure_semantic_scholar_setup() -> None:
+    """Create an optional user-local Semantic Scholar discovery profile."""
+    name = _text("Profile name", "default")
+    if _yes_no("Store an API key for higher authenticated limits?", False):
+        set_credential("semantic_scholar", name, _secret("Semantic Scholar API key"))
+    configure_profile(
+        name,
+        ConnectionProfile(
+            provider="semantic_scholar",
+            credential_profile=name,
+            environment_variable="SEMANTIC_SCHOLAR_API_KEY",
+        ),
+    )
+    console.print(
+        "[green]Semantic Scholar profile saved.[/] Public discovery works without a key; "
+        "network access occurs only when a literature command is run."
+    )
+
+
+def _configure_hpc_setup() -> None:
+    """Create a typed native or OpenSSH Slurm profile outside the project."""
+    name = _text("Compute profile name", "default")
+    mode = _select(
+        "Slurm connection",
+        [
+            (ComputeMode.NATIVE, "Native · this machine already has Slurm commands"),
+            (ComputeMode.SSH, "OpenSSH · use an existing secure host alias"),
+        ],
+    )
+    host = _text("OpenSSH host alias") if mode is ComputeMode.SSH else None
+    remote_root = _text("Remote job root", "/shared/smairt-jobs")
+    configure_slurm_profile(
+        name,
+        SlurmProfile(mode=mode, host_alias=host, remote_root=remote_root),
+    )
+    console.print(
+        "[green]Slurm profile saved.[/] SMAIRT stored no password or private key. "
+        "Local execution remains the default."
+    )
 
 
 def _configure_zotero_setup() -> None:

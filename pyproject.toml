@@ -74,6 +74,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PIE", "RUF", "S", "D100", "D10
 # These lines are generated shell-hook payloads whose exact quoting is part of
 # the external harness contract; wrapping them would make the script less safe.
 "src/smairt/harnesses.py" = ["E501", "S603"]
+"src/smairt/hpc.py" = ["S603", "S607"]
 
 [tool.mypy]
 python_version = "3.11"

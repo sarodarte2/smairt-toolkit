@@ -213,8 +213,15 @@ def zotero_status(root: Path) -> dict[str, object]:
 
 def integration_health(root: Path) -> dict[str, object]:
     """Return offline provider and backend status for the terminal hub."""
+    unpaywall_name, unpaywall = _binding_status(root, "unpaywall")
     return {
         "openalex": openalex_status(root),
         "zotero": zotero_status(root),
+        "unpaywall": {
+            "bound_profile": unpaywall_name,
+            "ready": bool(unpaywall and unpaywall.contact_email),
+            "contact_email_configured": bool(unpaywall and unpaywall.contact_email),
+            "network_accessed": False,
+        },
         "keyring": keyring_health(),
     }

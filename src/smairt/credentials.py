@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 SERVICE_NAME = "smairt"
-SUPPORTED_PROVIDERS = {"openalex", "zotero"}
+SUPPORTED_PROVIDERS = {"openalex", "semantic_scholar", "zotero"}
 
 
 class CredentialError(RuntimeError):

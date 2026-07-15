@@ -8,7 +8,27 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
 from smairt.models import ProjectLicense, SmairtConfig
-from smairt.tui import BackNavigation, _preflight_destination, _select, run_new_project
+from smairt.tui import (
+    BackNavigation,
+    _preflight_destination,
+    _responsive_layout,
+    _select,
+    run_new_project,
+)
+
+
+def test_responsive_layout_breakpoints_and_wide_cap() -> None:
+    cases = {
+        (60, 18): ("narrow", 60),
+        (80, 24): ("compact", 80),
+        (103, 51): ("compact", 103),
+        (119, 30): ("compact", 119),
+        (120, 30): ("wide", 120),
+        (180, 50): ("wide", 132),
+        (340, 60): ("wide", 132),
+    }
+    for size, expected in cases.items():
+        assert _responsive_layout(*size) == expected
 
 
 def test_choice_uses_arrows_enter_and_escape() -> None:
@@ -78,7 +98,7 @@ def test_new_project_workflow_creates_v6_project(monkeypatch, tmp_path: Path) ->
 
     assert run_new_project(tmp_path) == target
     config = SmairtConfig.load(target / "smairt.yaml")
-    assert config.schema_version == 6
+    assert config.schema_version == 8
     assert config.project.fields_of_study == ["Biology", "Genomics"]
     assert config.project.license is ProjectLicense.MIT
     assert config.contributors[0].email == "researcher@example.org"

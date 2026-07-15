@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -31,6 +30,7 @@ from smairt.runner import run_experiment
 from smairt.safety import refresh_repository_visibility, safety_policy_findings, safety_status
 from smairt.scaffold import create_project
 from smairt.summaries import create_summary, promote_summary, supersede_summary
+from smairt.workflows import WORKFLOW_SLUGS, shared_skill_files
 
 
 def make_project(tmp_path: Path, classification=DataClassification.UNPUBLISHED) -> Path:
@@ -230,21 +230,14 @@ def test_contract_checker_reports_corrupt_fixture(tmp_path: Path) -> None:
     assert "invalid fixture JSON" in report["findings"][0]
 
 
-def test_packaged_skill_matches_contributor_skill() -> None:
-    """Keep the distributable scaffold resource aligned with the repository skill."""
-    package = files("smairt.resources")
-    assert (
-        package.joinpath("smairt-research.md").read_text()
-        == Path("skills/smairt-research/SKILL.md").read_text()
-    )
-    assert (
-        package.joinpath("workflow.md").read_text()
-        == Path("skills/smairt-research/references/workflow.md").read_text()
-    )
-    assert (
-        package.joinpath("openai-agent.yaml").read_text()
-        == Path("skills/smairt-research/agents/openai.yaml").read_text()
-    )
+def test_generated_skill_contract_is_complete() -> None:
+    """Keep the distributable scaffold aligned with the six focused workflows."""
+    rendered = shared_skill_files()
+    assert len(WORKFLOW_SLUGS) == 6
+    assert len(rendered) == 12
+    for slug in WORKFLOW_SLUGS:
+        assert f".agents/skills/{slug}/SKILL.md" in rendered
+        assert f".agents/skills/{slug}/agents/openai.yaml" in rendered
 
 
 def test_observed_visibility_overrides_conflicting_attestation(tmp_path: Path, monkeypatch) -> None:

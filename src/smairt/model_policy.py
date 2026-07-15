@@ -15,6 +15,7 @@ TASK_TIERS = {
     "planning": "strong",
     "interpretation": "strong",
     "paper": "strong",
+    "review": "strong",
 }
 
 TIER_PURPOSE = {
@@ -35,6 +36,8 @@ def recommend_model(root: Path, task: str) -> dict[str, object]:
         "codex": "Choose an available Codex model and reasoning effort matching this tier.",
         "zoo": "Bind this tier to a Zoo API profile for the active mode in the Prompts tab.",
         "cline": "Use the matching Cline Plan/Act model or CLI --config profile.",
+        "opencode": "Choose an available OpenCode model matching this tier for the active agent.",
+        "cursor": "Choose an available Cursor model matching this tier for the active mode.",
     }
     return {
         "task": task,

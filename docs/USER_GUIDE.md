@@ -29,7 +29,7 @@ smairt next --prompt
 smairt context --task planning --token-budget 8000
 ```
 
-The prompt form is a bounded, context-aware handoff for Codex, Zoo Code, Cline, OpenCode, Cursor,
+The prompt form is a bounded handoff for Codex, Zoo Code, Cline, OpenCode, Cursor, Claude Code,
 or another assistant; it cannot approve scientific decisions. The JSON response is a versioned
 envelope. Scientific choices remain human gates: contributor identity, hypothesis selection,
 experimental route, evidence decision, claim approval, correction, and safety-mode changes.
@@ -37,6 +37,15 @@ experimental route, evidence decision, claim approval, correction, and safety-mo
 Use `smairt harness status --json` to distinguish installed adapter files from the local client,
 trust, and hook settings that remain controlled by each harness. MCP access is metadata-only and
 must be enabled explicitly for the active harness.
+
+Generated projects expose six focused workflows: next-step orientation, literature, design,
+adversarial challenge, interpretation, and paper drafting. Invocation syntax differs by harness;
+run `smairt harness info <name>` or read the [harness chooser](HARNESSES.md). Adversarial review
+uses a bounded read-only context and remains advisory:
+
+```bash
+smairt context --task review --target plans/README.md --json
+```
 
 ## Run and review experiments
 
@@ -47,6 +56,15 @@ configuration, packages, Git state, logs, results, and integrity hashes.
 
 Failed and interrupted runs remain visible but cannot become accepted evidence. Never edit a run
 bundle. Use a new iteration or a correction.
+
+Schema-8 experiments include `protocol.yaml`. Declare inputs, expected outputs, success criteria,
+and interpretation limits before running. SMAIRT snapshots the protocol digest into the immutable
+run and verifies result-summary checksums before an evidence decision can be accepted. This is a
+reproducibility gate, not a claim that an automated result is scientifically correct.
+
+Local execution is the default and is used by the verified demo. A configured Slurm profile is an
+optional transport for larger work; submission, refresh, synchronization, and cancellation remain
+separate explicit actions. See [HPC execution](HPC.md).
 
 ## Collaborate safely
 
@@ -75,8 +93,16 @@ workflow.
 
 ## Safety and remote metadata
 
-Ordinary status, validation, doctor, and TUI refreshes are offline. Crossref/OpenAlex enrichment
-is an explicit command. GitHub visibility is refreshed only with:
+Ordinary status, validation, doctor, and TUI refreshes are offline. Crossref remains the primary
+DOI source and DataCite is used only after a Crossref not-found response. OpenAlex search and
+citation trails are provisional. Semantic Scholar search and recommendations are also provisional;
+DOI imports still pass through Crossref and the narrowly scoped DataCite fallback. Unpaywall access
+lookup and PDF download are explicit; downloads
+show the source and license first and validate redirects, address safety, size, and PDF structure.
+
+Managed PDF copies use deterministic human-readable names. Preview existing changes before
+applying them with `smairt reference organize-pdfs --apply --yes`; source downloads are untouched.
+GitHub visibility is refreshed only with:
 
 ```bash
 smairt safety status --refresh-visibility --json
