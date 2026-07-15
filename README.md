@@ -22,7 +22,7 @@ organizing AI-assisted research as a reviewable scientific process. It connects 
 references, hypotheses or exploratory purposes, experiments, immutable runs, decisions, evidence,
 and manuscript claims without treating an agent conversation as the scientific record.
 
-## Why SMAIRT exists
+## Why SMAIRT Exists
 
 AI assistants can search literature, draft code, compare explanations, and prepare analyses. They
 can also make it easy to lose the boundary between a suggestion and a scientific decision. SMAIRT
@@ -35,7 +35,7 @@ keeps that boundary visible:
 - validation, locks, transactions, and immutable run manifests protect the record from accidental
   rewriting.
 
-## How the research lifecycle fits together
+## How the Research Lifecycle Fits Together
 
 ```mermaid
 flowchart LR
@@ -51,7 +51,7 @@ flowchart LR
 
 The software can help prepare every stage, but the two decision points remain human gates.
 
-| SMAIRT and an AI assistant can | The researcher must |
+| SMAIRT and an AI Assistant can | The Researcher MUST |
 | --- | --- |
 | Organize references and attributed metadata | Decide which sources are relevant and trustworthy |
 | Draft background and compare proposals | Frame the question and select or revise scientific direction |
@@ -59,7 +59,7 @@ The software can help prepare every stage, but the two decision points remain hu
 | Capture runs, logs, environments, and checksums | Interpret results and decide whether evidence is acceptable |
 | Assemble claims and manuscript sections | Approve claims, corrections, and publication-ready text |
 
-## Install and orient yourself
+## Install and Orient Yourself
 
 SMAIRT does not yet publish a verified package release. Install the current research preview from
 this repository with [uv](https://docs.astral.sh/uv/):
@@ -93,7 +93,7 @@ See [Installation](docs/getting-started/installation.md) for prerequisites and o
 connections, then follow the [Quickstart](docs/getting-started/quickstart.md) for a careful tour of
 a new project.
 
-## What SMAIRT records
+## What SMAIRT Records
 
 A generated project is a readable directory rather than an opaque application database:
 
@@ -102,7 +102,7 @@ my-study/
 ├── smairt.yaml          project identity, policy, people, environment, and active harness
 ├── background/          question, description, and source-grounded synthesis
 ├── hypotheses/          proposal sets and the researcher-selected direction
-├── experiments/        protocols, iterations, analysis code, and method changes
+├── experiments/         protocols, iterations, analysis code, and method changes
 ├── results/             immutable run bundles, logs, snapshots, and integrity manifests
 ├── analysis/            interpretations linked to specific experiments and runs
 ├── references/          attributed metadata and optional local PDF checksums
@@ -125,7 +125,7 @@ provenance, and validation; it does not replace peer review or laboratory judgme
 - Human decisions, evidence cards, claims, manuscript reviews, corrections, retractions, and
   supersessions that preserve history.
 
-### Literature and context
+### Literature and Context
 
 - Local PDF indexing, DOI metadata through Crossref with a narrow DataCite fallback, and optional
   Zotero import.
@@ -133,7 +133,7 @@ provenance, and validation; it does not replace peer review or laboratory judgme
 - Bounded context packets, state-aware next steps, and copyable prompts for supported coding
   harnesses.
 
-### Integrity and collaboration
+### Integrity and Collaboration
 
 - Typed records, atomic writes, mutation locks, recoverable transactions, checksums, and run
   manifests.
@@ -142,7 +142,7 @@ provenance, and validation; it does not replace peer review or laboratory judgme
 - A metadata-only MCP server that does not expose PDF contents, arbitrary filesystem paths, or
   mutation tools.
 
-## Safety boundary
+## Safety Boundary
 
 SMAIRT is not a sandbox and does not certify regulatory, institutional, contractual,
 export-control, clinical, or human-subject compliance. It runs with the researcher's filesystem
@@ -154,7 +154,7 @@ Normal status, validation, doctor, and project-menu refreshes are offline. Remot
 PDF downloads, repository-visibility refreshes, HPC submission, and project mutations require
 explicit actions. Read the full [Safety model](docs/concepts/safety.md) before private work.
 
-## Limitations of this preview
+## Limitations of this Preview
 
 - There is no tagged release or PyPI distribution; installation is from source.
 - Project and user-local schemas may change during the preview period.
@@ -171,15 +171,15 @@ Start at the [documentation hub](docs/README.md), or choose the route that match
 
 - New researcher: [Installation](docs/getting-started/installation.md) →
   [Quickstart](docs/getting-started/quickstart.md) →
-  [Research workflow](docs/guides/research-workflow.md)
-- Scientific and safety review: [Scientific workflow](docs/concepts/scientific-workflow.md) →
-  [Safety model](docs/concepts/safety.md) → [Architecture](docs/concepts/architecture.md)
-- Harness selection: [Harness guide](docs/reference/harnesses.md)
-- Command lookup: [CLI reference](docs/reference/cli.md)
+  [Research Workflow](docs/guides/research-workflow.md)
+- Scientific and safety review: [Scientific Workflow](docs/concepts/scientific-workflow.md) →
+  [Safety Model](docs/concepts/safety.md) → [Architecture](docs/concepts/architecture.md)
+- Harness selection: [Harness Guide](docs/reference/harnesses.md)
+- Command lookup: [CLI Reference](docs/reference/cli.md)
 - Development: [Contributing](CONTRIBUTING.md) →
-  [Developer guide](docs/development/developer-guide.md)
+  [Developer Guide](docs/development/developer-guide.md)
 
-## Origins, support, and license
+## Origins, Support, and License
 
 This repository is an independent fork of
 [PNNL-CompBio/smairt-template](https://github.com/PNNL-CompBio/smairt-template). The original
