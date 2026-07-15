@@ -56,7 +56,7 @@ JSON without deleting unrelated user settings or servers. See
 - `examples/enzyme-kinetics-demo/` — verified local installation-to-evidence demonstration.
 - `docs/DEVELOPMENT.md` — enforceable readability and CLI module conventions.
 - `docs/plans/TUI_USABILITY.md` — phased terminal-native TUI redesign and acceptance criteria.
-- `README.md`, `QUICKSTART.md`, `TUTORIAL.md` — product overview and end-to-end usage.
+- `README.md`, `QUICKSTART.md`, `TUTORIAL.md`, `DEMO.md` — overview and human-run workflows.
 
 ## Verification
 

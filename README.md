@@ -157,6 +157,7 @@ Continue with the [User Guide](docs/USER_GUIDE.md), [CLI Reference](docs/CLI_REF
 [Architecture](docs/ARCHITECTURE.md).
 Developers can use the [Developer Guide](docs/DEVELOPER_GUIDE.md) and [Release Guide](docs/RELEASE.md).
 Literature setup and its privacy boundaries are in [Integrations](docs/INTEGRATIONS.md).
-Try the fully local, numerically checked [enzyme-kinetics demo](examples/enzyme-kinetics-demo/README.md).
+Follow the human-run, installation-to-result [SMAIRT demo](DEMO.md). The automated fixture under
+`examples/` exists only to keep that walkthrough numerically tested.
 
 SMAIRT itself is distributed under the [MIT License](LICENSE).

@@ -6,6 +6,7 @@ import pytest
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
+from prompt_toolkit.output.base import Size
 
 from smairt.models import ProjectLicense, SmairtConfig
 from smairt.tui import (
@@ -65,6 +66,23 @@ def test_choice_uses_arrows_enter_and_escape() -> None:
         with pytest.raises(KeyboardInterrupt):
             _select("Choose", [("first", "First")])
     assert not output.entered_alternate_screen
+
+
+def test_wide_layout_escapes_logo_and_dynamic_text(monkeypatch) -> None:
+    """Render the real wide header without treating logo text as HTML markup."""
+
+    class WideOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=30, columns=120)
+
+    monkeypatch.setattr("smairt.tui._SCREEN_TITLE", "Methods < Results")
+    monkeypatch.setattr("smairt.tui._SCREEN_SUBTITLE", "R&D")
+    with (
+        create_pipe_input() as input_stream,
+        create_app_session(input=input_stream, output=WideOutput()),
+    ):
+        input_stream.send_text("\r")
+        assert _select("Choose <one>", [("first", "First")]) == "first"
 
 
 def test_new_project_workflow_creates_v6_project(monkeypatch, tmp_path: Path) -> None:

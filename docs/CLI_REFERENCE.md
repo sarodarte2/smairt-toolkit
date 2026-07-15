@@ -18,7 +18,7 @@ smairt setup semantic-scholar configure|test|remove
 smairt setup unpaywall configure default --email EMAIL
 smairt setup hpc configure default --mode native|ssh [--host HOST] --remote-root PATH
 smairt new [DESTINATION]
-smairt menu
+smairt menu [PROJECT]
 smairt settings show --json
 smairt settings project [--field TEXT]... [--license LICENSE]
 smairt env select --mode none

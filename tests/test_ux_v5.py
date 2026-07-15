@@ -82,6 +82,17 @@ def test_bare_smairt_is_splash_and_menu_outside_project_explains(
     assert tmp_path.name in menu.stdout and "smairt new" in menu.stdout
 
 
+def test_menu_can_open_an_existing_project_by_path(tmp_path: Path, monkeypatch) -> None:
+    """Let researchers resume a known project without changing shell directories."""
+    root = project(tmp_path)
+    opened: list[Path] = []
+    monkeypatch.chdir(tmp_path.parent)
+    monkeypatch.setattr("smairt.cli.run_project_menu", opened.append)
+    result = runner.invoke(app, ["menu", str(root)])
+    assert result.exit_code == 0, result.stdout
+    assert opened == [root]
+
+
 def test_project_discovery_stops_at_inner_git_worktree(tmp_path: Path) -> None:
     """Prevent a broad ancestor project from capturing an unrelated Git checkout."""
     outer = project(tmp_path)

@@ -551,15 +551,20 @@ def init_command(
 
 
 @app.command("menu")
-def menu_command() -> None:
-    """Open the editable project dashboard."""
+def menu_command(
+    project: Annotated[
+        Path | None, typer.Argument(help="Project folder or a folder inside it")
+    ] = None,
+) -> None:
+    """Open the nearest dashboard, or open an existing project by path."""
     try:
-        root = find_project()
+        root = find_project(project.expanduser() if project is not None else None)
     except FileNotFoundError:
+        requested = (project or Path.cwd()).expanduser().resolve()
         console.print(
-            f"[yellow]No SMAIRT project contains {Path.cwd().resolve()}.[/yellow]\n"
-            "Create one with [bold]smairt new[/bold], then run [bold]smairt menu[/bold] "
-            "from that project."
+            f"[yellow]No SMAIRT project contains {escape(str(requested))}.[/yellow]\n"
+            "Create one with [bold]smairt new[/bold], or open an existing one with\n"
+            "[bold]smairt menu /path/to/project[/bold]."
         )
         raise typer.Exit(2) from None
     try:

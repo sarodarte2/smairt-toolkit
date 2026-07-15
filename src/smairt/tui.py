@@ -6,6 +6,7 @@ import os
 import re
 import time
 from contextlib import suppress
+from html import escape as escape_html
 from pathlib import Path
 from typing import Any, TypedDict, TypeVar, cast
 
@@ -175,20 +176,22 @@ def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyCont
     compact = tier == "compact"
     if wide:
         identity = HTML(
-            f"<orange>{SMAIRT_LOGO}</orange>\n\n"
-            f"<cyan>Research workspace</cyan>  <orange>{_SCREEN_TITLE}</orange>\n"
-            f"<muted>{_SCREEN_SUBTITLE}</muted>"
+            f"<orange>{escape_html(SMAIRT_LOGO)}</orange>\n\n"
+            "<cyan>Research workspace</cyan>  "
+            f"<orange>{escape_html(_SCREEN_TITLE)}</orange>\n"
+            f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
         )
     elif compact:
         identity = HTML(
-            f"<orange>◆ SMAIRT</orange>  <cyan>{_SCREEN_TITLE}</cyan>\n"
-            f"<muted>{_SCREEN_SUBTITLE}</muted>"
+            f"<orange>◆ SMAIRT</orange>  <cyan>{escape_html(_SCREEN_TITLE)}</cyan>\n"
+            f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
         )
     else:
-        identity = HTML(f"<orange>◆ SMAIRT · {_SCREEN_TITLE}</orange>")
+        identity = HTML(f"<orange>◆ SMAIRT · {escape_html(_SCREEN_TITLE)}</orange>")
         if _SCREEN_SUBTITLE and height >= 16:
             identity = HTML(
-                f"<orange>◆ SMAIRT · {_SCREEN_TITLE}</orange>\n<muted>{_SCREEN_SUBTITLE}</muted>"
+                f"<orange>◆ SMAIRT · {escape_html(_SCREEN_TITLE)}</orange>\n"
+                f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
             )
     header_height = 9 if wide else 3 if compact else 2
     cards: list[AnyContainer] = []
@@ -218,7 +221,10 @@ def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyCont
                 style="class:brand",
             ),
             *cards,
-            Window(FormattedTextControl(HTML(f"<question>{message}</question>")), height=1),
+            Window(
+                FormattedTextControl(HTML(f"<question>{escape_html(message)}</question>")),
+                height=1,
+            ),
             chooser,
             Window(
                 FormattedTextControl(HTML("<footer>↑↓ move · Enter select · Esc back</footer>")),

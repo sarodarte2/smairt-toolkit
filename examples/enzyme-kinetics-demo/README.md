@@ -1,4 +1,8 @@
-# Verified local enzyme-kinetics demo
+# Automated enzyme-kinetics fixture
+
+Researchers should follow the step-by-step [human-run walkthrough](../../DEMO.md). This directory
+contains its small input files and a maintainer automation used to keep the documented result
+correct. The script is not a substitute for performing and reviewing the SMAIRT process yourself.
 
 This example starts with a clean virtual environment, installs SMAIRT, creates and configures a
 project, validates a schema-8 scientific protocol, runs a local analysis, verifies immutable
