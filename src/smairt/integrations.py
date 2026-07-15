@@ -213,10 +213,31 @@ def zotero_status(root: Path) -> dict[str, object]:
 
 def integration_health(root: Path) -> dict[str, object]:
     """Return offline provider and backend status for the terminal hub."""
+    semantic_name, semantic = _binding_status(root, "semantic_scholar")
     unpaywall_name, unpaywall = _binding_status(root, "unpaywall")
+    semantic_source = (
+        _credential_source(
+            "semantic_scholar",
+            semantic.credential_profile,
+            semantic.environment_variable,
+        )
+        if semantic
+        else "public"
+    )
     return {
         "openalex": openalex_status(root),
         "zotero": zotero_status(root),
+        "semantic_scholar": {
+            "bound_profile": semantic_name,
+            "ready": True,
+            "access_mode": (
+                "authenticated"
+                if semantic_source not in {"missing", "public", "keyring-unavailable", "locked"}
+                else "public"
+            ),
+            "credential_source": semantic_source,
+            "network_accessed": False,
+        },
         "unpaywall": {
             "bound_profile": unpaywall_name,
             "ready": bool(unpaywall and unpaywall.contact_email),

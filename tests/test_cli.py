@@ -6,8 +6,21 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from smairt.cli import app
+from smairt.local_setup import load_user_setup, save_user_setup
 
 runner = CliRunner()
+
+
+def test_bare_splash_keeps_smairt_and_enabled_secondary_mark() -> None:
+    setup = load_user_setup()
+    setup.appearance.mark = "utep"
+    save_user_setup(setup)
+
+    result = runner.invoke(app, [])
+
+    assert result.exit_code == 0
+    assert "_____ __  __" in result.stdout
+    assert "_____/______\\_____" in result.stdout
 
 
 def test_version_and_noninteractive_creation(tmp_path: Path) -> None:

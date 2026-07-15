@@ -63,7 +63,13 @@ from smairt.project import status as project_status
 from smairt.provenance import add_contributor, generate_history, load_events, use_contributor
 from smairt.scaffold import conda_environments, create_project
 from smairt.settings import select_environment, update_project_settings
-from smairt.tui import run_new_project, run_project_menu, run_setup_menu
+from smairt.tui import (
+    SMAIRT_LOGO,
+    _appearance_values,
+    run_new_project,
+    run_project_menu,
+    run_setup_menu,
+)
 from smairt.updates import apply_project_updates, project_update_plan
 from smairt.upgrade import upgrade_project
 from smairt.utils import slugify
@@ -387,14 +393,17 @@ def _show_splash() -> None:
         root = find_project()
     except FileNotFoundError:
         root = None
+    primary, secondary, mark = _appearance_values()
     body = (
-        f"[bold #f28c28]SMAIRT {escape(__version__)}[/]\n"
+        f"[bold {primary}]{SMAIRT_LOGO}[/]\n"
+        + (f"[bold {secondary}]{escape(mark)}[/]\n" if mark else "")
+        + f"[bold {primary}]SMAIRT {escape(__version__)}[/]\n"
         "Scientific Method with AI Research Toolkit\n\n"
         "PNNL Computational Biology contributors · MIT License\n"
         "Distribution: Python package [bold]smairt[/] · "
         "github.com/PNNL-CompBio/smairt-template"
     )
-    console.print(Panel.fit(body, border_style="#f28c28", padding=(1, 2)))
+    console.print(Panel.fit(body, border_style=primary, padding=(1, 2)))
     if root is None:
         console.print(
             "[bold]Start here:[/] smairt new\n"

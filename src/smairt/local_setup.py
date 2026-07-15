@@ -21,15 +21,27 @@ from smairt.models import ComputeMode, DurableModel, ZoteroLibraryType, ZoteroMo
 from smairt.utils import atomic_write, validate_identifier
 
 ProviderName = Literal["openalex", "semantic_scholar", "zotero", "unpaywall"]
-ThemeName = Literal["scientific", "pnnl", "amber", "high-contrast", "monochrome", "custom"]
-LogoName = Literal["smairt", "pnnl-mark", "custom", "none"]
+ThemeName = Literal[
+    "scientific",
+    "pnnl",
+    "utep",
+    "matrix",
+    "dracula",
+    "nord",
+    "solarized",
+    "amber",
+    "high-contrast",
+    "monochrome",
+    "custom",
+]
+MarkName = Literal["none", "pnnl", "utep", "custom"]
 
 
 class AppearanceConfig(DurableModel):
     """Store machine-local terminal presentation preferences only."""
 
     theme: ThemeName = "scientific"
-    logo: LogoName = "smairt"
+    mark: MarkName = "none"
     primary_color: str | None = None
     secondary_color: str | None = None
     motion: Literal["automatic", "off"] = "automatic"
@@ -147,20 +159,23 @@ class SlurmProfile(DurableModel):
 class UserSetupConfig(DurableModel):
     """Store named provider and compute profiles in the user's OS configuration area."""
 
-    schema_version: Literal[4] = 4
+    schema_version: Literal[5] = 5
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
-    profiles: dict[str, ConnectionProfile] = Field(default_factory=dict)
+    profiles: dict[ProviderName, dict[str, ConnectionProfile]] = Field(default_factory=dict)
     compute_profiles: dict[str, SlurmProfile] = Field(default_factory=dict)
     default_compute_profile: str | None = None
 
     @field_validator("profiles")
     @classmethod
     def valid_profile_names(
-        cls, values: dict[str, ConnectionProfile]
-    ) -> dict[str, ConnectionProfile]:
-        """Reject profile labels that could alter file or keyring semantics."""
-        for name in values:
-            validate_identifier(name, label="connection profile")
+        cls, values: dict[ProviderName, dict[str, ConnectionProfile]]
+    ) -> dict[ProviderName, dict[str, ConnectionProfile]]:
+        """Reject unsafe labels and profiles stored beneath the wrong provider."""
+        for provider, profiles in values.items():
+            for name, profile in profiles.items():
+                validate_identifier(name, label="connection profile")
+                if profile.provider != provider:
+                    raise ValueError(f"{name!r} is stored beneath the wrong provider")
         return values
 
     @model_validator(mode="after")
@@ -250,6 +265,25 @@ def load_user_setup() -> UserSetupConfig:
             motion = "off"
         payload["appearance"] = {"motion": motion}
         payload["schema_version"] = 4
+    if isinstance(payload, dict) and int(payload.get("schema_version", 1)) == 4:
+        appearance = payload.get("appearance")
+        if not isinstance(appearance, dict):
+            appearance = {}
+        legacy_logo = appearance.pop("logo", "smairt")
+        appearance["mark"] = {
+            "pnnl-mark": "pnnl",
+            "custom": "custom",
+        }.get(str(legacy_logo), "none")
+        payload["appearance"] = appearance
+        legacy_profiles = payload.get("profiles")
+        grouped: dict[str, dict[str, object]] = {}
+        if isinstance(legacy_profiles, dict):
+            for name, raw_profile in legacy_profiles.items():
+                if isinstance(raw_profile, dict) and raw_profile.get("provider"):
+                    provider = str(raw_profile["provider"])
+                    grouped.setdefault(provider, {})[str(name)] = raw_profile
+        payload["profiles"] = grouped
+        payload["schema_version"] = 5
     return UserSetupConfig.model_validate(payload)
 
 
@@ -282,18 +316,35 @@ def configure_profile(name: str, profile: ConnectionProfile) -> ConnectionProfil
     """Create or replace one named user-local connection profile."""
     validate_identifier(name, label="connection profile")
     config = load_user_setup()
-    config.profiles[name] = profile
+    config.profiles.setdefault(profile.provider, {})[name] = profile
     save_user_setup(config)
     return profile
 
 
-def delete_profile(name: str) -> bool:
+def delete_profile(provider: ProviderName, name: str) -> bool:
     """Delete one local profile without touching its separate keyring secret."""
     config = load_user_setup()
-    existed = config.profiles.pop(name, None) is not None
+    profiles = config.profiles.get(provider, {})
+    existed = profiles.pop(name, None) is not None
+    if not profiles:
+        config.profiles.pop(provider, None)
     if existed:
         save_user_setup(config)
     return existed
+
+
+def provider_profiles(provider: ProviderName) -> dict[str, ConnectionProfile]:
+    """Return the configured profiles for one provider."""
+    return dict(load_user_setup().profiles.get(provider, {}))
+
+
+def iter_profiles() -> list[tuple[ProviderName, str, ConnectionProfile]]:
+    """Flatten provider-scoped profiles for status and setup displays."""
+    return [
+        (provider, name, profile)
+        for provider, profiles in load_user_setup().profiles.items()
+        for name, profile in profiles.items()
+    ]
 
 
 def load_bindings(root: Path) -> LocalIntegrationBindings:
@@ -314,8 +365,8 @@ def save_bindings(root: Path, bindings: LocalIntegrationBindings) -> None:
 
 def bind_profile(root: Path, provider: ProviderName, name: str) -> ConnectionProfile:
     """Bind a configured user profile to one checkout."""
-    profile = load_user_setup().profiles.get(name)
-    if profile is None or profile.provider != provider:
+    profile = load_user_setup().profiles.get(provider, {}).get(name)
+    if profile is None:
         raise ValueError(f"unknown {provider} connection profile: {name}")
     bindings = load_bindings(root)
     bindings.providers[provider] = name
@@ -340,8 +391,8 @@ def resolve_profile(root: Path, provider: ProviderName) -> tuple[str, Connection
             f"{provider.title()} is not connected on this machine; run 'smairt setup' "
             f"then 'smairt integration bind {provider} <profile>'"
         )
-    profile = load_user_setup().profiles.get(name)
-    if profile is None or profile.provider != provider:
+    profile = load_user_setup().profiles.get(provider, {}).get(name)
+    if profile is None:
         raise ValueError(f"local {provider} profile '{name}' is missing or incompatible")
     return name, profile
 
@@ -389,28 +440,33 @@ def discover_zotero_libraries(profile: ConnectionProfile) -> list[tuple[str, str
         raise RuntimeError("Zotero Web is unavailable; no setup value was changed") from exc
 
 
-def test_profile(name: str) -> dict[str, object]:
+def test_profile(provider: ProviderName, name: str) -> dict[str, object]:
     """Contact one configured provider with a bounded, secret-free health request."""
-    profile = load_user_setup().profiles.get(name)
+    profile = load_user_setup().profiles.get(provider, {}).get(name)
     if profile is None:
-        raise ValueError(f"unknown connection profile: {name}")
+        raise ValueError(f"unknown {provider} connection profile: {name}")
     try:
         import httpx
 
         if profile.provider in {"openalex", "semantic_scholar"}:
-            from smairt.credentials import resolve_credential
+            from smairt.credentials import CredentialError, resolve_credential
 
-            key, _ = resolve_credential(
-                profile.provider,
-                profile.credential_profile,
-                profile.environment_variable
-                or (
-                    "OPENALEX_API_KEY"
-                    if profile.provider == "openalex"
-                    else "SEMANTIC_SCHOLAR_API_KEY"
-                ),
-            )
-            if not key:
+            try:
+                key, _ = resolve_credential(
+                    profile.provider,
+                    profile.credential_profile,
+                    profile.environment_variable
+                    or (
+                        "OPENALEX_API_KEY"
+                        if profile.provider == "openalex"
+                        else "SEMANTIC_SCHOLAR_API_KEY"
+                    ),
+                )
+            except CredentialError:
+                if profile.provider == "openalex":
+                    raise
+                key = None
+            if profile.provider == "openalex" and not key:
                 raise ValueError("OpenAlex API key is missing")
             response = httpx.get(
                 (
@@ -423,7 +479,7 @@ def test_profile(name: str) -> dict[str, object]:
                     if profile.provider == "openalex"
                     else {"query": "SMAIRT", "limit": 1, "fields": "paperId"}
                 ),
-                headers=({} if profile.provider == "openalex" else {"x-api-key": key}),
+                headers=({} if profile.provider == "openalex" or not key else {"x-api-key": key}),
                 timeout=15,
             )
             if response.status_code in {401, 403}:
@@ -437,6 +493,7 @@ def test_profile(name: str) -> dict[str, object]:
                 "profile": name,
                 "remaining": payload.get("remaining_usd")
                 or response.headers.get("X-RateLimit-Remaining"),
+                "access_mode": "authenticated" if key else "public",
                 "network_accessed": True,
             }
         if profile.provider == "unpaywall":

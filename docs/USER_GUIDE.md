@@ -38,6 +38,12 @@ Use `smairt harness status --json` to distinguish installed adapter files from t
 trust, and hook settings that remain controlled by each harness. MCP access is metadata-only and
 must be enabled explicitly for the active harness.
 
+Machine setup and project connection are deliberately separate. `smairt setup` stores local
+provider profiles; **Tools & compute → Integrations** chooses which profiles this checkout uses.
+Zotero searches your library, OpenAlex provides broad discovery and citation graphs, Semantic
+Scholar provides public search plus citation trails and recommendations, and Unpaywall resolves
+open-access locations. Each provider can safely use a profile named `default`.
+
 Generated projects expose six focused workflows: next-step orientation, literature, design,
 adversarial challenge, interpretation, and paper drafting. Invocation syntax differs by harness;
 run `smairt harness info <name>` or read the [harness chooser](HARNESSES.md). Adversarial review

@@ -18,11 +18,16 @@ from smairt.diagnostics import doctor
 from smairt.hpc import load_job, submit_slurm
 from smairt.literature import SemanticScholarProvider
 from smairt.local_setup import (
+    ConnectionProfile,
     SlurmProfile,
+    configure_profile,
     configure_slurm_profile,
     load_custom_logo,
     load_user_setup,
     save_custom_logo,
+)
+from smairt.local_setup import (
+    test_profile as check_profile,
 )
 from smairt.migrations import migration_plan
 from smairt.models import ComputeMode, ComputeResources, DataClassification, Decision, SmairtConfig
@@ -107,9 +112,77 @@ def test_user_setup_v3_migrates_appearance_without_project_state(tmp_path: Path)
 
     config = load_user_setup()
 
-    assert config.schema_version == 4
+    assert config.schema_version == 5
     assert config.appearance.motion == "off"
     assert config.appearance.theme == "scientific"
+    assert config.appearance.mark == "none"
+
+
+def test_user_setup_v4_migrates_logo_and_provider_scoped_profiles(tmp_path: Path) -> None:
+    setup = tmp_path / "user-setup/setup.yaml"
+    setup.parent.mkdir(parents=True)
+    setup.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 4,
+                "appearance": {"theme": "pnnl", "logo": "pnnl-mark"},
+                "profiles": {
+                    "default": {
+                        "provider": "zotero",
+                        "credential_profile": "default",
+                        "mode": "local",
+                    }
+                },
+            },
+            sort_keys=False,
+        )
+    )
+
+    config = load_user_setup()
+
+    assert config.schema_version == 5
+    assert config.appearance.mark == "pnnl"
+    assert config.profiles["zotero"]["default"].mode.value == "local"
+
+
+def test_each_provider_can_own_a_default_profile(tmp_path: Path) -> None:
+    configure_profile("default", ConnectionProfile(provider="zotero", mode="local"))
+    configure_profile("default", ConnectionProfile(provider="openalex"))
+    configure_profile("default", ConnectionProfile(provider="semantic_scholar"))
+    configure_profile(
+        "default",
+        ConnectionProfile(provider="unpaywall", contact_email="researcher@example.org"),
+    )
+
+    assert set(load_user_setup().profiles) == {
+        "zotero",
+        "openalex",
+        "semantic_scholar",
+        "unpaywall",
+    }
+
+
+def test_semantic_scholar_profile_test_supports_public_access(monkeypatch) -> None:
+    configure_profile("default", ConnectionProfile(provider="semantic_scholar"))
+    monkeypatch.setattr(
+        "smairt.credentials.resolve_credential", lambda *_args, **_kwargs: (None, None)
+    )
+
+    class Response:
+        def __init__(self) -> None:
+            self.status_code = 200
+            self.headers: dict[str, str] = {}
+
+        @staticmethod
+        def json() -> dict[str, object]:
+            return {"data": []}
+
+    monkeypatch.setattr(httpx, "get", lambda *_args, **_kwargs: Response())
+
+    result = check_profile("semantic_scholar", "default")
+
+    assert result["ok"] is True
+    assert result["access_mode"] == "public"
 
 
 def test_custom_ascii_logo_rejects_terminal_injection(tmp_path: Path) -> None:

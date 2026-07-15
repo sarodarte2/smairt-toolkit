@@ -14,8 +14,11 @@ directory. Then, inside a project, use Project setup → Integrations or:
 smairt setup openalex configure default
 smairt setup semantic-scholar configure default
 smairt setup zotero configure default
+smairt setup unpaywall configure default --email you@example.org
 smairt integration bind openalex default
+smairt integration bind semantic_scholar default
 smairt integration bind zotero default
+smairt integration bind unpaywall default
 smairt integration status
 smairt integration test zotero
 ```
@@ -24,6 +27,8 @@ The shared `smairt.yaml` records only whether a provider is enabled and whether 
 agent access was explicitly allowed. Account IDs, Zotero library IDs, profile names, and keys are
 not written there. A checkout-local binding lives under `.smairt/local/`, which is ignored by Git.
 Normal status and test output never prints secret values or account/library identifiers.
+Each provider owns its own `default` profile, so setting up another provider cannot overwrite an
+existing connection.
 
 ## DOI metadata
 
@@ -88,12 +93,21 @@ represent them as read-only.
 
 ## Literature discovery and access
 
-OpenAlex is the default bounded discovery provider. Semantic Scholar can search, traverse
-references or citations, and recommend related papers. Its API key is optional for public calls and,
-when configured, is stored in the OS keyring. `--provider all` merges and deduplicates search
-results. Every candidate remains provisional: DOI-bearing candidates must be imported through
-Crossref, with DataCite used only when Crossref returns a typed not-found response. A timeout, rate
-limit, or server failure never triggers the fallback.
+The project menu exposes these providers by what they do:
+
+| Provider | Use it for | Setup requirement |
+| --- | --- | --- |
+| Zotero | Search or browse your own library and import metadata; local mode can copy a chosen PDF | Local app needs no plugin or key; Web mode needs a read-only key |
+| OpenAlex | Broad scholarly search and references/cited-by graph traversal | Free API key |
+| Semantic Scholar | Relevance-ranked search, references/citations, and DOI-seeded recommendations | Public calls work immediately; an API key is optional |
+| Unpaywall | Find a lawful open-access location and explicitly download a validated PDF | Contact email stored only on this machine |
+
+When OpenAlex is connected, the TUI defaults paper search to **Both** and deduplicates the two
+indexes. Otherwise it uses public Semantic Scholar. Results remain provisional and selectable:
+you may inspect all results, but only DOI-bearing candidates can be imported automatically. An
+import goes back through Crossref, with DataCite used only when Crossref returns a typed not-found
+response. A timeout, rate limit, or server failure never triggers the fallback. Provider abstracts,
+citation counts, and landing URLs are discovery context, not verified project metadata.
 
 Unpaywall requires a contact email stored only in a user-local profile. It resolves access rather
 than bibliographic truth. Before any download SMAIRT shows the domain, license, version, and access

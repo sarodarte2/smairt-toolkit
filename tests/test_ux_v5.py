@@ -118,7 +118,7 @@ def test_schema_v5_keeps_connection_identifiers_out_of_shared_files(tmp_path: Pa
     assert "private-library-id" not in shared
     assert "credential" not in yaml.safe_load(shared)["integrations"]["zotero"]
     assert load_bindings(root).providers["zotero"] == "lab"
-    assert load_user_setup().profiles["lab"].library_id == "private-library-id"
+    assert load_user_setup().profiles["zotero"]["lab"].library_id == "private-library-id"
     assert is_prohibited(".smairt/local/integrations.yaml")
     assert os.stat(setup_config_path()).st_mode & 0o777 == 0o600
 
@@ -132,7 +132,7 @@ def test_guided_v4_to_v5_migration_moves_connection_fields_local(tmp_path: Path)
     assert config.schema_version == 5
     shared = (root / "smairt.yaml").read_text()
     assert "private-library-id" not in shared and "legacy-zotero" not in shared
-    assert load_user_setup().profiles["legacy-zotero"].library_id == "private-library-id"
+    assert load_user_setup().profiles["zotero"]["legacy-zotero"].library_id == "private-library-id"
     assert load_bindings(root).providers == {
         "openalex": "legacy-openalex",
         "zotero": "legacy-zotero",

@@ -22,8 +22,8 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import Box, Frame, RadioList
-from rich.columns import Columns
 from rich.console import Console
+from rich.markup import escape as escape_rich
 from rich.panel import Panel
 from rich.table import Table
 
@@ -38,22 +38,31 @@ from smairt.integrations import (
     configure_zotero,
     integration_health,
 )
-from smairt.literature import literature_access, literature_related, literature_search
+from smairt.literature import (
+    literature_access,
+    literature_recommend,
+    literature_related,
+    literature_search,
+)
 from smairt.local_setup import (
     AppearanceConfig,
     ConnectionProfile,
     ProviderName,
     SlurmProfile,
+    bind_profile,
     configure_profile,
     configure_slurm_profile,
     delete_profile,
     discover_zotero_libraries,
+    iter_profiles,
     load_bindings,
     load_custom_logo,
     load_user_setup,
+    provider_profiles,
     save_custom_logo,
     save_user_setup,
     test_profile,
+    unbind_profile,
 )
 from smairt.migrations import apply_migration, migration_plan
 from smairt.models import (
@@ -61,6 +70,7 @@ from smairt.models import (
     DataClassification,
     EnvironmentMode,
     HarnessName,
+    LiteratureCandidate,
     ProjectLicense,
     SafetyMode,
     SmairtConfig,
@@ -95,22 +105,36 @@ SMAIRT_LOGO = r"""  _____ __  __    _    ___ ____ _____
  \___ \| |\/| | / _ \  | || |_) || |
   ___) | |  | |/ ___ \ | ||  _ < | |
  |____/|_|  |_/_/   \_\___|_| \_\|_|"""
-PNNL_MARK = r"""                         /
-            ____-------
-   ____----/  /  ____
-      \   \  /--
-       \___\/"""
-THEMES: dict[str, tuple[str, str]] = {
-    "scientific": (ORANGE, CYAN),
-    "pnnl": ("#d97706", "#94a3b8"),
-    "amber": ("#ffb000", "#ffd166"),
-    "high-contrast": ("#ffff00", "#00ffff"),
-    "monochrome": ("#ffffff", "#a3a3a3"),
+PNNL_MARK = r"""                               /
+                    ______-----/
+   ________--------/  /  _____/
+      \____       /  /--/
+           \_____/  /
+              \ /__/
+               V"""
+UTEP_MARK = r"""        __/\__
+  _____/______\_____
+      \___/|\___/
+          ||
+          ||
+         / /"""
+THEMES: dict[str, tuple[str, str, str, str, str, str, str]] = {
+    "scientific": (ORANGE, CYAN, "#f1f1f1", "#8b909c", "#5fd38d", "#ffd166", "#ff6b6b"),
+    "pnnl": ("#d97706", "#94a3b8", "#f8fafc", "#94a3b8", "#65a30d", "#f59e0b", "#dc2626"),
+    "utep": ("#ff8200", "#4f83cc", "#f8fafc", "#9ca3af", "#22c55e", "#f59e0b", "#ef4444"),
+    "matrix": ("#00ff41", "#008f11", "#d7ffd9", "#67a66f", "#00ff41", "#d7ff00", "#ff5f56"),
+    "dracula": ("#ff79c6", "#8be9fd", "#f8f8f2", "#6272a4", "#50fa7b", "#f1fa8c", "#ff5555"),
+    "nord": ("#88c0d0", "#81a1c1", "#eceff4", "#7b88a1", "#a3be8c", "#ebcb8b", "#bf616a"),
+    "solarized": ("#b58900", "#2aa198", "#eee8d5", "#839496", "#859900", "#cb4b16", "#dc322f"),
+    "amber": ("#ffb000", "#ffd166", "#fff3c4", "#b89b62", "#9acd32", "#ffd166", "#ff6b35"),
+    "high-contrast": ("#ffff00", "#00ffff", "#ffffff", "#c0c0c0", "#00ff00", "#ffff00", "#ff4040"),
+    "monochrome": ("#ffffff", "#d0d0d0", "#ffffff", "#a3a3a3", "#ffffff", "#d0d0d0", "#ffffff"),
 }
 _LAUNCH_ANIMATED = False
 _SCREEN_TITLE = "SMAIRT"
 _SCREEN_SUBTITLE = ""
 _SCREEN_CARDS: tuple[tuple[str, str], ...] = ()
+_APPEARANCE_PREVIEW: AppearanceConfig | None = None
 FIELD_SUGGESTIONS = (
     "Machine learning, Data science, Computational biology, Physics, Chemistry, Engineering"
 )
@@ -157,7 +181,7 @@ class _WrappingRadioList(RadioList[T]):
         @bindings.add("k", eager=True)
         def move_up(event: KeyPressEvent) -> None:
             del event
-            action_count = len(self.values) - 1
+            action_count = len(self.values)
             self._selected_index = (self._selected_index - 1) % action_count
             self.current_value = self.values[self._selected_index][0]
 
@@ -165,7 +189,7 @@ class _WrappingRadioList(RadioList[T]):
         @bindings.add("j", eager=True)
         def move_down(event: KeyPressEvent) -> None:
             del event
-            action_count = len(self.values) - 1
+            action_count = len(self.values)
             self._selected_index = (self._selected_index + 1) % action_count
             self.current_value = self.values[self._selected_index][0]
 
@@ -197,29 +221,47 @@ def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyCont
     size = get_app().output.get_size()
     width, height = size.columns, size.rows
     tier, max_width = _responsive_layout(width, height)
-    _primary, _secondary, logo = _appearance_values()
+    appearance = _APPEARANCE_PREVIEW or load_user_setup().appearance
+    _primary, _secondary, mark = _appearance_values(appearance)
+    mark_label = {"pnnl": "PNNL", "utep": "UTEP", "custom": "CUSTOM"}.get(appearance.mark, "")
     wide = tier == "wide"
     compact = tier == "compact"
     if wide:
+        wordmark_lines = SMAIRT_LOGO.splitlines()
+        mark_lines = mark.splitlines() if mark else []
+        brand_lines = []
+        for index in range(max(len(wordmark_lines), len(mark_lines))):
+            wordmark_line = wordmark_lines[index] if index < len(wordmark_lines) else ""
+            mark_line = mark_lines[index] if index < len(mark_lines) else ""
+            brand_lines.append(
+                f"<primary>{escape_html(wordmark_line)}</primary>"
+                + (f"    <cyan>{escape_html(mark_line)}</cyan>" if mark_line else "")
+            )
         identity = HTML(
-            f"<primary>{escape_html(logo)}</primary>\n\n"
+            "\n".join(brand_lines) + "\n"
             "<cyan>Research workspace</cyan>  "
             f"<primary>{escape_html(_SCREEN_TITLE)}</primary>\n"
             f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
         )
     elif compact:
         identity = HTML(
-            f"<primary>◆ SMAIRT</primary>  <cyan>{escape_html(_SCREEN_TITLE)}</cyan>\n"
+            "<primary>◆ SMAIRT</primary>  "
+            + (f"<cyan>[{mark_label}]</cyan>  " if mark_label else "")
+            + f"<cyan>{escape_html(_SCREEN_TITLE)}</cyan>\n"
             f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
         )
     else:
-        identity = HTML(f"<primary>◆ SMAIRT · {escape_html(_SCREEN_TITLE)}</primary>")
+        badge = f" [{mark_label}]" if mark_label else ""
+        identity = HTML(f"<primary>◆ SMAIRT{badge} · {escape_html(_SCREEN_TITLE)}</primary>")
         if _SCREEN_SUBTITLE and height >= 16:
             identity = HTML(
-                f"<primary>◆ SMAIRT · {escape_html(_SCREEN_TITLE)}</primary>\n"
+                f"<primary>◆ SMAIRT{badge} · {escape_html(_SCREEN_TITLE)}</primary>\n"
                 f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
             )
-    header_height = 9 if wide else 3 if compact else 2
+    if wide:
+        header_height = max(8, max(len(SMAIRT_LOGO.splitlines()), len(mark.splitlines())) + 2)
+    else:
+        header_height = 3 if compact else 2
     cards: list[AnyContainer] = []
     if _SCREEN_CARDS and height >= 18:
         card_windows = [
@@ -255,7 +297,10 @@ def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyCont
             chooser,
             Window(
                 FormattedTextControl(
-                    HTML("<footer>↑↓ move · Enter select · ←/Esc back · Ctrl-C exit</footer>")
+                    HTML(
+                        "<footer>↑↓ move · Enter select · choose Back or ←/Esc · "
+                        "Ctrl-C exit</footer>"
+                    )
                 ),
                 height=1,
             ),
@@ -281,22 +326,34 @@ def _responsive_layout(width: int, height: int) -> tuple[str, int]:
 
 
 def _appearance_values(config: AppearanceConfig | None = None) -> tuple[str, str, str]:
-    """Resolve accessible accents and a safe logo for the current machine."""
-    appearance = config or load_user_setup().appearance
+    """Resolve accessible accents and one optional safe secondary mark."""
+    appearance = config or _APPEARANCE_PREVIEW or load_user_setup().appearance
     if os.environ.get("NO_COLOR"):
-        primary, secondary = THEMES["monochrome"]
+        primary, secondary, *_rest = THEMES["monochrome"]
     elif appearance.theme == "custom":
         primary = appearance.primary_color or ORANGE
         secondary = appearance.secondary_color or CYAN
     else:
-        primary, secondary = THEMES[appearance.theme]
-    logo = {
-        "smairt": SMAIRT_LOGO,
-        "pnnl-mark": PNNL_MARK,
-        "none": "SMAIRT",
-        "custom": load_custom_logo() or "SMAIRT",
-    }[appearance.logo]
-    return primary, secondary, logo
+        primary, secondary, *_rest = THEMES[appearance.theme]
+    mark = {
+        "pnnl": PNNL_MARK,
+        "utep": UTEP_MARK,
+        "none": "",
+        "custom": load_custom_logo() or "",
+    }[appearance.mark]
+    return primary, secondary, mark
+
+
+def _theme_values(config: AppearanceConfig | None = None) -> tuple[str, ...]:
+    """Return semantic terminal colors while respecting custom and no-color modes."""
+    appearance = config or _APPEARANCE_PREVIEW or load_user_setup().appearance
+    if os.environ.get("NO_COLOR"):
+        return THEMES["monochrome"]
+    if appearance.theme == "custom":
+        primary = appearance.primary_color or ORANGE
+        secondary = appearance.secondary_color or CYAN
+        return (primary, secondary, "#f1f1f1", "#8b909c", "#5fd38d", "#ffd166", "#ff6b6b")
+    return THEMES[appearance.theme]
 
 
 def _select(message: str, options: list[tuple[T, str]], default: T | None = None) -> T:
@@ -323,7 +380,7 @@ def _select(message: str, options: list[tuple[T, str]], default: T | None = None
         else:
             event.app.exit(result=value)
 
-    primary, secondary, _logo = _appearance_values()
+    primary, secondary, text, muted, success, warning, error = _theme_values()
 
     application: Application[Any] = Application(
         layout=Layout(DynamicContainer(lambda: _responsive_menu_container(message, chooser))),
@@ -333,14 +390,17 @@ def _select(message: str, options: list[tuple[T, str]], default: T | None = None
                 "primary": primary,
                 "orange": primary,
                 "cyan": secondary,
-                "muted": "#8b909c",
-                "question": "bold #f1f1f1",
-                "footer": "#8b909c",
+                "muted": muted,
+                "question": f"bold {text}",
+                "footer": muted,
                 "radio-selected": f"bold {primary}",
                 "radio-checked": secondary,
                 "frame.label": secondary,
-                "brand": "#f1f1f1",
-                "card": "#f1f1f1",
+                "brand": text,
+                "card": text,
+                "success": success,
+                "warning": warning,
+                "error": error,
             }
         ),
         full_screen=False,
@@ -434,13 +494,22 @@ def _header(title: str, subtitle: str = "") -> None:
     # Redirected output and test captures cannot run the interactive renderer;
     # retain a concise identity line for logs and accessibility tooling.
     if hasattr(console.file, "getvalue"):
+        primary, secondary, mark = _appearance_values()
         if width >= 120 and height >= 28:
             console.print(
-                f"[bold {ORANGE}]{SMAIRT_LOGO}[/]\n[bold {CYAN}]Scientific Method[/]\n"
+                f"[bold {primary}]{SMAIRT_LOGO}[/]"
+                + (f"\n[bold {secondary}]{escape_rich(mark)}[/]" if mark else "")
+                + f"\n[bold {secondary}]Scientific Method[/]\n"
                 f"[bold]{title}[/] · {subtitle}"
             )
         else:
-            identity = f"[bold {ORANGE}]◆ SMAIRT · {title}[/]"
+            mark_label = {
+                "pnnl": "PNNL",
+                "utep": "UTEP",
+                "custom": "CUSTOM",
+            }.get((_APPEARANCE_PREVIEW or load_user_setup().appearance).mark)
+            badge = f" [{mark_label}]" if mark_label else ""
+            identity = f"[bold {primary}]◆ SMAIRT{badge} · {title}[/]"
             console.print(identity + (f"\n{subtitle}" if subtitle else ""))
 
 
@@ -891,24 +960,22 @@ def _integrations_menu(root: Path) -> None:
             "Connections are local to this machine; agent access is a separate project permission",
         )
         if health:
-            zotero_health = cast(dict[str, object], health["zotero"])
-            openalex_health = cast(dict[str, object], health["openalex"])
-            console.print(
-                Columns(
-                    [
-                        Panel(
-                            "Ready" if zotero_health.get("ready") else "Not connected",
-                            title="Zotero",
-                            border_style=ORANGE,
+            _cards(
+                *(
+                    (
+                        label,
+                        (
+                            "Ready"
+                            if cast(dict[str, object], health[provider]).get("ready")
+                            else "Not connected"
                         ),
-                        Panel(
-                            "Ready" if openalex_health.get("ready") else "Not connected",
-                            title="OpenAlex",
-                            border_style=ORANGE,
-                        ),
-                    ],
-                    equal=True,
-                    expand=True,
+                    )
+                    for provider, label in (
+                        ("zotero", "Zotero"),
+                        ("openalex", "OpenAlex"),
+                        ("semantic_scholar", "Semantic Scholar"),
+                        ("unpaywall", "Unpaywall"),
+                    )
                 )
             )
         try:
@@ -918,6 +985,11 @@ def _integrations_menu(root: Path) -> None:
                     ("status", "Connection summary · no network request"),
                     ("zotero", "Connect this project to a local Zotero profile"),
                     ("openalex", "Connect this project to a local OpenAlex profile"),
+                    (
+                        "semantic_scholar",
+                        "Connect an optional Semantic Scholar key profile",
+                    ),
+                    ("unpaywall", "Connect an Unpaywall contact profile"),
                     ("test", "Test a connected provider now"),
                     ("agent", "Agent metadata access · never PDFs or write access"),
                     ("disconnect", "Disconnect a provider on this machine"),
@@ -935,14 +1007,10 @@ def _integrations_menu(root: Path) -> None:
                     if _yes_no("Apply this migration?", True):
                         apply_migration(root, config.active_contributor)
                 continue
-            profiles = load_user_setup().profiles
-            if action in {"zotero", "openalex"}:
-                provider = action
-                choices = [
-                    (name, name)
-                    for name, profile_value in profiles.items()
-                    if profile_value.provider == provider
-                ]
+            if action in {"zotero", "openalex", "semantic_scholar", "unpaywall"}:
+                provider = cast(ProviderName, action)
+                profiles = provider_profiles(provider)
+                choices = [(name, name) for name in profiles]
                 if not choices:
                     console.print(
                         f"No local {provider.title()} profile exists. Run [bold]smairt setup[/] "
@@ -960,7 +1028,7 @@ def _integrations_menu(root: Path) -> None:
                         environment_variable=profile_value.environment_variable
                         or "OPENALEX_API_KEY",
                     )
-                else:
+                elif provider == "zotero":
                     configure_zotero(
                         root,
                         mode=profile_value.mode or ZoteroMode.LOCAL,
@@ -971,6 +1039,8 @@ def _integrations_menu(root: Path) -> None:
                         mcp_access_enabled=config.integrations.zotero.mcp_access_enabled,
                         confirm_agent_access=False,
                     )
+                else:
+                    bind_profile(root, provider, selected)
                 console.print(
                     f"[green]{provider.title()} connected for this checkout.[/] "
                     "Connection IDs remain outside the project repository."
@@ -979,28 +1049,42 @@ def _integrations_menu(root: Path) -> None:
                 _render_integration_health(health)
             elif action == "test":
                 provider = _select(
-                    "Connected provider", [("zotero", "Zotero"), ("openalex", "OpenAlex")]
+                    "Connected provider",
+                    [
+                        ("zotero", "Zotero"),
+                        ("openalex", "OpenAlex"),
+                        ("semantic_scholar", "Semantic Scholar"),
+                        ("unpaywall", "Unpaywall"),
+                    ],
                 )
-                provider_name = cast(ProviderName, provider)
+                provider_name = provider
                 binding = load_bindings(root).providers.get(provider_name)
                 if not binding:
                     raise ValueError(f"{provider.title()} is not connected on this machine")
-                console.print(_connection_receipt(test_profile(binding)))
+                console.print(_connection_receipt(test_profile(provider_name, binding)))
             elif action == "disconnect":
-                provider = _select("Provider", [("zotero", "Zotero"), ("openalex", "OpenAlex")])
+                provider = _select(
+                    "Provider",
+                    [
+                        ("zotero", "Zotero"),
+                        ("openalex", "OpenAlex"),
+                        ("semantic_scholar", "Semantic Scholar"),
+                        ("unpaywall", "Unpaywall"),
+                    ],
+                )
                 if provider == "openalex":
-                    default_profile = profiles.get("default")
+                    default_profile = provider_profiles("openalex").get("default")
                     configure_openalex(
                         root,
                         enabled=False,
                         profile="default",
                         environment_variable=(
                             (default_profile.environment_variable or "OPENALEX_API_KEY")
-                            if default_profile and default_profile.provider == "openalex"
+                            if default_profile
                             else "OPENALEX_API_KEY"
                         ),
                     )
-                else:
+                elif provider == "zotero":
                     configure_zotero(
                         root,
                         mode=ZoteroMode.DISABLED,
@@ -1009,6 +1093,8 @@ def _integrations_menu(root: Path) -> None:
                         profile="default",
                         mcp_access_enabled=False,
                     )
+                else:
+                    unbind_profile(root, provider)
                 console.print(f"[green]{provider.title()} disconnected for this checkout.[/green]")
             else:
                 zotero_status = cast(dict[str, object], integration_health(root)["zotero"])
@@ -1017,7 +1103,7 @@ def _integrations_menu(root: Path) -> None:
                         "connect a Zotero profile before enabling agent metadata access"
                     )
                 profile_name = str(zotero_status["bound_profile"])
-                profile_value = profiles[profile_name]
+                profile_value = provider_profiles("zotero")[profile_name]
                 enable = _yes_no(
                     "Allow the configured assistant to read bounded Zotero metadata only?",
                     not config.integrations.zotero.mcp_access_enabled,
@@ -1055,11 +1141,12 @@ def _integrations_menu(root: Path) -> None:
 
 def _render_integration_health(payload: dict[str, object]) -> None:
     """Explain local connection state without dumping internal dictionaries."""
-    for provider in ("zotero", "openalex"):
+    for provider in ("zotero", "openalex", "semantic_scholar", "unpaywall"):
         status_payload = cast(dict[str, object], payload[provider])
         ready = bool(status_payload.get("ready"))
         console.print(
-            f"{'[green]✓[/]' if ready else '[yellow]![/]'} {provider.title()}: "
+            f"{'[green]✓[/]' if ready else '[yellow]![/]'} "
+            f"{provider.replace('_', ' ').title()}: "
             f"{'ready' if ready else 'not connected on this machine'}"
         )
         if status_payload.get("bound_profile"):
@@ -1069,6 +1156,8 @@ def _render_integration_health(payload: dict[str, object]) -> None:
                 "  Agent access: "
                 + ("metadata only" if status_payload.get("mcp_access_enabled") else "disabled")
             )
+        if provider == "semantic_scholar":
+            console.print(f"  Access: {status_payload.get('access_mode', 'public')}")
 
 
 def _zotero_item_label(raw: dict[str, Any]) -> str:
@@ -1169,6 +1258,85 @@ def _choose_zotero_attachment(provider: ZoteroProvider, item_key: str) -> str:
     )
 
 
+def _literature_provider(root: Path, *, allow_both: bool) -> str:
+    """Choose a discovery index and explain when setup is actually required."""
+    openalex_ready = bool(
+        cast(dict[str, object], integration_health(root)["openalex"]).get("ready")
+    )
+    choices: list[tuple[str, str]] = [
+        (
+            "semantic-scholar",
+            "Semantic Scholar · relevance search, citation trails, and recommendations",
+        )
+    ]
+    if openalex_ready:
+        choices.insert(0, ("openalex", "OpenAlex · broad coverage and citation graph"))
+        if allow_both:
+            choices.insert(0, ("all", "Both · merge and deduplicate both indexes"))
+    else:
+        console.print(
+            "[dim]Semantic Scholar public discovery needs no setup. Connect OpenAlex under "
+            "Tools & compute → Integrations to search both indexes.[/dim]"
+        )
+    return _select("Discovery provider", choices, "all" if openalex_ready and allow_both else None)
+
+
+def _browse_literature_candidates(root: Path, candidates: list[LiteratureCandidate]) -> None:
+    """Inspect provisional results and import DOI-backed choices through authoritative metadata."""
+    if not candidates:
+        console.print("No matching literature candidates were returned.")
+        return
+    while True:
+        selected = _select(
+            "Provisional result",
+            [
+                (
+                    index,
+                    f"{item.title} · {(item.authors or ['Unknown author'])[0]} · "
+                    f"{item.year or 'n.d.'} · {item.provider.replace('_', ' ').title()}",
+                )
+                for index, item in enumerate(candidates)
+            ]
+            + [("back", "Back")],
+        )
+        if selected == "back":
+            return
+        item = candidates[cast(int, selected)]
+        console.print(
+            Panel(
+                f"[bold]{item.title}[/]\n"
+                f"Authors: {', '.join(item.authors) or 'not reported'}\n"
+                f"Year: {item.year or 'n.d.'} · Venue: {item.venue or 'not reported'}\n"
+                f"DOI: {item.doi or 'not available'} · Citations: "
+                f"{item.cited_by_count if item.cited_by_count is not None else 'not reported'}\n"
+                f"Abstract: {'available' if item.abstract_available else 'not reported'}\n"
+                f"Provider URL: {item.url or 'not reported'}",
+                title=f"{item.provider.replace('_', ' ').title()} · provisional",
+                border_style=ORANGE,
+            )
+        )
+        if not item.doi:
+            _select(
+                "This result has no DOI and cannot be imported automatically",
+                [("back", "Back to results")],
+            )
+            continue
+        action = _select(
+            "Candidate action",
+            [
+                ("import", "Import DOI through Crossref/DataCite"),
+                ("back", "Back to results"),
+            ],
+        )
+        if action == "import" and _yes_no("Import authoritative metadata for this DOI?", False):
+            record = add_doi_reference(
+                root,
+                item.doi,
+                confirm_remote=_yes_no("Send this DOI in a metadata request?", True),
+            )
+            _reference_receipt(root, [record], "Authoritative DOI metadata imported; no PDF added")
+
+
 def _references_menu(root: Path) -> None:
     """Separate metadata, documents, and human verification with visible receipts."""
     while True:
@@ -1247,9 +1415,10 @@ def _references_menu(root: Path) -> None:
                 discovery = _select(
                     "Discover literature",
                     [
-                        ("search", "Search OpenAlex candidates"),
+                        ("search", "Search papers · OpenAlex, Semantic Scholar, or both"),
                         ("references", "Works referenced by an indexed DOI"),
                         ("cited-by", "Works citing an indexed DOI"),
+                        ("recommend", "Recommended papers from an indexed DOI"),
                         ("access", "Find an open-access copy"),
                         ("back", "Back"),
                     ],
@@ -1257,11 +1426,11 @@ def _references_menu(root: Path) -> None:
                 if discovery == "back":
                     continue
                 if discovery == "search":
-                    candidates = literature_search(root, _text("Search query"), 20)
-                    for item in candidates:
-                        console.print(
-                            f"• {item.title} · {item.year or 'n.d.'} · {item.doi or 'no DOI'}"
-                        )
+                    discovery_provider = _literature_provider(root, allow_both=True)
+                    candidates = literature_search(
+                        root, _text("Search query"), 20, provider=discovery_provider
+                    )
+                    _browse_literature_candidates(root, candidates)
                 else:
                     eligible = [record for record in records if record.doi]
                     if not eligible:
@@ -1274,11 +1443,15 @@ def _references_menu(root: Path) -> None:
                         ],
                     )
                     if discovery in {"references", "cited-by"}:
-                        candidates = literature_related(root, identifier, discovery, 20)
-                        for item in candidates:
-                            console.print(
-                                f"• {item.title} · {item.year or 'n.d.'} · {item.doi or 'no DOI'}"
-                            )
+                        discovery_provider = _literature_provider(root, allow_both=False)
+                        candidates = literature_related(
+                            root, identifier, discovery, 20, provider=discovery_provider
+                        )
+                        _browse_literature_candidates(root, candidates)
+                    elif discovery == "recommend":
+                        _browse_literature_candidates(
+                            root, literature_recommend(root, identifier, 20)
+                        )
                     else:
                         access_preview = literature_access(root, identifier)
                         location = cast(dict[str, object], access_preview["location"])
@@ -1734,7 +1907,7 @@ def run_project_menu(root: Path) -> None:
         ready_connections = (
             sum(
                 bool(cast(dict[str, object], integration[name]).get("ready"))
-                for name in ("zotero", "openalex")
+                for name in ("zotero", "openalex", "semantic_scholar", "unpaywall")
             )
             if integration
             else 0
@@ -1793,14 +1966,14 @@ def run_setup_menu() -> None:
     while True:
         health = setup_doctor(check_github=False)
         setup = load_user_setup()
-        profiles = setup.profiles
+        profile_count = sum(len(profiles) for profiles in setup.profiles.values())
         backend = keyring_health()
         _header("SMAIRT Setup", "User-wide settings · secrets never enter project files")
         _cards(
             ("Installation", "Ready" if health["ok"] else "Needs attention"),
-            ("Literature", f"{len(profiles)} connection(s)"),
+            ("Literature", f"{profile_count} connection(s)"),
             ("Compute", f"{len(setup.compute_profiles)} profile(s)"),
-            ("Appearance", f"{setup.appearance.theme} · {setup.appearance.logo}"),
+            ("Appearance", f"{setup.appearance.theme} · {setup.appearance.mark}"),
         )
         try:
             action = _select(
@@ -1809,7 +1982,7 @@ def run_setup_menu() -> None:
                     ("installation", "Installation & version · checks and exact solutions"),
                     ("literature", "Literature connections · provider, key, test, remove"),
                     ("compute", "Compute connections · optional Slurm profiles"),
-                    ("appearance", "Appearance · theme, logo, accents, and motion"),
+                    ("appearance", "Appearance · theme, secondary mark, and motion"),
                     ("exit", "Return to shell"),
                 ],
             )
@@ -1835,17 +2008,20 @@ def run_setup_menu() -> None:
 def _literature_setup_menu() -> None:
     """Keep provider configuration, credentials, testing, and removal together."""
     while True:
-        profiles = load_user_setup().profiles
+        profiles = iter_profiles()
         _header("Literature connections", "Keys stay in the OS keyring; profiles stay local")
         _cards(("Configured", len(profiles)), ("Project data", "No secrets"))
         try:
             action = _select(
                 "Literature provider",
                 [
-                    ("zotero", "Zotero · local app or Web library"),
-                    ("openalex", "OpenAlex · discovery and citation graph"),
-                    ("semantic", "Semantic Scholar · optional discovery"),
-                    ("unpaywall", "Unpaywall · open-access resolution"),
+                    ("zotero", "Zotero · search your library; local PDFs need no plugin"),
+                    ("openalex", "OpenAlex · broad search and citation graph · free key"),
+                    (
+                        "semantic",
+                        "Semantic Scholar · search, citation trails, and recommendations",
+                    ),
+                    ("unpaywall", "Unpaywall · lawful OA locations · contact email"),
                     ("profiles", "Review, test, or remove configured connections"),
                 ],
             )
@@ -1868,8 +2044,11 @@ def _literature_setup_menu() -> None:
                 selected = _select(
                     "Connection profile",
                     [
-                        (name, f"{name} · {profile.provider.replace('_', ' ').title()}")
-                        for name, profile in profiles.items()
+                        (
+                            (provider, name),
+                            f"{provider.replace('_', ' ').title()} · {name}",
+                        )
+                        for provider, name, _profile in profiles
                     ],
                 )
                 operation = _select(
@@ -1877,11 +2056,19 @@ def _literature_setup_menu() -> None:
                     [("test", "Test connection"), ("delete", "Remove profile and stored key")],
                 )
                 if operation == "test":
-                    console.print(_connection_receipt(test_profile(selected)))
-                elif _yes_no(f"Remove local connection '{selected}'?", False):
-                    profile = profiles[selected]
-                    delete_profile(selected)
-                    delete_credential(profile.provider, profile.credential_profile)
+                    provider, name = selected
+                    console.print(_connection_receipt(test_profile(provider, name)))
+                else:
+                    provider, name = selected
+                    if not _yes_no(
+                        f"Remove local {provider.replace('_', ' ')} connection '{name}'?",
+                        False,
+                    ):
+                        continue
+                    profile = provider_profiles(provider)[name]
+                    delete_profile(provider, name)
+                    if profile.provider != "unpaywall":
+                        delete_credential(profile.provider, profile.credential_profile)
                     console.print("[green]Local connection removed.[/green]")
             _pause()
         except BackNavigation:
@@ -1890,23 +2077,32 @@ def _literature_setup_menu() -> None:
 
 def _appearance_menu() -> None:
     """Configure and preview machine-local terminal appearance."""
+    global _APPEARANCE_PREVIEW
     setup = load_user_setup()
-    appearance = setup.appearance
+    appearance = setup.appearance.model_copy(deep=True)
     action = _select(
         "Appearance",
         [
-            ("theme", "Color theme"),
-            ("logo", "Logo · SMAIRT, PNNL mark, custom ASCII, or none"),
+            ("theme", "Color theme · preview a named palette"),
+            ("mark", "Secondary mark · SMAIRT always remains visible"),
             ("motion", "Motion · automatic or off"),
             ("preview", "Preview current appearance"),
+            ("back", "Back"),
         ],
     )
+    if action == "back":
+        return
     if action == "theme":
         appearance.theme = _select(
             "Theme",
             [
                 ("scientific", "Scientific console · orange and cyan"),
                 ("pnnl", "PNNL inspired · orange and slate"),
+                ("utep", "UTEP inspired · orange and navy"),
+                ("matrix", "Matrix · green phosphor"),
+                ("dracula", "Dracula · pink and cyan"),
+                ("nord", "Nord · cool blue"),
+                ("solarized", "Solarized · gold and teal"),
                 ("amber", "Amber terminal"),
                 ("high-contrast", "High contrast"),
                 ("monochrome", "Monochrome"),
@@ -1919,18 +2115,18 @@ def _appearance_menu() -> None:
             appearance.secondary_color = _text(
                 "Secondary #RRGGBB", appearance.secondary_color or CYAN
             )
-    elif action == "logo":
-        appearance.logo = _select(
-            "Logo",
+    elif action == "mark":
+        appearance.mark = _select(
+            "Secondary mark",
             [
-                ("smairt", "SMAIRT wordmark"),
-                ("pnnl-mark", "PNNL-inspired mark only · no laboratory text"),
-                ("custom", "Import sanitized ASCII text file"),
-                ("none", "No large logo"),
+                ("none", "None · SMAIRT wordmark only"),
+                ("pnnl", "PNNL-inspired angular mark"),
+                ("utep", "UTEP Miner pick easter egg"),
+                ("custom", "Custom sanitized ASCII mark"),
             ],
-            appearance.logo,
+            appearance.mark,
         )
-        if appearance.logo == "custom":
+        if appearance.mark == "custom":
             source = Path(_text("ASCII logo file")).expanduser()
             save_custom_logo(source.read_text(encoding="utf-8"))
     elif action == "motion":
@@ -1942,11 +2138,29 @@ def _appearance_menu() -> None:
             ],
             appearance.motion,
         )
-    save_user_setup(setup)
-    _header("Appearance preview", f"{appearance.theme} · {appearance.logo}")
-    _cards(("Primary", _appearance_values(appearance)[0]), ("Motion", appearance.motion))
-    with suppress(BackNavigation):
-        _select("Appearance saved on this machine", [("done", "Return to setup")])
+    _APPEARANCE_PREVIEW = appearance
+    try:
+        _header(
+            "Appearance preview",
+            "Unofficial easter eggs · respective institutions retain their marks",
+        )
+        _cards(("Theme", appearance.theme), ("Motion", appearance.motion))
+        if (
+            _select(
+                "Preview",
+                [
+                    ("apply", "Apply on this machine"),
+                    ("cancel", "Cancel changes"),
+                    ("back", "Back"),
+                ],
+            )
+            == "apply"
+        ):
+            setup.appearance = appearance
+            save_user_setup(setup)
+            console.print("[green]Appearance saved on this machine.[/green]")
+    finally:
+        _APPEARANCE_PREVIEW = None
 
 
 def _render_setup_health(payload: dict[str, object]) -> None:
@@ -1988,7 +2202,7 @@ def _configure_openalex_setup() -> None:
             environment_variable="OPENALEX_API_KEY",
         ),
     )
-    console.print(_connection_receipt(test_profile(name)))
+    console.print(_connection_receipt(test_profile("openalex", name)))
 
 
 def _configure_semantic_scholar_setup() -> None:
@@ -2073,4 +2287,4 @@ def _configure_zotero_setup() -> None:
                 library_type=ZoteroLibraryType(library_type),
             ),
         )
-    console.print(_connection_receipt(test_profile(name)))
+    console.print(_connection_receipt(test_profile("zotero", name)))

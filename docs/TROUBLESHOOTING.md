@@ -37,3 +37,7 @@ when a long form needs scrolling. Current menus redraw in the normal terminal bu
 sequences are being printed literally, confirm `TERM` is valid and that output is attached to a
 TTY. Disable motion under Setup → Appearance or set `SMAIRT_REDUCED_MOTION=1`. All menu actions
 have equivalent commands in [CLI Reference](CLI_REFERENCE.md).
+
+If a secondary mark consumes too much space, SMAIRT should automatically reduce it to a labeled
+badge while preserving the SMAIRT wordmark. If it does not, record the terminal application,
+operating system, `TERM` value, and row/column dimensions when reporting the rendering problem.

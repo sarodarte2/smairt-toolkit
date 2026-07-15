@@ -45,8 +45,17 @@ It shows the installed version, credits, license, and the three useful entry poi
 setup` for machine-wide keys and literature connections, `smairt new` to create a project, and
 `smairt menu` inside a project for its dashboard. Screens redraw in place and adapt from a branded
 four-card workspace to a compact single-column view as the terminal changes size. Use Up/Down (or
-j/k) to move, Enter to accept, Escape to go back exactly one level, and Ctrl-C to stop. Selection
-wraps, and the project home includes a fuzzy action finder that filters commands as you type.
+j/k) to move, Enter to accept, Escape to go back exactly one level, and Ctrl-C to stop. The visible
+Back row is part of normal arrow navigation and can be selected with Enter. Selection wraps through
+that row, and the project home includes a fuzzy action finder that filters commands as you type.
+
+The SMAIRT ASCII wordmark remains the product identity in every layout. Setup → Appearance can add
+a responsive PNNL- or UTEP-inspired terminal mark as a small easter egg and apply familiar named
+color palettes without changing the terminal background. Institutional names and marks belong to
+their respective institutions; these terminal approximations are unofficial and do not imply
+endorsement.
+
+See [terminal easter-egg attributions](docs/ATTRIBUTIONS.md) for the complete notice.
 
 For beginners, the workflow hub keeps each screen in the terminal rather than opening a separate
 application. Outside a project it helps create or initialize one. Inside a project it opens

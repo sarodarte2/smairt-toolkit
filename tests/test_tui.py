@@ -8,9 +8,15 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.output.base import Size
 
+from smairt.local_setup import AppearanceConfig
 from smairt.models import ProjectLicense, SmairtConfig
 from smairt.tui import (
+    PNNL_MARK,
+    SMAIRT_LOGO,
+    THEMES,
+    UTEP_MARK,
     BackNavigation,
+    _appearance_values,
     _preflight_destination,
     _responsive_layout,
     _select,
@@ -32,6 +38,29 @@ def test_responsive_layout_breakpoints_and_wide_cap() -> None:
         assert _responsive_layout(*size) == expected
 
 
+def test_named_themes_and_secondary_marks_never_replace_smairt(monkeypatch) -> None:
+    """Keep brand identity separate from optional institutional easter eggs."""
+    expected_themes = {
+        "scientific",
+        "pnnl",
+        "utep",
+        "matrix",
+        "dracula",
+        "nord",
+        "solarized",
+        "amber",
+        "high-contrast",
+        "monochrome",
+    }
+    assert expected_themes <= set(THEMES)
+    assert "SMAIRT" not in PNNL_MARK and "SMAIRT" not in UTEP_MARK
+    assert len(SMAIRT_LOGO.splitlines()) == 5
+    assert _appearance_values(AppearanceConfig(mark="pnnl"))[2] == PNNL_MARK
+    assert _appearance_values(AppearanceConfig(mark="utep"))[2] == UTEP_MARK
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert _appearance_values(AppearanceConfig(theme="matrix"))[:2] == THEMES["monochrome"][:2]
+
+
 def test_choice_uses_arrows_enter_and_escape() -> None:
     """Exercise Prompt Toolkit's real key processing without an alternate screen."""
 
@@ -49,16 +78,13 @@ def test_choice_uses_arrows_enter_and_escape() -> None:
         input_stream.send_text("\x1b[B\r")
         assert _select("Choose", [("first", "First"), ("second", "Second")]) == "second"
         input_stream.send_text("\x1b[A\r")
-        assert _select("Wrap up", [("first", "First"), ("second", "Second")]) == "second"
-        input_stream.send_text("\x1b[B\r")
-        assert (
-            _select(
-                "Wrap down",
-                [("first", "First"), ("second", "Second")],
-                default="second",
-            )
-            == "first"
-        )
+        with pytest.raises(BackNavigation):
+            _select("Back is selectable", [("first", "First"), ("second", "Second")])
+        input_stream.send_text("\x1b[B\x1b[B\r")
+        with pytest.raises(BackNavigation):
+            _select("Move down to Back", [("first", "First"), ("second", "Second")])
+        input_stream.send_text("\x1b[B\x1b[B\x1b[B\r")
+        assert _select("Wrap after Back", [("first", "First"), ("second", "Second")]) == "first"
         input_stream.send_text("\x1b")
         with pytest.raises(BackNavigation):
             _select("Choose", [("first", "First")])
@@ -66,6 +92,25 @@ def test_choice_uses_arrows_enter_and_escape() -> None:
         with pytest.raises(KeyboardInterrupt):
             _select("Choose", [("first", "First")])
     assert not output.entered_alternate_screen
+
+
+@pytest.mark.parametrize(
+    ("columns", "rows"),
+    [(60, 18), (80, 24), (103, 51), (119, 30), (120, 30), (180, 50), (340, 60)],
+)
+def test_choice_renders_at_acceptance_sizes(columns: int, rows: int) -> None:
+    """Render and accept a choice at every supported responsive acceptance size."""
+
+    class SizedOutput(DummyOutput):
+        def get_size(self) -> Size:
+            return Size(rows=rows, columns=columns)
+
+    with (
+        create_pipe_input() as input_stream,
+        create_app_session(input=input_stream, output=SizedOutput()),
+    ):
+        input_stream.send_text("\r")
+        assert _select("Responsive choice", [("first", "First"), ("back", "Back")]) == "first"
 
 
 def test_wide_layout_escapes_logo_and_dynamic_text(monkeypatch) -> None:

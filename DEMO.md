@@ -77,6 +77,13 @@ smairt background validate
 
 Do not continue if the reference ID is not `doi-a04d8aaf11d84cfac807` or validation fails.
 
+Optional orientation: open `smairt menu` → **Literature & references** → **Discover literature**.
+Semantic Scholar search works publicly without a key, and a DOI-backed project reference can seed
+its recommendation view. OpenAlex adds a second broad index when its free-key profile is connected;
+Unpaywall resolves lawful open-access locations after its local contact-email profile is connected.
+Discovery candidates are provisional and do not change this demo unless you explicitly select a
+DOI result and confirm authoritative Crossref/DataCite import.
+
 ## 4. Compare three hypotheses and select one
 
 ```bash

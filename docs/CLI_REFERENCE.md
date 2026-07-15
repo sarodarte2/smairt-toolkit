@@ -6,8 +6,8 @@ Run `smairt <command> --help` for option-level help. Noninteractive machine cons
 Bare `smairt` prints a deterministic welcome with version, credits, license, and suggested entry
 points. `smairt setup` opens machine-wide setup, `smairt new` opens project creation, and `smairt
 menu` opens the dashboard for the project containing the current folder. In every menu, Up/Down
-and j/k wrap at both ends; Enter accepts, Left/Escape returns one level, and Ctrl-C exits. A visible
-Back row provides the same one-level action.
+and j/k move through every row, including the visible Back row; Enter accepts, Left/Escape returns
+one level immediately, and Ctrl-C exits. Navigation wraps after Back to the first action.
 
 ```bash
 smairt setup

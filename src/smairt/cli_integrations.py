@@ -30,8 +30,9 @@ from smairt.local_setup import (
     bind_profile,
     configure_profile,
     delete_profile,
+    iter_profiles,
     load_bindings,
-    load_user_setup,
+    provider_profiles,
     test_profile,
     unbind_profile,
 )
@@ -69,19 +70,22 @@ def _v4_config() -> tuple[Path, SmairtConfig]:
 def credential_list(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
     """List configured credential references and resolution sources, never values."""
     entries = []
-    for name, connection in load_user_setup().profiles.items():
-        try:
-            _, resolution = resolve_credential(
-                connection.provider,
-                connection.credential_profile,
-                connection.environment_variable,
-            )
-            source = resolution.source if resolution else "missing"
-        except RuntimeError:
-            source = "keyring-unavailable"
+    for provider, name, connection in iter_profiles():
+        if provider == "unpaywall":
+            source = "not-required"
+        else:
+            try:
+                _, resolution = resolve_credential(
+                    provider,
+                    connection.credential_profile,
+                    connection.environment_variable,
+                )
+                source = resolution.source if resolution else "missing"
+            except RuntimeError:
+                source = "keyring-unavailable"
         entries.append(
             {
-                "provider": connection.provider,
+                "provider": provider,
                 "connection_profile": name,
                 "credential_profile": connection.credential_profile,
                 "source": source,
@@ -97,7 +101,7 @@ def credential_set(
 ) -> None:
     """Prompt invisibly and store one credential in the OS keyring."""
     if provider not in SUPPORTED_PROVIDERS:
-        raise typer.BadParameter("provider must be openalex or zotero")
+        raise typer.BadParameter("provider must be openalex, semantic_scholar, or zotero")
     value = getpass.getpass(f"{provider} credential: ")
     set_credential(provider, profile, value)
     emit({"provider": provider, "profile": profile, "stored": True}, False)
@@ -195,10 +199,10 @@ def setup_connection_list(
     entries = [
         {
             "name": name,
-            "provider": profile.provider,
+            "provider": provider,
             "mode": profile.mode.value if profile.mode else None,
         }
-        for name, profile in load_user_setup().profiles.items()
+        for provider, name, profile in iter_profiles()
     ]
     emit(entries, as_json)
 
@@ -231,13 +235,13 @@ def setup_zotero_configure(
 @setup_zotero_app.command("test")
 def setup_zotero_test(name: Annotated[str, typer.Argument()] = "default") -> None:
     """Test one user-local Zotero profile with a bounded request."""
-    emit(test_profile(name), False)
+    emit(test_profile("zotero", name), False)
 
 
 @setup_zotero_app.command("remove")
 def setup_zotero_remove(name: Annotated[str, typer.Argument()] = "default") -> None:
     """Remove a Zotero profile without deleting its separately stored key."""
-    emit({"name": name, "removed": delete_profile(name)}, False)
+    emit({"name": name, "removed": delete_profile("zotero", name)}, False)
 
 
 @setup_openalex_app.command("configure")
@@ -260,13 +264,13 @@ def setup_openalex_configure(
 @setup_openalex_app.command("test")
 def setup_openalex_test(name: Annotated[str, typer.Argument()] = "default") -> None:
     """Test one OpenAlex key and report secret-free allowance status."""
-    emit(test_profile(name), False)
+    emit(test_profile("openalex", name), False)
 
 
 @setup_openalex_app.command("remove")
 def setup_openalex_remove(name: Annotated[str, typer.Argument()] = "default") -> None:
     """Remove an OpenAlex profile without deleting its separately stored key."""
-    emit({"name": name, "removed": delete_profile(name)}, False)
+    emit({"name": name, "removed": delete_profile("openalex", name)}, False)
 
 
 @setup_semantic_scholar_app.command("configure")
@@ -289,13 +293,13 @@ def setup_semantic_scholar_configure(
 @setup_semantic_scholar_app.command("test")
 def setup_semantic_scholar_test(name: Annotated[str, typer.Argument()] = "default") -> None:
     """Test one Semantic Scholar API key without exposing it."""
-    emit(test_profile(name), False)
+    emit(test_profile("semantic_scholar", name), False)
 
 
 @setup_semantic_scholar_app.command("remove")
 def setup_semantic_scholar_remove(name: Annotated[str, typer.Argument()] = "default") -> None:
     """Remove a Semantic Scholar profile without deleting its key."""
-    emit({"name": name, "removed": delete_profile(name)}, False)
+    emit({"name": name, "removed": delete_profile("semantic_scholar", name)}, False)
 
 
 @setup_unpaywall_app.command("configure")
@@ -314,7 +318,7 @@ def setup_unpaywall_configure(
 @setup_unpaywall_app.command("remove")
 def setup_unpaywall_remove(name: Annotated[str, typer.Argument()] = "default") -> None:
     """Remove a local Unpaywall contact profile."""
-    emit({"name": name, "removed": delete_profile(name)}, False)
+    emit({"name": name, "removed": delete_profile("unpaywall", name)}, False)
 
 
 @integration_app.command("bind")
@@ -327,12 +331,12 @@ def integration_bind(
             "provider must be openalex, semantic_scholar, zotero, or unpaywall"
         )
     root = project_root()
-    selected = load_user_setup().profiles.get(profile)
-    if selected is None or selected.provider != provider:
+    typed_provider = cast(ProviderName, provider)
+    selected = provider_profiles(typed_provider).get(profile)
+    if selected is None:
         raise typer.BadParameter(f"no {provider} profile named {profile!r} exists")
     result: dict[str, object]
     if provider in {"unpaywall", "semantic_scholar"}:
-        typed_provider = cast(ProviderName, provider)
         bind_profile(root, typed_provider, profile)
         result = {"ready": True, "network_accessed": False}
     elif provider == "openalex":
@@ -379,7 +383,7 @@ def integration_unbind(provider: Annotated[str, typer.Argument()]) -> None:
 
 @integration_app.command("status")
 def integration_status(as_json: Annotated[bool, typer.Option("--json")] = False) -> None:
-    """Show shared policy and local binding readiness for both providers."""
+    """Show shared policy and local binding readiness for every literature provider."""
     root = project_root()
     from smairt.integrations import integration_health
 
@@ -398,9 +402,11 @@ def integration_test(
     as_json: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Test the profile bound to this checkout for one provider."""
-    if provider not in {"openalex", "zotero", "unpaywall"}:
-        raise typer.BadParameter("provider must be openalex, zotero, or unpaywall")
+    if provider not in {"openalex", "semantic_scholar", "zotero", "unpaywall"}:
+        raise typer.BadParameter(
+            "provider must be openalex, semantic_scholar, zotero, or unpaywall"
+        )
     name = load_bindings(project_root()).providers.get(cast(ProviderName, provider))
     if not name:
         raise typer.BadParameter(f"{provider} is not bound on this machine")
-    emit(test_profile(name), as_json)
+    emit(test_profile(cast(ProviderName, provider), name), as_json)
