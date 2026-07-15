@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "smairt"
-version = "0.2.0-beta.1"
+version = "0.2.0-beta.2"
 description = "Scientific Method with AI Research Toolkit"
 readme = "README.md"
 requires-python = ">=3.11"

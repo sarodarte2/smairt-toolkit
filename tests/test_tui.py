@@ -85,7 +85,7 @@ def test_wide_layout_escapes_logo_and_dynamic_text(monkeypatch) -> None:
         assert _select("Choose <one>", [("first", "First")]) == "first"
 
 
-def test_new_project_workflow_creates_v6_project(monkeypatch, tmp_path: Path) -> None:
+def test_new_project_workflow_creates_current_project(monkeypatch, tmp_path: Path) -> None:
     """Create through retained-state steps and verify metadata and managed license."""
     target = tmp_path / "terminal-project"
 

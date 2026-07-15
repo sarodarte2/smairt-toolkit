@@ -64,6 +64,7 @@ from smairt.provenance import add_contributor, generate_history, load_events, us
 from smairt.scaffold import conda_environments, create_project
 from smairt.settings import select_environment, update_project_settings
 from smairt.tui import run_new_project, run_project_menu, run_setup_menu
+from smairt.updates import apply_project_updates, project_update_plan
 from smairt.upgrade import upgrade_project
 from smairt.utils import slugify
 
@@ -625,6 +626,33 @@ def upgrade_command(
     _emit(payload, as_json)
     if apply:
         _show_guidance(root)
+
+
+@app.command("update")
+def update_command(
+    apply: Annotated[bool, typer.Option("--apply")] = False,
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+    allow_dirty: Annotated[bool, typer.Option("--allow-dirty")] = False,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Preview or apply schema, guidance, and active-adapter updates together."""
+    root = _root()
+    if (
+        apply
+        and not yes
+        and not Confirm.ask("Apply every conflict-free project update?", default=False)
+    ):
+        raise typer.Exit()
+    payload = (
+        apply_project_updates(
+            root,
+            contributor_id=SmairtConfig.load(root / "smairt.yaml").active_contributor,
+            allow_dirty=allow_dirty,
+        )
+        if apply
+        else project_update_plan(root)
+    )
+    _emit(payload, as_json)
 
 
 @app.command("status")

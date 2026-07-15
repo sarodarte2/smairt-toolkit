@@ -24,7 +24,7 @@ journeys, CodeQL, pip-audit, dependency review, gitleaks, and the formal reposit
 
 ## Tag release
 
-Update `CHANGELOG.md` and version metadata, then tag `v0.2.0-beta.1`. The tag workflow builds wheel
+Update `CHANGELOG.md` and version metadata, then tag `v0.2.0-beta.2`. The tag workflow builds wheel
 and sdist once, installs the wheel in a clean environment, generates a CycloneDX SBOM and SHA-256
 checksums, creates provenance attestations, and publishes a prerelease on GitHub. It never uploads
 to PyPI.

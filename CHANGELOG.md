@@ -3,7 +3,25 @@
 All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Beta schemas
 and interfaces may still break between prereleases.
 
-## [0.2.0-beta.1] - Unreleased
+## [0.2.0-beta.2] - Unreleased
+
+### Added
+
+- One project updater that previews and applies every required schema, managed-guidance, and active
+  harness-adapter step from the CLI or **Health & updates** menu.
+- Machine-local color themes, a mark-only PNNL-inspired preset, sanitized custom ASCII logos, and
+  user-setup schema v4.
+- A project-first human-run demo that ends at verified evidence and one approved claim.
+
+### Changed
+
+- Doctor now separates blocking health, recommended maintenance, and sharing readiness.
+- Project and global setup menus now use researcher-facing categories and keep provider setup,
+  credentials, connection tests, and removal together.
+- Responsive menus expose a Back row, Left/Escape one-level navigation, Ctrl-C exit, narrow summary
+  rendering, and theme-aware accents without changing terminal font settings.
+
+## [0.2.0-beta.1]
 
 ### Added
 
@@ -45,4 +63,5 @@ and interfaces may still break between prereleases.
 - Project schema v8 adds scientific protocol enforcement and optional compute-job records; the
   harness adapter format remains v7.
 
+[0.2.0-beta.2]: https://github.com/PNNL-CompBio/smairt-template/releases/tag/v0.2.0-beta.2
 [0.2.0-beta.1]: https://github.com/PNNL-CompBio/smairt-template/releases/tag/v0.2.0-beta.1

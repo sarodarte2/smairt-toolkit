@@ -21,6 +21,33 @@ from smairt.models import ComputeMode, DurableModel, ZoteroLibraryType, ZoteroMo
 from smairt.utils import atomic_write, validate_identifier
 
 ProviderName = Literal["openalex", "semantic_scholar", "zotero", "unpaywall"]
+ThemeName = Literal["scientific", "pnnl", "amber", "high-contrast", "monochrome", "custom"]
+LogoName = Literal["smairt", "pnnl-mark", "custom", "none"]
+
+
+class AppearanceConfig(DurableModel):
+    """Store machine-local terminal presentation preferences only."""
+
+    theme: ThemeName = "scientific"
+    logo: LogoName = "smairt"
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    motion: Literal["automatic", "off"] = "automatic"
+
+    @field_validator("primary_color", "secondary_color")
+    @classmethod
+    def valid_color(cls, value: str | None) -> str | None:
+        """Accept only explicit six-digit RGB colors for custom accents."""
+        if value is not None and not re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
+            raise ValueError("terminal colors must use #RRGGBB")
+        return value.lower() if value else None
+
+    @model_validator(mode="after")
+    def coherent_custom_theme(self) -> AppearanceConfig:
+        """Require both accents when the researcher chooses a custom theme."""
+        if self.theme == "custom" and not (self.primary_color and self.secondary_color):
+            raise ValueError("custom themes require primary and secondary colors")
+        return self
 
 
 class ConnectionProfile(DurableModel):
@@ -120,8 +147,8 @@ class SlurmProfile(DurableModel):
 class UserSetupConfig(DurableModel):
     """Store named provider and compute profiles in the user's OS configuration area."""
 
-    schema_version: Literal[3] = 3
-    motion: Literal["automatic", "off"] = "automatic"
+    schema_version: Literal[4] = 4
+    appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
     profiles: dict[str, ConnectionProfile] = Field(default_factory=dict)
     compute_profiles: dict[str, SlurmProfile] = Field(default_factory=dict)
     default_compute_profile: str | None = None
@@ -169,6 +196,43 @@ def setup_config_path() -> Path:
     return root / "setup.yaml"
 
 
+def custom_logo_path() -> Path:
+    """Return the owner-local sanitized logo file."""
+    return setup_config_path().with_name("logo.txt")
+
+
+def sanitize_ascii_logo(value: str) -> str:
+    """Validate a compact terminal logo and reject control-sequence injection."""
+    normalized = value.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+    normalized = normalized.expandtabs(4)
+    lines = normalized.splitlines()
+    if not normalized or len(normalized.encode("utf-8")) > 2048:
+        raise ValueError("custom logo must contain 1 to 2048 bytes")
+    if len(lines) > 8 or any(len(line) > 40 for line in lines):
+        raise ValueError("custom logo is limited to 8 lines and 40 columns")
+    bidi_controls = {*range(0x202A, 0x202F), *range(0x2066, 0x206A)}
+    if "\x1b" in normalized or any(ord(char) in bidi_controls for char in normalized):
+        raise ValueError("custom logo cannot contain escape or bidi control characters")
+    if any(ord(char) < 32 and char not in {"\n", "\t"} for char in normalized):
+        raise ValueError("custom logo cannot contain terminal control characters")
+    return normalized
+
+
+def save_custom_logo(value: str) -> Path:
+    """Sanitize and atomically save a user-local ASCII logo."""
+    path = custom_logo_path()
+    atomic_write(path, sanitize_ascii_logo(value) + "\n", mode=0o600)
+    return path
+
+
+def load_custom_logo() -> str | None:
+    """Load the sanitized local logo when configured and present."""
+    path = custom_logo_path()
+    if not path.exists():
+        return None
+    return sanitize_ascii_logo(path.read_text(encoding="utf-8"))
+
+
 def local_bindings_path(root: Path) -> Path:
     """Return the checkout-local ignored integration binding path."""
     return root / ".smairt/local/integrations.yaml"
@@ -180,8 +244,12 @@ def load_user_setup() -> UserSetupConfig:
     if not path.exists():
         return UserSetupConfig()
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if isinstance(payload, dict) and int(payload.get("schema_version", 1)) in {1, 2}:
-        payload["schema_version"] = 3
+    if isinstance(payload, dict) and int(payload.get("schema_version", 1)) in {1, 2, 3}:
+        motion = payload.pop("motion", "automatic")
+        if motion is False:  # YAML 1.1 readers treat the legacy word "off" as false.
+            motion = "off"
+        payload["appearance"] = {"motion": motion}
+        payload["schema_version"] = 4
     return UserSetupConfig.model_validate(payload)
 
 

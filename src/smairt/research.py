@@ -195,7 +195,7 @@ def validate_background(root: Path) -> list[str]:
             "references", []
         )
     }
-    cited = set(re.findall(r"\breference_\d+\b", content))
+    cited = set(re.findall(r"\b(?:reference_\d+|doi-[a-z0-9]+)\b", content))
     unknown = sorted(cited - indexed)
     if unknown:
         errors.append(f"background cites unknown reference IDs: {', '.join(unknown)}")

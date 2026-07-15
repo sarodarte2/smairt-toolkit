@@ -53,9 +53,8 @@ def _legacy_skill_changes(root: Path) -> tuple[list[dict[str, str]], list[str]]:
     return changes, preserved
 
 
-@mutating("project upgrade")
-def upgrade_project(root: Path, *, apply: bool = False) -> dict[str, Any]:
-    """Preview or apply managed-file changes while backing up every replacement."""
+def upgrade_plan(root: Path) -> dict[str, Any]:
+    """Preview managed-file changes without taking a lock or writing project state."""
     changes = []
     for relative, desired in managed_files().items():
         normalized = desired.rstrip() + "\n"
@@ -69,15 +68,31 @@ def upgrade_project(root: Path, *, apply: bool = False) -> dict[str, Any]:
     changes.extend(legacy_changes)
     result: dict[str, Any] = {
         "version": __version__,
-        "applied": apply,
+        "applied": False,
         "changes": changes,
         "legacy_preserved": legacy_preserved,
     }
     config = SmairtConfig.load(root / "smairt.yaml")
     harness_plan = switch_plan(root, config.harness.active.value)
     result["harness"] = harness_plan
+    return result
+
+
+def upgrade_project(root: Path, *, apply: bool = False) -> dict[str, Any]:
+    """Preview read-only or apply managed changes under the project mutation lock."""
     if not apply:
-        return result
+        return upgrade_plan(root)
+    return _apply_upgrade(root)
+
+
+@mutating("project upgrade")
+def _apply_upgrade(root: Path) -> dict[str, Any]:
+    """Apply a fresh conflict-checked plan with backups and one atomic transaction."""
+    config = SmairtConfig.load(root / "smairt.yaml")
+    result = upgrade_plan(root)
+    result["applied"] = True
+    changes = result["changes"]
+    harness_plan = result["harness"]
     if harness_plan["modified_managed"] or harness_plan["conflicts"]:
         raise ValueError("harness-managed files must be reconciled before upgrade")
 

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 from smairt import __version__
 from smairt.credentials import keyring_health
@@ -18,6 +19,7 @@ from smairt.models import EnvironmentMode, SmairtConfig
 from smairt.project import validate_project
 from smairt.safety import release_check
 from smairt.transactions import transaction_status
+from smairt.updates import project_update_plan
 
 RUNTIME_IMPORTS = {
     "pydantic": "pydantic",
@@ -67,9 +69,10 @@ def doctor(root: Path) -> dict[str, object]:
     schema = detect_scaffold(root)
     release = release_check(root)
     warnings = []
-    if schema in {"v2", "v3", "v4", "v5", "v6"}:
+    if schema in {"v2", "v3", "v4", "v5", "v6", "v7"}:
         warnings.append(
-            "Schema v8 scientific protocols are available; run 'smairt migrate apply' when ready."
+            "Project updates are available; open Health & updates → Project updates or run "
+            "'smairt update --apply' when ready."
         )
     ok = bool(
         validation["ok"]
@@ -80,8 +83,17 @@ def doctor(root: Path) -> dict[str, object]:
         and transactions["ok"]
         and harness_ok
     )
+    updates = project_update_plan(root)
+    blocking_findings = cast(list[dict[str, str]], validation.get("findings", []))
+    blocking_findings = [item for item in blocking_findings if item.get("severity") == "error"]
+    health_state = (
+        "blocked" if not ok else "action_recommended" if updates["updates_available"] else "healthy"
+    )
     return {
         "ok": ok,
+        "health_state": health_state,
+        "blocking_findings": blocking_findings,
+        "recommended_updates": updates,
         "warnings": warnings,
         "package": {"version": __version__, "missing_dependencies": missing_dependencies},
         "scaffold": schema,
@@ -102,6 +114,7 @@ def doctor(root: Path) -> dict[str, object]:
         },
         "migration": migration_plan(root),
         "release": release,
+        "sharing_readiness": release,
         "release_ready": bool(ok and release["ok"]),
         "network_accessed": False,
     }

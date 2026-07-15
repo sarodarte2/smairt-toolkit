@@ -1,80 +1,142 @@
-# SMAIRT walkthrough: from installation to a correct result
+# SMAIRT demo: installation to one approved claim
 
-This is a demo for **you to perform**, one step at a time. It creates a normal SMAIRT project,
-uses the experiment scaffold that SMAIRT generates, runs a small local enzyme-kinetics analysis,
-and ends with a result you inspect and accept yourself. It does not use HPC or require network
-access.
+This is a demo for **you to perform**, not an experiment that SMAIRT secretly ran for you. It
+starts with installation, creates a normal project, and ends after you approve one narrow claim.
+Every research command runs inside that project. The computation is local; HPC is not used.
 
-The example is synthetic by design: the known values are `Vmax = 120.0 micromoles/minute` and
-`Km = 2.5 mM`. Recovering those values proves that the analysis and provenance path work; it does
-not pretend to be a biological discovery.
+The synthetic fixture has independently declared values of `Vmax = 120.0 µmol/min` and
+`Km = 2.5 mM`. Recovering them checks this analysis and evidence path. It is not a biological
+discovery.
 
-## 1. Install the current checkout
+## 1. Install and set up SMAIRT
 
-From the SMAIRT source folder:
+From the SMAIRT source checkout:
 
 ```bash
 cd ~/Documents/GitHub/smairt-template
 uv tool install --force --python 3.11 .
 smairt --version
+smairt setup
 ```
 
-Run `smairt setup doctor` if installation reports a problem. No API key is needed for this demo.
+In Setup, open **Installation & version**. A working installation can still recommend an update;
+that is not a blocking Doctor problem. Literature connections are optional for everything except
+the DOI step below. To enable normal shell suggestions once, run `smairt --install-completion` and
+restart the shell.
 
-## 2. Create your project
+## 2. Create and enter a real project
 
 ```bash
 cd ~/Documents
 smairt new
 ```
 
-Choose these answers in the terminal wizard:
+Use these wizard values:
 
-- Create a new folder.
+- New folder: `smairt-enzyme-demo`
 - Project name: `SMAIRT Enzyme Demo`
-- Project folder: `smairt-enzyme-demo`
-- Research question: `Can the workflow recover known Michaelis-Menten parameters?`
-- Enter your own name as the primary researcher and register yourself as the active contributor.
-- Data classification: `Unpublished`.
-- No managed environment is required.
-- Keep Codex or choose the harness you actually use.
-- Standard safety mode is sufficient.
+- Question: `Can the workflow recover known Michaelis-Menten parameters?`
+- Your own name, confirmed as the active contributor
+- Classification: `Unpublished`
+- Environment: none (the demo uses the SMAIRT installation)
+- Harness: Codex, or the maintained harness you actually use
+- Safety: Standard
 
-After creation, Escape returns to the shell. You can reopen this project from any directory:
-
-```bash
-smairt menu ~/Documents/smairt-enzyme-demo
-```
-
-There is no account login. A SMAIRT project is a local folder containing `smairt.yaml`; the command
-above is the explicit way to open one you already know.
-
-## 3. Create the experiment scaffold
+Now enter the project. There is no SMAIRT account login: a project is a local folder containing
+`smairt.yaml`.
 
 ```bash
 cd ~/Documents/smairt-enzyme-demo
-smairt experiment new --title "Enzyme Kinetics" \
-  --purpose "Recover known parameters from a deterministic local fixture"
+smairt doctor
+smairt menu
 ```
 
-SMAIRT now creates:
+If **Health & updates** recommends schema, guidance, or adapter work, open **Project updates**, read
+the preview, and apply it there. The one action explains every version step before changing files.
 
-```text
-experiments/EXPERIMENT_001_enzyme-kinetics/
-├── experiment.yaml
-└── iterations/ITERATION_001/
-    ├── config.yaml
-    ├── protocol.yaml
-    └── script_001_enzyme_kinetics.py
+## 3. Add one source and review the background
+
+This command makes one disclosed Crossref request. It imports metadata only and does not download a
+PDF. The DOI is the 2011 translation and reanalysis of the Michaelis-Menten paper.
+
+```bash
+smairt reference add-doi 10.1021/bi201284u --confirm-remote
+smairt reference list
+smairt background create
 ```
 
-The protocol and script begin as reviewable scaffolds. For this short demo, copy the prepared data,
-completed protocol, and analysis into that scaffold:
+Copy the prepared demo synthesis over the generated draft, then read it. It deliberately separates
+historical context from evidence about software correctness.
 
 ```bash
 SMAIRT_SOURCE="$HOME/Documents/GitHub/smairt-template"
-ITERATION="$HOME/Documents/smairt-enzyme-demo/experiments/EXPERIMENT_001_enzyme-kinetics/iterations/ITERATION_001"
+cp "$SMAIRT_SOURCE/examples/enzyme-kinetics-demo/initial_background.md" \
+  background/initial_background.md
+smairt background validate
+```
 
+Do not continue if the reference ID is not `doi-a04d8aaf11d84cfac807` or validation fails.
+
+## 4. Compare three hypotheses and select one
+
+```bash
+smairt hypothesis proposals new
+cp "$SMAIRT_SOURCE/examples/enzyme-kinetics-demo/proposal_options.md" \
+  hypotheses/proposals/PROPOSAL_SET_001.md
+smairt hypothesis proposals validate hypotheses/proposals/PROPOSAL_SET_001.md
+```
+
+Read all three options. They test a native nonlinear fit, a reciprocal linearization, and a
+constant-rate null. Select option A explicitly, replacing the name below with the exact contributor
+name you entered during project creation:
+
+```bash
+RESEARCHER="Your Registered Name"
+smairt hypothesis activate \
+  --proposal-set hypotheses/proposals/PROPOSAL_SET_001.md \
+  --option A \
+  --title "Nonlinear Michaelis-Menten recovery" \
+  --statement "Nonlinear fitting recovers the declared Vmax and Km within tolerance." \
+  --selected-by "$RESEARCHER" \
+  --rationale "It estimates the parameters directly and matches the predeclared correctness test."
+```
+
+Open `hypotheses/HYPOTHESIS_001_nonlinear-michaelis-menten-recovery.md`. Preserve its front matter
+and replace its unfinished sections with this reviewed content:
+
+```markdown
+## Rationale
+The native nonlinear relationship directly estimates both declared parameters without reciprocal
+error weighting.
+
+## Falsifiable Prediction
+Vmax is 119.9–120.1 µmol/min, Km is 2.49–2.51 mM, and absolute blank velocity is at most 0.1.
+
+## Null or Competing Explanation
+An implementation, aggregation, or model error causes at least one predeclared check to fail.
+
+## Required Data and Controls
+All fixed triplicates, every substrate concentration, and the zero-substrate blank are required.
+
+## Success and Failure Criteria
+Success requires every declared range and control check. Any failed check is failure.
+
+## Known Confounders
+The synthetic, noise-controlled fixture does not establish performance on biological measurements.
+
+## Human Selection Rationale
+It is the most direct bounded test of the demo analysis.
+```
+
+## 5. Create the linked experiment and inspect its protocol
+
+Only now create the experiment, inside the project and linked to the selected hypothesis:
+
+```bash
+smairt experiment new --title "Enzyme Kinetics" --hypothesis HYPOTHESIS_001 \
+  --purpose "Recover independently declared parameters from a deterministic local fixture"
+
+ITERATION="$PWD/experiments/EXPERIMENT_001_enzyme-kinetics/iterations/ITERATION_001"
 cp "$SMAIRT_SOURCE/examples/enzyme-kinetics-demo/data.csv" "$ITERATION/data.csv"
 cp "$SMAIRT_SOURCE/examples/enzyme-kinetics-demo/expected-results.json" "$ITERATION/expected-results.json"
 cp "$SMAIRT_SOURCE/examples/enzyme-kinetics-demo/protocol.yaml" "$ITERATION/protocol.yaml"
@@ -82,76 +144,75 @@ cp "$SMAIRT_SOURCE/examples/enzyme-kinetics-demo/analysis.py" \
   "$ITERATION/script_001_enzyme_kinetics.py"
 ```
 
-Open `protocol.yaml` and read it before continuing. It declares the inputs, controls, outcomes,
-failure criteria, stopping rule, and expected output. This review is part of the demo—not busywork.
+Read `protocol.yaml`. It declares inputs, controls, outcomes, uncertainty, failure criteria,
+falsifier, stopping rule, and expected output before execution.
 
-## 4. Validate and run locally
+## 6. Validate and run locally
 
 ```bash
-cd ~/Documents/smairt-enzyme-demo
 smairt code index
 smairt validate
 smairt run --experiment EXPERIMENT_001 --iteration ITERATION_001
 ```
 
-The run prints a `run_id` beginning with `RUN_`. Save that value. The result should report:
+The output must report `vmax_umol_min: 120.0`, `km_mM: 2.5`, and `correct: true`. Save the printed
+`RUN_...` ID. If any value differs, stop; do not accept the run.
 
-```text
-vmax_umol_min: 120.0
-km_mM: 2.5
-correct: true
-```
-
-If those values are absent or `correct` is false, stop. Do not accept the run.
-
-## 5. Interpret and make the human decision
-
-Copy the prepared interpretation into the normal analysis location:
+## 7. Verify, interpret, and accept the evidence
 
 ```bash
+RUN_ID=RUN_REPLACE_WITH_THE_PRINTED_ID
 mkdir -p analysis/EXPERIMENT_001
 cp "$SMAIRT_SOURCE/examples/enzyme-kinetics-demo/ANALYSIS_ITERATION_001.md" \
   analysis/EXPERIMENT_001/ANALYSIS_ITERATION_001.md
-```
-
-Replace the two values below with the run ID you just received and the same researcher name you
-registered during project creation:
-
-```bash
-RUN_ID=RUN_REPLACE_WITH_YOUR_RUN_ID
-RESEARCHER="Your Registered Name"
 
 smairt verify --run "$RUN_ID"
 smairt decision record --experiment EXPERIMENT_001 --iteration ITERATION_001 \
   --run "$RUN_ID" --decision ACCEPT \
-  --rationale "The predeclared parameter recovery and blank-control checks passed." \
+  --rationale "Every predeclared recovery and blank-control check passed." \
   --decided-by "$RESEARCHER"
+
+smairt paper evidence review --run "$RUN_ID" \
+  --purpose "Test deterministic parameter recovery and provenance" \
+  --observed-result "Vmax 120.0 and Km 2.5 were recovered; the blank check passed." \
+  --limitations "Synthetic deterministic fixture; no claim about biological generalization." \
+  --decision ACCEPT
 ```
 
-SMAIRT checks the immutable run, protocol digest, result-summary checksum, and written interpretation
-before recording acceptance. The software validates the evidence trail; **you** make the scientific
-decision.
+The last command prints an evidence filename. Copy its `evidence-run_...` identifier for the next
+step.
 
-## 6. Inspect the finished state
+## 8. Propose and approve one narrow claim
 
 ```bash
-smairt status
-smairt validate
-smairt menu ~/Documents/smairt-enzyme-demo
+EVIDENCE_ID=evidence-run_replace_with_your_run_id_in_lowercase
+smairt paper claim propose \
+  --statement "This demo analysis recovered its independently declared Michaelis-Menten parameters." \
+  --evidence "$EVIDENCE_ID"
 ```
 
-The project should show one experiment and accepted evidence with no validation errors. You can now
-inspect the readable files under `experiments/`, `results/`, and `analysis/` to see exactly what
-SMAIRT recorded.
+Read the proposed JSON file under `paper/claims/`. Copy its `claim-...` ID, then make the explicit
+human decision:
 
-## Optional safety check
+```bash
+CLAIM_ID=claim-replace-with-the-printed-id
+smairt paper claim approve "$CLAIM_ID"
+smairt paper status
+smairt validate
+smairt status
+```
 
-This asks SMAIRT's hook policy whether an agent may read a protected `.env` file. It uses only a
-synthetic request and does not open a real file:
+The demo is complete when there is one accepted evidence card, one approved claim, and no validation
+error. It intentionally stops before manuscript drafting.
+
+## 9. Confirm the safety boundary
+
+This sends a synthetic request to SMAIRT's hook policy. It does not open a real `.env` file:
 
 ```bash
 printf '%s' '{"tool_name":"read_file","tool_input":{"path":".env"}}' | \
   smairt harness hook --harness codex --event PreToolUse
 ```
 
-The response must deny the operation.
+The result must deny the request. HPC remains available for later large analyses through
+**Tools & compute**, but it is outside this local correctness demo.

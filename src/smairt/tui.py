@@ -32,7 +32,7 @@ from smairt.credentials import delete_credential, keyring_health, set_credential
 from smairt.diagnostics import doctor, setup_doctor
 from smairt.guidance import next_guidance, render_suggested_prompt
 from smairt.harness_presentation import HARNESS_PRESENTATIONS
-from smairt.harnesses import configure_mcp, install_harness, list_harnesses, select_harness
+from smairt.harnesses import configure_mcp, select_harness
 from smairt.integrations import (
     configure_openalex,
     configure_zotero,
@@ -40,6 +40,7 @@ from smairt.integrations import (
 )
 from smairt.literature import literature_access, literature_related, literature_search
 from smairt.local_setup import (
+    AppearanceConfig,
     ConnectionProfile,
     ProviderName,
     SlurmProfile,
@@ -48,7 +49,10 @@ from smairt.local_setup import (
     delete_profile,
     discover_zotero_libraries,
     load_bindings,
+    load_custom_logo,
     load_user_setup,
+    save_custom_logo,
+    save_user_setup,
     test_profile,
 )
 from smairt.migrations import apply_migration, migration_plan
@@ -80,7 +84,7 @@ from smairt.references import (
 from smairt.safety import release_check, safety_status, set_safety_mode
 from smairt.scaffold import conda_environments, create_project
 from smairt.settings import select_environment, update_project_settings
-from smairt.upgrade import upgrade_project
+from smairt.updates import apply_project_updates, project_update_plan
 from smairt.utils import slugify
 from smairt.zotero import ZoteroProvider, public_item
 
@@ -91,6 +95,18 @@ SMAIRT_LOGO = r"""  _____ __  __    _    ___ ____ _____
  \___ \| |\/| | / _ \  | || |_) || |
   ___) | |  | |/ ___ \ | ||  _ < | |
  |____/|_|  |_/_/   \_\___|_| \_\|_|"""
+PNNL_MARK = r"""                         /
+            ____-------
+   ____----/  /  ____
+      \   \  /--
+       \___\/"""
+THEMES: dict[str, tuple[str, str]] = {
+    "scientific": (ORANGE, CYAN),
+    "pnnl": ("#d97706", "#94a3b8"),
+    "amber": ("#ffb000", "#ffd166"),
+    "high-contrast": ("#ffff00", "#00ffff"),
+    "monochrome": ("#ffffff", "#a3a3a3"),
+}
 _LAUNCH_ANIMATED = False
 _SCREEN_TITLE = "SMAIRT"
 _SCREEN_SUBTITLE = ""
@@ -141,14 +157,22 @@ class _WrappingRadioList(RadioList[T]):
         @bindings.add("k", eager=True)
         def move_up(event: KeyPressEvent) -> None:
             del event
-            self._selected_index = (self._selected_index - 1) % len(self.values)
+            action_count = len(self.values) - 1
+            self._selected_index = (self._selected_index - 1) % action_count
             self.current_value = self.values[self._selected_index][0]
 
         @bindings.add("down", eager=True)
         @bindings.add("j", eager=True)
         def move_down(event: KeyPressEvent) -> None:
             del event
-            self._selected_index = (self._selected_index + 1) % len(self.values)
+            action_count = len(self.values) - 1
+            self._selected_index = (self._selected_index + 1) % action_count
+            self.current_value = self.values[self._selected_index][0]
+
+        @bindings.add("tab", eager=True)
+        def select_back(event: KeyPressEvent) -> None:
+            del event
+            self._selected_index = len(self.values) - 1
             self.current_value = self.values[self._selected_index][0]
 
 
@@ -157,6 +181,7 @@ def _back_bindings() -> KeyBindings:
     bindings = KeyBindings()
 
     @bindings.add("escape", eager=True)
+    @bindings.add("left", eager=True)
     def go_back(event: KeyPressEvent) -> None:
         event.app.exit(exception=BackNavigation())
 
@@ -172,25 +197,26 @@ def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyCont
     size = get_app().output.get_size()
     width, height = size.columns, size.rows
     tier, max_width = _responsive_layout(width, height)
+    _primary, _secondary, logo = _appearance_values()
     wide = tier == "wide"
     compact = tier == "compact"
     if wide:
         identity = HTML(
-            f"<orange>{escape_html(SMAIRT_LOGO)}</orange>\n\n"
+            f"<primary>{escape_html(logo)}</primary>\n\n"
             "<cyan>Research workspace</cyan>  "
-            f"<orange>{escape_html(_SCREEN_TITLE)}</orange>\n"
+            f"<primary>{escape_html(_SCREEN_TITLE)}</primary>\n"
             f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
         )
     elif compact:
         identity = HTML(
-            f"<orange>◆ SMAIRT</orange>  <cyan>{escape_html(_SCREEN_TITLE)}</cyan>\n"
+            f"<primary>◆ SMAIRT</primary>  <cyan>{escape_html(_SCREEN_TITLE)}</cyan>\n"
             f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
         )
     else:
-        identity = HTML(f"<orange>◆ SMAIRT · {escape_html(_SCREEN_TITLE)}</orange>")
+        identity = HTML(f"<primary>◆ SMAIRT · {escape_html(_SCREEN_TITLE)}</primary>")
         if _SCREEN_SUBTITLE and height >= 16:
             identity = HTML(
-                f"<orange>◆ SMAIRT · {escape_html(_SCREEN_TITLE)}</orange>\n"
+                f"<primary>◆ SMAIRT · {escape_html(_SCREEN_TITLE)}</primary>\n"
                 f"<muted>{escape_html(_SCREEN_SUBTITLE)}</muted>"
             )
     header_height = 9 if wide else 3 if compact else 2
@@ -213,7 +239,8 @@ def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyCont
                 VSplit(card_windows[midpoint:], padding=1, height=3),
             ]
         else:
-            cards = [HSplit(card_windows)]
+            summary = " · ".join(f"{label}: {value}" for label, value in _SCREEN_CARDS)
+            cards = [Window(FormattedTextControl(summary), height=1)]
     body = HSplit(
         [
             Frame(
@@ -227,7 +254,9 @@ def _responsive_menu_container(message: str, chooser: RadioList[Any]) -> AnyCont
             ),
             chooser,
             Window(
-                FormattedTextControl(HTML("<footer>↑↓ move · Enter select · Esc back</footer>")),
+                FormattedTextControl(
+                    HTML("<footer>↑↓ move · Enter select · ←/Esc back · Ctrl-C exit</footer>")
+                ),
                 height=1,
             ),
         ],
@@ -251,11 +280,34 @@ def _responsive_layout(width: int, height: int) -> tuple[str, int]:
     return "narrow", min(width, 132)
 
 
+def _appearance_values(config: AppearanceConfig | None = None) -> tuple[str, str, str]:
+    """Resolve accessible accents and a safe logo for the current machine."""
+    appearance = config or load_user_setup().appearance
+    if os.environ.get("NO_COLOR"):
+        primary, secondary = THEMES["monochrome"]
+    elif appearance.theme == "custom":
+        primary = appearance.primary_color or ORANGE
+        secondary = appearance.secondary_color or CYAN
+    else:
+        primary, secondary = THEMES[appearance.theme]
+    logo = {
+        "smairt": SMAIRT_LOGO,
+        "pnnl-mark": PNNL_MARK,
+        "none": "SMAIRT",
+        "custom": load_custom_logo() or "SMAIRT",
+    }[appearance.logo]
+    return primary, secondary, logo
+
+
 def _select(message: str, options: list[tuple[T, str]], default: T | None = None) -> T:
     """Select one responsive option with retained focus, circular movement, and Back."""
     if not options:
         raise ValueError("selection requires at least one option")
-    visible_options = list(options)
+    back_token = object()
+    has_back = any(value == "back" for value, _label in options)
+    visible_options: list[tuple[object, str]] = list(options)
+    if not has_back:
+        visible_options.append((back_token, "← Back"))
     selected = default if default is not None else visible_options[0][0]
     chooser: _WrappingRadioList[Any] = _WrappingRadioList(
         visible_options,
@@ -266,21 +318,27 @@ def _select(message: str, options: list[tuple[T, str]], default: T | None = None
     @bindings.add("enter", eager=True)
     def accept(event: KeyPressEvent) -> None:
         value = chooser.current_value
-        event.app.exit(result=value)
+        if value is back_token:
+            event.app.exit(exception=BackNavigation())
+        else:
+            event.app.exit(result=value)
+
+    primary, secondary, _logo = _appearance_values()
 
     application: Application[Any] = Application(
         layout=Layout(DynamicContainer(lambda: _responsive_menu_container(message, chooser))),
         key_bindings=bindings,
         style=Style.from_dict(
             {
-                "orange": ORANGE,
-                "cyan": CYAN,
+                "primary": primary,
+                "orange": primary,
+                "cyan": secondary,
                 "muted": "#8b909c",
                 "question": "bold #f1f1f1",
                 "footer": "#8b909c",
-                "radio-selected": f"bold {ORANGE}",
-                "radio-checked": CYAN,
-                "frame.label": CYAN,
+                "radio-selected": f"bold {primary}",
+                "radio-checked": secondary,
+                "frame.label": secondary,
                 "brand": "#f1f1f1",
                 "card": "#f1f1f1",
             }
@@ -363,7 +421,7 @@ def _header(title: str, subtitle: str = "") -> None:
     motion = (
         console.is_terminal
         and not _LAUNCH_ANIMATED
-        and load_user_setup().motion == "automatic"
+        and load_user_setup().appearance.motion == "automatic"
         and os.environ.get("SMAIRT_REDUCED_MOTION") != "1"
         and not os.environ.get("CI")
         and os.environ.get("TERM") != "dumb"
@@ -1370,48 +1428,47 @@ def _reference_receipt(root: Path, records: list[Any], effect: str) -> None:
 
 
 def _health_menu(root: Path) -> None:
-    """Present concise health results and confirmed framework-only repairs."""
+    """Separate blocking health, recommended updates, and recovery."""
     while True:
-        validation = cast(dict[str, object], status(root)["validation"])
+        report = doctor(root)
+        validation = cast(dict[str, object], report["validation"])
         _header(
-            "Project Health",
-            "All checks passed" if validation["ok"] else "Issues need attention",
+            "Health & updates",
+            str(report["health_state"]).replace("_", " ").title(),
+        )
+        updates = cast(dict[str, object], report["recommended_updates"])
+        _cards(
+            ("Health", "Working" if report["ok"] else "Blocked"),
+            ("Updates", "Available" if updates["updates_available"] else "Current"),
         )
         try:
             action = _select(
-                "Health",
+                "Health & updates",
                 [
-                    ("validate", "Quick project validation"),
-                    ("doctor", "Full system and project doctor"),
-                    ("fix", "Preview safe SMAIRT-managed repairs"),
-                    ("back", "Back"),
+                    ("validate", "Validate project records"),
+                    ("doctor", "Doctor · blocking problems and exact solutions"),
+                    ("updates", "Project updates · preview schema, guidance, and adapter"),
+                    ("recovery", "Recovery · interrupted transactions and technical repair"),
                 ],
             )
-            if action == "back":
-                return
             if action == "validate":
                 _render_validation(validation)
             elif action == "doctor":
-                _render_doctor(doctor(root))
-            else:
-                preview = upgrade_project(root, apply=False)
-                changes = cast(list[object], preview.get("changes", []))
-                active = SmairtConfig.load(root / "smairt.yaml").harness.active
-                harness = next(item for item in list_harnesses(root) if item["active"])
-                console.print(f"Managed guidance updates: {len(changes)}")
-                adapter_needs_refresh = bool(harness.get("missing") or harness.get("modified"))
-                console.print(
-                    "Active harness adapter: "
-                    + ("needs review" if adapter_needs_refresh else "healthy")
-                )
-                if changes and _yes_no("Apply conflict-free managed guidance updates?", False):
-                    console.print(upgrade_project(root, apply=True))
-                if adapter_needs_refresh and _yes_no(
-                    f"Refresh the managed {active.value} adapter after conflict checks?", False
+                _render_doctor(report)
+            elif action == "updates":
+                plan = project_update_plan(root)
+                _render_update_plan(plan)
+                if plan["updates_available"] and _yes_no(
+                    "Apply all conflict-free updates shown above?", False
                 ):
-                    console.print(install_harness(root, active.value, upgrade=True))
-                if not changes and not adapter_needs_refresh:
-                    console.print("[green]No safe managed repair is needed.[/green]")
+                    receipt = apply_project_updates(
+                        root,
+                        contributor_id=SmairtConfig.load(root / "smairt.yaml").active_contributor,
+                    )
+                    _render_update_plan(cast(dict[str, object], receipt["final"]))
+                    console.print("[green]Project updates completed.[/green]")
+            else:
+                _recovery_menu(root)
             _pause()
         except BackNavigation:
             return
@@ -1447,12 +1504,38 @@ def _render_doctor(payload: dict[str, object]) -> None:
         "Git": cast(dict[str, object], payload["git"])["healthy"],
         "Environment": cast(dict[str, object], payload["environment"])["healthy"],
         "Transactions": cast(dict[str, object], payload["transactions"])["ok"],
-        "Release": payload["release_ready"],
     }
     for label, ready in categories.items():
         console.print(f"{'[green]✓[/]' if ready else '[yellow]![/]'} {label}")
     for warning in cast(list[str], payload.get("warnings", [])):
         console.print(f"[yellow]Suggested action:[/] {warning}")
+    updates = cast(dict[str, object], payload["recommended_updates"])
+    if updates["updates_available"]:
+        console.print("[cyan]Recommended:[/] Open Health & updates → Project updates.")
+
+
+def _render_update_plan(payload: dict[str, object]) -> None:
+    """Explain each update layer and its effect without raw implementation data."""
+    schema = cast(dict[str, object], payload["project_schema"])
+    guidance = cast(dict[str, object], payload["managed_guidance"])
+    adapter = cast(dict[str, object], payload["harness_adapter"])
+    console.print(
+        f"Project schema: {schema['current']} → {schema['target']} "
+        f"({'update available' if schema['status'] == 'available' else 'current'})"
+    )
+    for step in cast(list[dict[str, int]], schema["steps"]):
+        console.print(f"  • v{step['from_version']} → v{step['to_version']} · backed up first")
+    console.print(
+        f"Managed guidance: {guidance['status']} · "
+        f"{len(cast(list[object], guidance['changes']))} change(s)"
+    )
+    console.print(
+        f"{str(adapter['active']).title()} adapter: {adapter['status']} · "
+        f"recorded {adapter['recorded']}, installed {adapter['installed']}, "
+        f"target {adapter['target']}"
+    )
+    for blocker in cast(list[str], payload.get("blockers", [])):
+        console.print(f"[red]Blocked:[/] {blocker}")
 
 
 def _project_setup_menu(root: Path) -> None:
@@ -1546,6 +1629,93 @@ def _advanced_menu(root: Path) -> None:
             _pause()
 
 
+def _recovery_menu(root: Path) -> None:
+    """Explain explicit recovery commands without silently changing researcher work."""
+    del root
+    console.print(
+        "Recovery protects user-authored work and always requires a transaction ID:\n"
+        "  smairt recovery status --json\n"
+        "  smairt recovery complete <transaction-id> --yes\n"
+        "  smairt recovery rollback <transaction-id> --yes\n"
+        "Technical reports: smairt doctor --json · smairt validate --json"
+    )
+
+
+def _tools_menu(root: Path) -> None:
+    """Group local environment, harness, connection, and optional compute setup."""
+    while True:
+        config = SmairtConfig.load(root / "smairt.yaml")
+        _header("Tools & compute", "Local execution remains the default; HPC is optional")
+        try:
+            action = _select(
+                "Tools & compute",
+                [
+                    ("environment", "Local Conda environment"),
+                    ("harness", "AI coding harness adapter"),
+                    ("connections", "Bind local literature connections to this checkout"),
+                    ("hpc", "HPC/Slurm · inspect optional execution setup"),
+                ],
+            )
+            if action == "environment":
+                _environment_menu(root)
+            elif action == "connections":
+                _integrations_menu(root)
+            elif action == "hpc":
+                console.print(
+                    "HPC is optional for large analyses and is never used by the demo.\n"
+                    "Configure a machine-local profile with 'smairt setup', then inspect with\n"
+                    "'smairt hpc status'. SMAIRT stores no SSH password or private key."
+                )
+                _pause()
+            else:
+                _render_harness_chooser(config.harness.active)
+                selected = _select(
+                    "Active harness",
+                    [(item, HARNESS_PRESENTATIONS[item].display_name) for item in HarnessName],
+                    config.harness.active,
+                )
+                if selected != config.harness.active and _yes_no(
+                    f"Switch the managed adapter to {selected.value}?", False
+                ):
+                    console.print(select_harness(root, selected.value))
+                    _pause()
+        except BackNavigation:
+            return
+        except (OSError, RuntimeError, ValueError) as exc:
+            console.print(f"[red]Tool setup could not continue:[/] {exc}")
+            _pause()
+
+
+def _sharing_menu(root: Path) -> None:
+    """Keep scientific safety policy separate from ordinary project health."""
+    while True:
+        config = SmairtConfig.load(root / "smairt.yaml")
+        _header("Safety & sharing", f"Current safety mode: {config.safety_mode.value}")
+        try:
+            action = _select(
+                "Safety & sharing",
+                [
+                    ("status", "Explain current safety policy"),
+                    ("mode", "Change Standard or Strict mode"),
+                    ("sharing", "Check readiness to share or release"),
+                ],
+            )
+            if action == "status":
+                console.print(safety_status(root))
+            elif action == "sharing":
+                _render_validation(release_check(root))
+            else:
+                mode = _select("Safety mode", [("standard", "Standard"), ("strict", "Strict")])
+                if _yes_no(f"Change project safety mode to {mode}?", False):
+                    console.print(set_safety_mode(root, mode))
+            _pause()
+        except BackNavigation:
+            return
+        except (OSError, RuntimeError, ValueError) as exc:
+            console.print(f"[red]Safety check could not continue:[/] {exc}")
+            _pause()
+
+
 def run_project_menu(root: Path) -> None:
     """Run the nested project workflow hub directly beneath the shell prompt."""
     root = root.resolve()
@@ -1581,10 +1751,11 @@ def run_project_menu(root: Path) -> None:
                 [
                     ("next", "Continue research · recommended action and prompt"),
                     ("palette", "Find an action · type to filter commands and options"),
-                    ("references", "References"),
-                    ("setup", "Project setup"),
-                    ("health", "Health and safe repairs"),
-                    ("advanced", "Advanced"),
+                    ("references", "Literature & references"),
+                    ("setup", "Project & people"),
+                    ("tools", "Tools & compute"),
+                    ("health", "Health & updates"),
+                    ("sharing", "Safety & sharing"),
                     ("exit", "Return to shell"),
                 ],
             )
@@ -1609,127 +1780,173 @@ def run_project_menu(root: Path) -> None:
             _references_menu(root)
         elif action == "setup":
             _project_setup_menu(root)
+        elif action == "tools":
+            _tools_menu(root)
         elif action == "health":
             _health_menu(root)
         else:
-            _advanced_menu(root)
+            _sharing_menu(root)
 
 
 def run_setup_menu() -> None:
-    """Configure installation health and user-local provider profiles."""
+    """Configure SMAIRT through four researcher-facing setup categories."""
     while True:
         health = setup_doctor(check_github=False)
-        profiles = load_user_setup().profiles
+        setup = load_user_setup()
+        profiles = setup.profiles
         backend = keyring_health()
         _header("SMAIRT Setup", "User-wide settings · secrets never enter project files")
-        console.print(
-            Columns(
-                [
-                    Panel(
-                        "[green]Ready[/]" if health["ok"] else "[yellow]Needs attention[/]",
-                        title="Installation",
-                        border_style=ORANGE,
-                    ),
-                    Panel(
-                        f"{len(profiles)} configured\nKeyring: {backend.get('status', 'unknown')}",
-                        title="Connections",
-                        border_style=ORANGE,
-                    ),
-                ],
-                equal=True,
-                expand=True,
-            )
+        _cards(
+            ("Installation", "Ready" if health["ok"] else "Needs attention"),
+            ("Literature", f"{len(profiles)} connection(s)"),
+            ("Compute", f"{len(setup.compute_profiles)} profile(s)"),
+            ("Appearance", f"{setup.appearance.theme} · {setup.appearance.logo}"),
         )
         try:
             action = _select(
                 "Setup",
                 [
-                    ("doctor", "Check installation and show solutions"),
-                    ("keys", "Add or remove an API key"),
-                    ("zotero", "Configure and test Zotero"),
-                    ("openalex", "Configure and test OpenAlex"),
-                    ("semantic", "Configure Semantic Scholar discovery"),
-                    ("hpc", "Configure optional Slurm execution"),
-                    ("profiles", "Review or remove connection profiles"),
-                    ("appearance", "Appearance and motion"),
+                    ("installation", "Installation & version · checks and exact solutions"),
+                    ("literature", "Literature connections · provider, key, test, remove"),
+                    ("compute", "Compute connections · optional Slurm profiles"),
+                    ("appearance", "Appearance · theme, logo, accents, and motion"),
                     ("exit", "Return to shell"),
                 ],
             )
             if action == "exit":
                 return
-            if action == "doctor":
+            if action == "installation":
                 _render_setup_health(health)
-            elif action == "keys":
-                provider = _select(
-                    "Provider",
-                    [
-                        ("openalex", "OpenAlex"),
-                        ("semantic_scholar", "Semantic Scholar"),
-                        ("zotero", "Zotero Web"),
-                    ],
-                )
-                profile_name = _text("Profile name", "default")
-                operation = _select(
-                    "API key", [("set", "Store or replace key"), ("delete", "Delete key")]
-                )
-                if operation == "delete":
-                    removed = delete_credential(provider, profile_name)
-                    console.print(
-                        "[green]Key deleted.[/]" if removed else "No stored key was found."
-                    )
-                else:
-                    set_credential(provider, profile_name, _secret(f"{provider} API key"))
-                    console.print(
-                        "[green]Key stored in the OS keyring.[/] It was not written to a file."
-                    )
-            elif action == "zotero":
-                _configure_zotero_setup()
-            elif action == "openalex":
-                _configure_openalex_setup()
-            elif action == "semantic":
-                _configure_semantic_scholar_setup()
-            elif action == "hpc":
+                console.print(f"Credential backend: {backend.get('status', 'unknown')}")
+            elif action == "literature":
+                _literature_setup_menu()
+            elif action == "compute":
                 _configure_hpc_setup()
-            elif action == "profiles":
-                if not profiles:
-                    console.print("No connection profiles are configured.")
-                else:
-                    selected = _select(
-                        "Connection profile",
-                        [
-                            (name, f"{name} · {profile.provider.title()}")
-                            for name, profile in profiles.items()
-                        ],
-                    )
-                    operation = _select(
-                        "Profile",
-                        [("test", "Test connection"), ("delete", "Remove local profile")],
-                    )
-                    if operation == "test":
-                        console.print(_connection_receipt(test_profile(selected)))
-                    elif _yes_no(f"Remove local profile '{selected}'?", False):
-                        delete_profile(selected)
-                        console.print("[green]Local profile removed.[/green]")
             elif action == "appearance":
-                setup = load_user_setup()
-                setup.motion = _select(
-                    "Motion",
-                    [
-                        ("automatic", "Automatic · subtle when the terminal supports it"),
-                        ("off", "Off · static interface"),
-                    ],
-                    setup.motion,
-                )
-                from smairt.local_setup import save_user_setup
-
-                save_user_setup(setup)
-                console.print("[green]Appearance preference saved for this machine.[/green]")
+                _appearance_menu()
             _pause()
         except BackNavigation:
             return
         except (OSError, RuntimeError, ValueError) as exc:
             console.print(f"[red]Setup could not continue:[/] {exc}")
             _pause()
+
+
+def _literature_setup_menu() -> None:
+    """Keep provider configuration, credentials, testing, and removal together."""
+    while True:
+        profiles = load_user_setup().profiles
+        _header("Literature connections", "Keys stay in the OS keyring; profiles stay local")
+        _cards(("Configured", len(profiles)), ("Project data", "No secrets"))
+        try:
+            action = _select(
+                "Literature provider",
+                [
+                    ("zotero", "Zotero · local app or Web library"),
+                    ("openalex", "OpenAlex · discovery and citation graph"),
+                    ("semantic", "Semantic Scholar · optional discovery"),
+                    ("unpaywall", "Unpaywall · open-access resolution"),
+                    ("profiles", "Review, test, or remove configured connections"),
+                ],
+            )
+            if action == "zotero":
+                _configure_zotero_setup()
+            elif action == "openalex":
+                _configure_openalex_setup()
+            elif action == "semantic":
+                _configure_semantic_scholar_setup()
+            elif action == "unpaywall":
+                name = _text("Profile name", "default")
+                email = _text("Contact email required by Unpaywall")
+                configure_profile(
+                    name, ConnectionProfile(provider="unpaywall", contact_email=email)
+                )
+                console.print("[green]Unpaywall contact saved locally.[/green]")
+            elif not profiles:
+                console.print("No literature connections are configured.")
+            else:
+                selected = _select(
+                    "Connection profile",
+                    [
+                        (name, f"{name} · {profile.provider.replace('_', ' ').title()}")
+                        for name, profile in profiles.items()
+                    ],
+                )
+                operation = _select(
+                    "Connection",
+                    [("test", "Test connection"), ("delete", "Remove profile and stored key")],
+                )
+                if operation == "test":
+                    console.print(_connection_receipt(test_profile(selected)))
+                elif _yes_no(f"Remove local connection '{selected}'?", False):
+                    profile = profiles[selected]
+                    delete_profile(selected)
+                    delete_credential(profile.provider, profile.credential_profile)
+                    console.print("[green]Local connection removed.[/green]")
+            _pause()
+        except BackNavigation:
+            return
+
+
+def _appearance_menu() -> None:
+    """Configure and preview machine-local terminal appearance."""
+    setup = load_user_setup()
+    appearance = setup.appearance
+    action = _select(
+        "Appearance",
+        [
+            ("theme", "Color theme"),
+            ("logo", "Logo · SMAIRT, PNNL mark, custom ASCII, or none"),
+            ("motion", "Motion · automatic or off"),
+            ("preview", "Preview current appearance"),
+        ],
+    )
+    if action == "theme":
+        appearance.theme = _select(
+            "Theme",
+            [
+                ("scientific", "Scientific console · orange and cyan"),
+                ("pnnl", "PNNL inspired · orange and slate"),
+                ("amber", "Amber terminal"),
+                ("high-contrast", "High contrast"),
+                ("monochrome", "Monochrome"),
+                ("custom", "Custom RGB accents"),
+            ],
+            appearance.theme,
+        )
+        if appearance.theme == "custom":
+            appearance.primary_color = _text("Primary #RRGGBB", appearance.primary_color or ORANGE)
+            appearance.secondary_color = _text(
+                "Secondary #RRGGBB", appearance.secondary_color or CYAN
+            )
+    elif action == "logo":
+        appearance.logo = _select(
+            "Logo",
+            [
+                ("smairt", "SMAIRT wordmark"),
+                ("pnnl-mark", "PNNL-inspired mark only · no laboratory text"),
+                ("custom", "Import sanitized ASCII text file"),
+                ("none", "No large logo"),
+            ],
+            appearance.logo,
+        )
+        if appearance.logo == "custom":
+            source = Path(_text("ASCII logo file")).expanduser()
+            save_custom_logo(source.read_text(encoding="utf-8"))
+    elif action == "motion":
+        appearance.motion = _select(
+            "Motion",
+            [
+                ("automatic", "Automatic · one launch flourish when supported"),
+                ("off", "Off · static interface"),
+            ],
+            appearance.motion,
+        )
+    save_user_setup(setup)
+    _header("Appearance preview", f"{appearance.theme} · {appearance.logo}")
+    _cards(("Primary", _appearance_values(appearance)[0]), ("Motion", appearance.motion))
+    with suppress(BackNavigation):
+        _select("Appearance saved on this machine", [("done", "Return to setup")])
 
 
 def _render_setup_health(payload: dict[str, object]) -> None:

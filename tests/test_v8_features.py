@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,15 +14,34 @@ import pytest
 import yaml
 
 from smairt.completion import PROJECT_ACTIONS, project_identifiers
+from smairt.diagnostics import doctor
 from smairt.hpc import load_job, submit_slurm
 from smairt.literature import SemanticScholarProvider
-from smairt.local_setup import SlurmProfile, configure_slurm_profile, load_user_setup
+from smairt.local_setup import (
+    SlurmProfile,
+    configure_slurm_profile,
+    load_custom_logo,
+    load_user_setup,
+    save_custom_logo,
+)
 from smairt.migrations import migration_plan
-from smairt.models import ComputeMode, ComputeResources, DataClassification, SmairtConfig
-from smairt.research import create_experiment
+from smairt.models import ComputeMode, ComputeResources, DataClassification, Decision, SmairtConfig
+from smairt.paper import create_claim, create_evidence_card, review_claim
+from smairt.references import add_doi_reference
+from smairt.research import (
+    activate_hypothesis,
+    create_background,
+    create_experiment,
+    create_proposal_set,
+    record_decision,
+    validate_background,
+    validate_hypothesis,
+    validate_proposal_set,
+)
 from smairt.runner import run_experiment
 from smairt.scaffold import create_project
 from smairt.science import validate_protocol
+from smairt.updates import apply_project_updates, project_update_plan
 
 
 def project(tmp_path: Path) -> Path:
@@ -78,6 +98,121 @@ def test_completion_catalog_and_project_ids_are_local(tmp_path: Path) -> None:
     assert {item.value for item in PROJECT_ACTIONS} >= {"next", "references", "health"}
     assert project_identifiers(root, "experiment") == ["EXPERIMENT_001"]
     assert project_identifiers(root, "unknown") == []
+
+
+def test_user_setup_v3_migrates_appearance_without_project_state(tmp_path: Path) -> None:
+    setup = tmp_path / "user-setup/setup.yaml"
+    setup.parent.mkdir(parents=True)
+    setup.write_text("schema_version: 3\nmotion: off\nprofiles: {}\n")
+
+    config = load_user_setup()
+
+    assert config.schema_version == 4
+    assert config.appearance.motion == "off"
+    assert config.appearance.theme == "scientific"
+
+
+def test_custom_ascii_logo_rejects_terminal_injection(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="control"):
+        save_custom_logo("SAFE\x00UNSAFE")
+    with pytest.raises(ValueError, match="escape"):
+        save_custom_logo("SAFE\x1b[2J")
+    save_custom_logo(" /\\\n/  \\")
+    assert load_custom_logo() == " /\\\n/  \\"
+
+
+def test_documented_demo_reaches_one_supported_approved_claim(tmp_path: Path, monkeypatch) -> None:
+    """Keep the human walkthrough's fixtures scientifically and mechanically coherent."""
+    root = project(tmp_path)
+    example = Path(__file__).parents[1] / "examples/enzyme-kinetics-demo"
+    monkeypatch.setattr(
+        "smairt.references._fetch_crossref",
+        lambda _doi: {
+            "message": {
+                "title": ["The original Michaelis constant"],
+                "author": [{"family": "Michaelis"}],
+                "published": {"date-parts": [[2011]]},
+            }
+        },
+    )
+    reference = add_doi_reference(root, "10.1021/bi201284u")
+    assert reference.id == "doi-a04d8aaf11d84cfac807"
+    create_background(root)
+    shutil.copyfile(example / "initial_background.md", root / "background/initial_background.md")
+    assert validate_background(root) == []
+
+    proposals = create_proposal_set(root)
+    shutil.copyfile(example / "proposal_options.md", proposals)
+    assert validate_proposal_set(proposals) == []
+    hypothesis = activate_hypothesis(
+        root,
+        proposals,
+        "A",
+        title="Nonlinear Michaelis-Menten recovery",
+        statement="Nonlinear fitting recovers the declared Vmax and Km within tolerance.",
+        selected_by="Researcher",
+        rationale="Direct bounded correctness test.",
+    )
+    text = hypothesis.read_text()
+    text = text.replace("[Complete from the selected proposal and human edits.]", "Native fit.")
+    text = text.replace(
+        "[Complete before running the linked experiment.]",
+        "Declared parameter ranges must be recovered.",
+        1,
+    ).replace(
+        "[Complete before running the linked experiment.]",
+        "At least one predeclared check fails.",
+        1,
+    )
+    text = text.replace(
+        "## Required Data and Controls\n",
+        "## Required Data and Controls\nAll triplicates and blanks.\n",
+    )
+    text = text.replace(
+        "## Success and Failure Criteria\n",
+        "## Success and Failure Criteria\nAll checks pass or the demo fails.\n",
+    )
+    text = text.replace("## Known Confounders\n", "## Known Confounders\nSynthetic fixture.\n")
+    hypothesis.write_text(text)
+    assert validate_hypothesis(hypothesis) == []
+
+    experiment = create_experiment(
+        root,
+        title="Enzyme Kinetics",
+        hypothesis_id="HYPOTHESIS_001",
+        purpose="Recover independently declared parameters",
+        enforce_protocol=True,
+    )
+    iteration = experiment / "iterations/ITERATION_001"
+    for name in ("data.csv", "expected-results.json", "protocol.yaml"):
+        shutil.copyfile(example / name, iteration / name)
+    shutil.copyfile(example / "analysis.py", iteration / "script_001_enzyme_kinetics.py")
+    run = run_experiment(root, experiment_id="EXPERIMENT_001", iteration_id="ITERATION_001")
+    result = json.loads((root / run.results_directory / "artifacts/results.json").read_text())
+    assert result["correct"] and result["vmax_umol_min"] == 120.0 and result["km_mM"] == 2.5
+    analysis = root / "analysis/EXPERIMENT_001/ANALYSIS_ITERATION_001.md"
+    analysis.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(example / "ANALYSIS_ITERATION_001.md", analysis)
+    record_decision(
+        root,
+        experiment_id="EXPERIMENT_001",
+        iteration_id="ITERATION_001",
+        run_id=run.run_id,
+        decision=Decision.ACCEPT,
+        rationale="Every predeclared check passed.",
+        decided_by="Researcher",
+    )
+    evidence = create_evidence_card(
+        root,
+        run.run_id,
+        purpose="Correctness demo",
+        observed_result="Declared parameters were recovered.",
+        limitations="Synthetic deterministic fixture.",
+        decision="ACCEPT",
+    )
+    claim = create_claim(root, "The demo recovered its declared parameters.", [evidence.stem])
+    reviewed = review_claim(root, claim.stem, "approved")
+    assert reviewed["status"] == "approved"
 
 
 def test_semantic_scholar_normalizes_provisional_results(tmp_path: Path) -> None:
@@ -141,6 +276,48 @@ def test_v7_projects_plan_a_schema_8_migration(tmp_path: Path) -> None:
     config.schema_version = 7
     config.dump(root / "smairt.yaml")
     assert migration_plan(root)["to_version"] == 8
+
+
+def test_unified_update_plan_explains_v6_to_v8(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    config = SmairtConfig.load(root / "smairt.yaml")
+    config.schema_version = 6
+    config.dump(root / "smairt.yaml")
+
+    plan = project_update_plan(root)
+
+    assert plan["project_schema"]["steps"] == [
+        {"from_version": 6, "to_version": 7},
+        {"from_version": 7, "to_version": 8},
+    ]
+    assert plan["updates_available"]
+
+
+def test_doctor_separates_health_updates_and_sharing(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    config = SmairtConfig.load(root / "smairt.yaml")
+    config.schema_version = 7
+    config.dump(root / "smairt.yaml")
+
+    report = doctor(root)
+
+    assert report["ok"]
+    assert report["health_state"] == "action_recommended"
+    assert report["recommended_updates"]["project_schema"]["target"] == 8
+    assert report["sharing_readiness"] == report["release"]
+
+
+def test_unified_update_applies_every_schema_step(tmp_path: Path) -> None:
+    root = project(tmp_path)
+    config = SmairtConfig.load(root / "smairt.yaml")
+    config.schema_version = 6
+    config.dump(root / "smairt.yaml")
+
+    receipt = apply_project_updates(root)
+
+    assert [item["to_version"] for item in receipt["migrations"]] == [7, 8]
+    assert SmairtConfig.load(root / "smairt.yaml").schema_version == 8
+    assert receipt["final"]["project_schema"]["status"] == "current"
 
 
 def test_native_slurm_submission_uses_typed_profile(tmp_path: Path, monkeypatch) -> None:

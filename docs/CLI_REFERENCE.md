@@ -6,7 +6,8 @@ Run `smairt <command> --help` for option-level help. Noninteractive machine cons
 Bare `smairt` prints a deterministic welcome with version, credits, license, and suggested entry
 points. `smairt setup` opens machine-wide setup, `smairt new` opens project creation, and `smairt
 menu` opens the dashboard for the project containing the current folder. In every menu, Up/Down
-and j/k wrap at both ends; Enter accepts, Escape returns one level, and Ctrl-C exits.
+and j/k wrap at both ends; Enter accepts, Left/Escape returns one level, and Ctrl-C exits. A visible
+Back row provides the same one-level action.
 
 ```bash
 smairt setup
@@ -19,6 +20,7 @@ smairt setup unpaywall configure default --email EMAIL
 smairt setup hpc configure default --mode native|ssh [--host HOST] --remote-root PATH
 smairt new [DESTINATION]
 smairt menu [PROJECT]
+smairt update [--apply --yes] [--allow-dirty] [--json]
 smairt settings show --json
 smairt settings project [--field TEXT]... [--license LICENSE]
 smairt env select --mode none
@@ -49,7 +51,7 @@ smairt mcp serve
 | Group                                                   | Purpose                                                                        |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `setup`                                                 | Configure this machine's credentials and connection profiles                   |
-| `new`, `menu`                                           | Create a project or open its five-area dashboard                               |
+| `new`, `menu`                                           | Create a project or open its researcher-facing dashboard                       |
 | `status`, `next`, `context`, `doctor`                   | Inspect local state, bounded context, and health                               |
 | `contributor`                                           | Register and select manually confirmed people                                  |
 | `reference`, `background`, `hypothesis`                 | Build source-grounded scientific framing                                       |
@@ -61,7 +63,8 @@ smairt mcp serve
 | `literature`, `reference`                               | Discover works, import DOI metadata, resolve access, and organize PDFs         |
 | `hpc`                                                   | Reconcile optional Slurm jobs; local runs remain the default                   |
 | `lock`, `recovery`                                      | Inspect writer ownership and resolve interrupted transactions                  |
-| `verify`, `contract`, `code`, `env`, `model`, `upgrade` | Integrity, portability, readability, environment, economy, and framework tools |
+| `update`, `upgrade`                                     | Unified project maintenance and legacy guidance-only compatibility             |
+| `verify`, `contract`, `code`, `env`, `model`            | Integrity, portability, readability, environment, and economy tools            |
 
 `smairt init` and `smairt start project` are deprecated aliases for the creation wizard.
 The older nested `integration zotero` and `integration openalex` commands remain compatibility
