@@ -13,6 +13,7 @@ import yaml
 
 from smairt import __version__
 from smairt.licenses import license_manifest, render_license
+from smairt.local_setup import normalize_fields_of_study
 from smairt.locking import ProjectMutationLock
 from smairt.models import (
     Contributor,
@@ -421,6 +422,7 @@ def create_project(
     in place under the project mutation lock.
     """
     destination = destination.expanduser().resolve()
+    fields_of_study = normalize_fields_of_study(fields_of_study or [])
     existing_content = destination.exists() and any(destination.iterdir())
     if existing_content:
         if (destination / "smairt.yaml").exists():
@@ -436,7 +438,7 @@ def create_project(
                 classification=classification,
                 question=question,
                 description=description,
-                fields_of_study=fields_of_study or [],
+                fields_of_study=fields_of_study,
                 license_name=license_name,
                 initialize_git=initialize_git,
                 environment_mode=environment_mode,

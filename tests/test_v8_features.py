@@ -110,7 +110,7 @@ def test_user_setup_v3_migrates_appearance_without_project_state(tmp_path: Path)
 
     config = load_user_setup()
 
-    assert config.schema_version == 6
+    assert config.schema_version == 7
     assert config.appearance.motion == "off"
     assert config.appearance.theme == "scientific"
     assert config.appearance.mark == "none"
@@ -138,7 +138,7 @@ def test_user_setup_v4_migrates_logo_and_provider_scoped_profiles(tmp_path: Path
 
     config = load_user_setup()
 
-    assert config.schema_version == 6
+    assert config.schema_version == 7
     assert config.appearance.theme == "pnnl"
     assert config.appearance.mark == "none"
     assert config.profiles["zotero"]["default"].mode.value == "local"
@@ -163,7 +163,7 @@ def test_user_setup_v5_migrates_institutional_marks_to_none(
 
     config = load_user_setup()
 
-    assert config.schema_version == 6
+    assert config.schema_version == 7
     assert config.appearance.theme == legacy_mark
     assert config.appearance.mark == "none"
 
@@ -177,7 +177,7 @@ def test_user_setup_v5_preserves_custom_mark(tmp_path: Path) -> None:
 
     config = load_user_setup()
 
-    assert config.schema_version == 6
+    assert config.schema_version == 7
     assert config.appearance.mark == "custom"
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from smairt.licenses import license_manifest, render_license, verify_managed_license
+from smairt.local_setup import normalize_fields_of_study
 from smairt.locking import mutating
 from smairt.models import EnvironmentConfig, EnvironmentMode, ProjectLicense, SmairtConfig
 from smairt.provenance import require_contributor, stage_event
@@ -44,7 +45,7 @@ def update_project_settings(
     config.project.author = author
     config.project.question = question
     config.project.description = description
-    config.project.fields_of_study = fields_of_study
+    config.project.fields_of_study = normalize_fields_of_study(fields_of_study)
     config.project.license = license_name
     transaction = FileTransaction(root, "project settings update")
     transaction.stage_text(root / "smairt.yaml", _config_text(config))

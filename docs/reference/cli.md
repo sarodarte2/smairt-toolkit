@@ -7,7 +7,7 @@ workflows and stable machine-facing behavior rather than reproducing every optio
 
 | Command | Purpose |
 | --- | --- |
-| `smairt` | Show version, project detection, and the most useful next entry point |
+| `smairt` | Open context-aware Home or the nearest project dashboard in a terminal |
 | `smairt setup` | Configure and diagnose user-wide installation and connection profiles |
 | `smairt new [DESTINATION]` | Create a project interactively or from explicit options |
 | `smairt menu [PROJECT]` | Open the terminal workspace for the nearest or selected project |
@@ -15,6 +15,9 @@ workflows and stable machine-facing behavior rather than reproducing every optio
 | `smairt next` | Recommend state-aware actions and bounded context |
 | `smairt doctor` | Diagnose project and sharing readiness without network access or mutation |
 | `smairt validate` | Check structure, safety, code, provenance, and readiness |
+
+Use `smairt --project PATH <command>` from any directory. An explicit project wins over nearest
+directory discovery; workspace handoffs add it only when needed.
 
 `smairt init` and `smairt start project` remain deprecated project-creation aliases.
 
@@ -31,8 +34,10 @@ smairt setup hpc configure default --mode native|ssh --remote-root PATH
 smairt integration bind|unbind|status|test
 ```
 
-Setup profiles are user-local. Project bindings are ignored checkout-local state. Shared project
-YAML contains policy, not credentials or account identifiers.
+The nullable starter profile can hold an explicitly entered contributor, project parent, fields of
+study, and AI assistant. It never learns from projects and contains no classification, license,
+environment, Git, or safety defaults. Connection profiles are user-local; shared YAML contains
+policy, not credentials or account identifiers.
 
 ## Orientation and bounded context
 
@@ -166,3 +171,6 @@ suggests commands and options but never credential values.
 Inside `smairt menu`, arrow keys or j/k move, Enter accepts, Left or Escape returns one level, and
 Ctrl-C exits. **Find an action** searches the local command catalog and project identifiers without
 network access.
+
+Non-interactive `smairt new` requires all consequential options or the explicit
+`--accept-recommended` bundle. In a terminal, incomplete values seed the guided wizard.

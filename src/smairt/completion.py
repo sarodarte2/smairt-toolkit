@@ -38,7 +38,7 @@ PROJECT_ACTIONS = (
     ),
     CommandSuggestion(
         "setup",
-        "Project & people",
+        "Project & contributors",
         "Edit project details and contributor settings",
         effect="changes settings",
         keywords=("configuration", "people", "contributor"),

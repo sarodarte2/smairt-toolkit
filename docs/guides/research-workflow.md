@@ -5,6 +5,10 @@ those records, but consequential scientific transitions remain researcher decisi
 
 ## Restore context before acting
 
+The dashboard presents **Ground → Explore → Test → Interpret → Share**. It highlights the current
+stage without assigning a misleading overall percentage; Interpret can return to Explore or Test
+for another cycle. Finite preparation tasks may still show truthful step counts.
+
 Begin each session by inspecting the current project rather than relying on chat history:
 
 ```bash
@@ -13,6 +17,8 @@ smairt next --json
 smairt next --prompt
 smairt context --task planning --token-budget 8000
 ```
+
+Add `--project PATH` immediately after `smairt` to run these commands from another folder.
 
 The JSON output is intended for scripts and assistants. The prompt output is a bounded handoff with
 suggested files and an explicit human-decision boundary.

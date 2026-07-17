@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from platformdirs import user_config_path
 from pydantic import Field, field_validator, model_validator
 
-from smairt.models import ComputeMode, DurableModel, ZoteroLibraryType, ZoteroMode
+from smairt.models import ComputeMode, DurableModel, HarnessName, ZoteroLibraryType, ZoteroMode
 from smairt.utils import atomic_write, validate_identifier
 
 ProviderName = Literal["openalex", "semantic_scholar", "zotero", "unpaywall"]
@@ -35,6 +36,79 @@ ThemeName = Literal[
     "custom",
 ]
 MarkName = Literal["none", "custom"]
+FIELD_OF_STUDY_OPTIONS = (
+    "Agricultural Science",
+    "Biochemistry",
+    "Bioinformatics",
+    "Biology",
+    "Chemistry",
+    "Computational Biology",
+    "Computer Science",
+    "Data Science",
+    "Earth Science",
+    "Ecology",
+    "Engineering",
+    "Environmental Science",
+    "Genetics and Genomics",
+    "Materials Science",
+    "Mathematics",
+    "Medicine and Health Sciences",
+    "Microbiology",
+    "Neuroscience",
+    "Physics",
+    "Psychology",
+    "Public Health",
+    "Social Sciences",
+    "Statistics",
+)
+_SCIENTIFIC_CASE = {
+    "ai": "AI",
+    "crispr": "CRISPR",
+    "dna": "DNA",
+    "eqtl": "eQTL",
+    "gwas": "GWAS",
+    "hpc": "HPC",
+    "ngs": "NGS",
+    "rna": "RNA",
+    "rna-seq": "RNA-seq",
+    "scrna-seq": "scRNA-seq",
+    "16s": "16S",
+    "18s": "18S",
+}
+_LOWERCASE_TITLE_WORDS = {"and", "of", "the", "in", "for", "to"}
+
+
+def normalize_field_of_study(value: str) -> str:
+    """Return one naturally capitalized, canonical field-of-study label."""
+    compact = " ".join(value.strip().split())
+    if not compact:
+        raise ValueError("field of study cannot be empty")
+    known = {item.casefold(): item for item in FIELD_OF_STUDY_OPTIONS}
+    if compact.casefold() in known:
+        return known[compact.casefold()]
+    words: list[str] = []
+    for index, word in enumerate(compact.split(" ")):
+        scientific = _SCIENTIFIC_CASE.get(word.casefold())
+        if scientific:
+            words.append(scientific)
+        elif index and word.casefold() in _LOWERCASE_TITLE_WORDS:
+            words.append(word.casefold())
+        else:
+            words.append(word[:1].upper() + word[1:].lower())
+    return " ".join(words)
+
+
+def normalize_fields_of_study(values: list[str]) -> list[str]:
+    """Normalize and case-insensitively deduplicate field labels."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = normalize_field_of_study(value)
+        key = item.casefold()
+        if key not in seen:
+            normalized.append(item)
+            seen.add(key)
+    return normalized
 
 
 class AppearanceConfig(DurableModel):
@@ -156,14 +230,64 @@ class SlurmProfile(DurableModel):
         return self
 
 
+class StarterProfile(DurableModel):
+    """Store only explicitly supplied, low-risk project-starter preferences."""
+
+    contributor_name: str | None = None
+    contributor_email: str | None = None
+    project_parent: str | None = None
+    fields_of_study: list[str] = Field(default_factory=list)
+    assistant: HarnessName | None = None
+
+    @field_validator("contributor_name", "contributor_email")
+    @classmethod
+    def nonempty_optional_text(cls, value: str | None) -> str | None:
+        """Convert blank optional profile entries back to an absent value."""
+        compact = value.strip() if value else ""
+        return compact or None
+
+    @field_validator("project_parent")
+    @classmethod
+    def normalized_parent(cls, value: str | None) -> str | None:
+        """Store one explicit absolute parent without requiring it to exist forever."""
+        return str(Path(value).expanduser().resolve()) if value else None
+
+    @field_validator("fields_of_study")
+    @classmethod
+    def normalized_fields(cls, values: list[str]) -> list[str]:
+        """Keep profile field labels canonical and unique."""
+        return normalize_fields_of_study(values)
+
+
+class ProjectDraft(DurableModel):
+    """Persist one transient, owner-local new-project wizard checkpoint."""
+
+    schema_version: Literal[1] = 1
+    updated_at: str
+    values: dict[str, Any]
+
+
 class UserSetupConfig(DurableModel):
     """Store named provider and compute profiles in the user's OS configuration area."""
 
-    schema_version: Literal[6] = 6
+    schema_version: Literal[7] = 7
     appearance: AppearanceConfig = Field(default_factory=AppearanceConfig)
+    starter_profile: StarterProfile = Field(default_factory=StarterProfile)
+    recent_projects: list[str] = Field(default_factory=list)
     profiles: dict[ProviderName, dict[str, ConnectionProfile]] = Field(default_factory=dict)
     compute_profiles: dict[str, SlurmProfile] = Field(default_factory=dict)
     default_compute_profile: str | None = None
+
+    @field_validator("recent_projects")
+    @classmethod
+    def normalized_recent_projects(cls, values: list[str]) -> list[str]:
+        """Keep a bounded most-recent-first list of absolute unique paths."""
+        normalized: list[str] = []
+        for value in values:
+            path = str(Path(value).expanduser().resolve())
+            if path not in normalized:
+                normalized.append(path)
+        return normalized[:5]
 
     @field_validator("profiles")
     @classmethod
@@ -214,6 +338,11 @@ def setup_config_path() -> Path:
 def custom_logo_path() -> Path:
     """Return the owner-local sanitized logo file."""
     return setup_config_path().with_name("logo.txt")
+
+
+def project_draft_path() -> Path:
+    """Return the owner-local transient new-project draft path."""
+    return setup_config_path().with_name("new-project-draft.yaml")
 
 
 def sanitize_ascii_logo(value: str) -> str:
@@ -295,6 +424,10 @@ def load_user_setup() -> UserSetupConfig:
             appearance["mark"] = "none"
         payload["appearance"] = appearance
         payload["schema_version"] = 6
+    if isinstance(payload, dict) and int(payload.get("schema_version", 1)) == 6:
+        payload.setdefault("starter_profile", {})
+        payload.setdefault("recent_projects", [])
+        payload["schema_version"] = 7
     return UserSetupConfig.model_validate(payload)
 
 
@@ -302,6 +435,91 @@ def save_user_setup(config: UserSetupConfig) -> None:
     """Atomically persist secret-free setup metadata with owner-only mode."""
     content = yaml.safe_dump(config.model_dump(mode="json", exclude_none=True), sort_keys=False)
     atomic_write(setup_config_path(), content, mode=0o600)
+
+
+def remember_project(root: Path) -> None:
+    """Move one valid project to the front of the local recent-project list."""
+    resolved = root.expanduser().resolve()
+    if not (resolved / "smairt.yaml").is_file():
+        raise ValueError(f"not a SMAIRT project: {resolved}")
+    config = load_user_setup()
+    value = str(resolved)
+    config.recent_projects = [value, *(item for item in config.recent_projects if item != value)]
+    save_user_setup(config)
+
+
+def recent_projects(*, prune: bool = True) -> list[Path]:
+    """Return valid recent projects and optionally remove stale entries."""
+    config = load_user_setup()
+    valid = [
+        Path(item)
+        for item in config.recent_projects
+        if (Path(item) / "smairt.yaml").is_file()
+    ]
+    if prune and [str(item) for item in valid] != config.recent_projects:
+        config.recent_projects = [str(item) for item in valid]
+        save_user_setup(config)
+    return valid
+
+
+def forget_project(root: Path | None = None) -> None:
+    """Forget one recent project, or clear the bounded history when root is absent."""
+    config = load_user_setup()
+    if root is None:
+        config.recent_projects = []
+    else:
+        target = str(root.expanduser().resolve())
+        config.recent_projects = [item for item in config.recent_projects if item != target]
+    save_user_setup(config)
+
+
+def discovered_projects() -> list[Path]:
+    """Discover direct child projects beneath the explicitly saved parent only."""
+    parent_value = load_user_setup().starter_profile.project_parent
+    if not parent_value:
+        return []
+    parent = Path(parent_value)
+    if not parent.is_dir():
+        return []
+    try:
+        children = list(parent.iterdir())
+    except OSError:
+        return []
+    return sorted(
+        (
+            child.resolve()
+            for child in children
+            if child.is_dir() and (child / "smairt.yaml").is_file()
+        ),
+        key=lambda item: item.name.casefold(),
+    )
+
+
+def save_project_draft(values: dict[str, Any]) -> Path:
+    """Atomically checkpoint one serializable wizard state outside every project."""
+    draft = ProjectDraft(updated_at=datetime.now(UTC).isoformat(), values=values)
+    content = yaml.safe_dump(draft.model_dump(mode="json"), sort_keys=False)
+    path = project_draft_path()
+    atomic_write(path, content, mode=0o600)
+    return path
+
+
+def load_project_draft() -> ProjectDraft | None:
+    """Load a valid wizard checkpoint without creating local state."""
+    path = project_draft_path()
+    if not path.exists():
+        return None
+    return ProjectDraft.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+
+
+def discard_project_draft() -> bool:
+    """Remove the transient project draft when it exists."""
+    path = project_draft_path()
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def configure_slurm_profile(name: str, profile: SlurmProfile) -> SlurmProfile:

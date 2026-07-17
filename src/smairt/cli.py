@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Annotated, Any, cast
 
@@ -40,7 +41,7 @@ from smairt.cli_research import (
     register_root_commands,
 )
 from smairt.cli_safety import safety_app
-from smairt.cli_shared import json_envelope
+from smairt.cli_shared import json_envelope, project_root, set_project_override
 from smairt.cli_state import lock_app, recovery_app
 from smairt.code_quality import build_code_index, validate_code
 from smairt.contracts import check_contracts, export_contracts
@@ -55,6 +56,7 @@ from smairt.models import (
     EnvironmentMode,
     HarnessName,
     ProjectLicense,
+    SafetyMode,
     SmairtConfig,
 )
 from smairt.project import context as build_context
@@ -66,6 +68,7 @@ from smairt.settings import select_environment, update_project_settings
 from smairt.tui import (
     SMAIRT_LOGO,
     _appearance_values,
+    run_home_menu,
     run_new_project,
     run_project_menu,
     run_setup_menu,
@@ -331,7 +334,7 @@ def migrate_rollback(yes: Annotated[bool, typer.Option("--yes")] = False) -> Non
 def _root() -> Path:
     """Resolve the current project or terminate a command with a clear error."""
     try:
-        return find_project()
+        return project_root()
     except FileNotFoundError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(2) from exc
@@ -373,6 +376,10 @@ def _show_guidance(root: Path) -> None:
 @app.callback()
 def main(
     ctx: typer.Context,
+    project: Annotated[
+        Path | None,
+        typer.Option("--project", help="Use this project from any working directory."),
+    ] = None,
     version: Annotated[bool, typer.Option("--version", help="Show the installed version.")] = False,
     verbose: Annotated[
         bool, typer.Option("--verbose", help="Show diagnostic exception causes.")
@@ -380,11 +387,20 @@ def main(
 ) -> None:
     """Handle global output policy and show the deterministic SMAIRT splash."""
     del verbose
+    set_project_override(project)
     if version:
         console.print(__version__)
         ctx.exit(0)
     if ctx.invoked_subcommand is None:
-        _show_splash()
+        if sys.stdin.isatty() and console.is_terminal:
+            try:
+                root = project_root()
+            except FileNotFoundError:
+                run_home_menu()
+            else:
+                run_project_menu(root)
+        else:
+            _show_splash()
 
 
 def _show_splash() -> None:
@@ -424,45 +440,93 @@ def _new_project(
     question: str | None,
     description: str | None,
     fields_of_study: list[str] | None,
-    license_name: ProjectLicense,
-    classification: DataClassification,
-    git: bool,
-    environment_mode: EnvironmentMode,
+    license_name: ProjectLicense | None,
+    classification: DataClassification | None,
+    git: bool | None,
+    environment_mode: EnvironmentMode | None,
     environment_name: str | None,
-    harness: HarnessName = HarnessName.CODEX,
-    safety_mode: str = "standard",
+    harness: HarnessName | None = None,
+    safety_mode: SafetyMode | None = None,
     confirm_contributor: bool = False,
     allow_existing: bool = False,
+    accept_recommended: bool = False,
 ) -> None:
     """Share interactive and non-interactive creation behavior across aliases."""
-    if not name or not author:
+    if accept_recommended:
+        classification = classification or DataClassification.UNPUBLISHED
+        license_name = license_name or ProjectLicense.UNSPECIFIED
+        environment_mode = environment_mode or EnvironmentMode.NONE
+        harness = harness or HarnessName.CODEX
+        safety_mode = safety_mode or SafetyMode.STANDARD
+        git = True if git is None else git
+    supplied = {
+        "name": name,
+        "author": author,
+        "classification": classification,
+        "license": license_name,
+        "environment": environment_mode,
+        "harness": harness,
+        "safety_mode": safety_mode,
+        "git": git,
+    }
+    missing = [key for key, value in supplied.items() if value is None or value == ""]
+    if missing:
+        if not (sys.stdin.isatty() and console.is_terminal):
+            raise typer.BadParameter(
+                "non-interactive project creation requires explicit choices for: "
+                + ", ".join(missing)
+                + "; provide the matching flags or --accept-recommended"
+            )
         try:
-            created = run_new_project(destination, allow_existing=allow_existing)
+            initial: dict[str, object] = {
+                "name": name or "",
+                "author": author or "",
+                "classification": classification,
+                "license": license_name,
+                "environment": environment_mode,
+                "harness": harness,
+                "safety_mode": safety_mode,
+                "git": git,
+            }
+            created = run_new_project(
+                destination,
+                allow_existing=allow_existing,
+                initial=initial,
+            )
         except KeyboardInterrupt:
             console.print(
-                "[yellow]Project creation interrupted; retained input was not written.[/yellow]"
+                "[yellow]Project creation interrupted; accepted input was saved locally "
+                "as a resumable draft.[/yellow]"
             )
             raise typer.Exit(130) from None
         if created:
             console.print(f"[bold #f28c28]Created SMAIRT project:[/] {created}")
         return
-    destination = (destination or Path(slugify(name))).resolve()
+    classification_value = cast(DataClassification, classification)
+    license_value = cast(ProjectLicense, license_name)
+    environment_value = cast(EnvironmentMode, environment_mode)
+    harness_value = cast(HarnessName, harness)
+    safety_value = cast(SafetyMode, safety_mode)
+    git_value = cast(bool, git)
+    name_value = cast(str, name)
+    author_value = cast(str, author)
+    destination = (destination or Path(slugify(name_value))).resolve()
     config = create_project(
         destination,
-        name=name,
-        author=author,
+        name=name_value,
+        author=author_value,
         question=question,
         description=description,
         fields_of_study=fields_of_study,
-        license_name=license_name,
-        classification=classification,
-        initialize_git=git,
-        environment_mode=environment_mode,
+        license_name=license_value,
+        classification=classification_value,
+        initialize_git=git_value,
+        environment_mode=environment_value,
         environment_name=environment_name,
-        harness=harness,
-        safety_mode=safety_mode,
+        harness=harness_value,
+        safety_mode=safety_value.value,
         confirm_contributor=confirm_contributor,
-        create_environment=environment_mode is EnvironmentMode.NEW_CONDA,
+        create_environment=environment_value is EnvironmentMode.NEW_CONDA,
         allow_existing=allow_existing,
     )
     console.print(f"[bold #f28c28]Created {escape(config.project.name)}[/] at {destination}")
@@ -477,16 +541,23 @@ def new_command(
     question: Annotated[str | None, typer.Option()] = None,
     description: Annotated[str | None, typer.Option()] = None,
     field: Annotated[list[str] | None, typer.Option("--field")] = None,
-    license_name: Annotated[ProjectLicense, typer.Option("--license")] = ProjectLicense.MIT,
-    classification: Annotated[DataClassification, typer.Option()] = DataClassification.UNPUBLISHED,
-    git: Annotated[bool, typer.Option("--git/--no-git")] = True,
-    environment: Annotated[EnvironmentMode, typer.Option()] = EnvironmentMode.NONE,
+    license_name: Annotated[ProjectLicense | None, typer.Option("--license")] = None,
+    classification: Annotated[DataClassification | None, typer.Option()] = None,
+    git: Annotated[bool | None, typer.Option("--git/--no-git")] = None,
+    environment: Annotated[EnvironmentMode | None, typer.Option()] = None,
     environment_name: Annotated[str | None, typer.Option()] = None,
-    harness: Annotated[HarnessName, typer.Option()] = HarnessName.CODEX,
-    safety_mode: Annotated[str, typer.Option()] = "standard",
+    harness: Annotated[HarnessName | None, typer.Option()] = None,
+    safety_mode: Annotated[SafetyMode | None, typer.Option()] = None,
     confirm_contributor: Annotated[bool, typer.Option("--confirm-contributor")] = False,
+    accept_recommended: Annotated[
+        bool,
+        typer.Option(
+            "--accept-recommended",
+            help="Explicitly accept the documented conservative project choices.",
+        ),
+    ] = False,
 ) -> None:
-    """Create a new project; opens terminal prompts when name or author is omitted."""
+    """Create a project explicitly, or open guided prompts for incomplete choices."""
     _new_project(
         destination,
         name,
@@ -503,6 +574,7 @@ def new_command(
         safety_mode,
         confirm_contributor,
         False,
+        accept_recommended,
     )
 
 
@@ -512,23 +584,7 @@ def start_project(
 ) -> None:
     """Deprecated alias for the interactive project wizard."""
     console.print("[yellow]smairt start project is deprecated; use smairt new.[/yellow]")
-    _new_project(
-        destination,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ProjectLicense.MIT,
-        DataClassification.UNPUBLISHED,
-        True,
-        EnvironmentMode.NONE,
-        None,
-        HarnessName.CODEX,
-        "standard",
-        False,
-        False,
-    )
+    run_new_project(destination, allow_existing=False)
 
 
 @app.command("init")
@@ -554,7 +610,7 @@ def init_command(
         EnvironmentMode.NONE,
         None,
         HarnessName.CODEX,
-        "standard",
+        SafetyMode.STANDARD,
         False,
         True,
     )

@@ -48,8 +48,9 @@ guidance has recorded hashes so upgrades can distinguish untouched generated con
 edits. A documentation rewrite must preserve expected scaffold paths and test modified-file
 behavior.
 
-User-local setup and project configuration have separate schemas. A user-local appearance
-migration must not bump or rewrite the scientific project schema.
+User-local setup and project configuration have separate schemas. Setup schema v7 adds the nullable
+starter profile and bounded recent-project history; its migrations must not bump or rewrite the
+scientific project schema.
 
 ## Extending a harness
 

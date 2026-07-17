@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+import shutil
+import subprocess
 import time
 from contextlib import suppress
 from html import escape as escape_html
@@ -28,7 +31,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from smairt.completion import PROJECT_ACTIONS
-from smairt.credentials import delete_credential, keyring_health, set_credential
+from smairt.credentials import delete_credential, set_credential
 from smairt.diagnostics import doctor, setup_doctor
 from smairt.guidance import next_guidance, render_suggested_prompt
 from smairt.harness_presentation import HARNESS_PRESENTATIONS
@@ -45,6 +48,7 @@ from smairt.literature import (
     literature_search,
 )
 from smairt.local_setup import (
+    FIELD_OF_STUDY_OPTIONS,
     AppearanceConfig,
     ConnectionProfile,
     ProviderName,
@@ -53,13 +57,22 @@ from smairt.local_setup import (
     configure_profile,
     configure_slurm_profile,
     delete_profile,
+    discard_project_draft,
     discover_zotero_libraries,
+    discovered_projects,
+    forget_project,
     iter_profiles,
     load_bindings,
     load_custom_logo,
+    load_project_draft,
     load_user_setup,
+    normalize_field_of_study,
+    normalize_fields_of_study,
     provider_profiles,
+    recent_projects,
+    remember_project,
     save_custom_logo,
+    save_project_draft,
     save_user_setup,
     test_profile,
     unbind_profile,
@@ -122,9 +135,6 @@ _SCREEN_TITLE = "SMAIRT"
 _SCREEN_SUBTITLE = ""
 _SCREEN_CARDS: tuple[tuple[str, str], ...] = ()
 _APPEARANCE_PREVIEW: AppearanceConfig | None = None
-FIELD_SUGGESTIONS = (
-    "Machine learning, Data science, Computational biology, Physics, Chemistry, Engineering"
-)
 console = Console()
 T = TypeVar("T")
 
@@ -142,15 +152,15 @@ class WizardValues(TypedDict):
     question: str
     description: str
     fields: str
-    classification: DataClassification
-    license: ProjectLicense
-    environment: EnvironmentMode
+    classification: DataClassification | None
+    license: ProjectLicense | None
+    environment: EnvironmentMode | None
     environment_name: str
-    harness: HarnessName
-    safety_mode: SafetyMode
-    git: bool
+    harness: HarnessName | None
+    safety_mode: SafetyMode | None
+    git: bool | None
     confirm_contributor: bool
-    collaborators: list[tuple[str, str | None]]
+    folder_overridden: bool
 
 
 class BackNavigation(Exception):
@@ -451,6 +461,35 @@ def _pause() -> None:
         _text("Press Enter to continue")
 
 
+def _copy_text(value: str, label: str) -> bool:
+    """Copy bounded text with a detected fixed-argument platform provider."""
+    providers = [
+        (["pbcopy"], shutil.which("pbcopy")),
+        (["wl-copy"], shutil.which("wl-copy")),
+        (["xclip", "-selection", "clipboard"], shutil.which("xclip")),
+        (["clip.exe"], shutil.which("clip.exe")),
+    ]
+    for arguments, executable in providers:
+        if not executable:
+            continue
+        try:
+            result = subprocess.run(  # noqa: S603 - detected fixed clipboard executable
+                [executable, *arguments[1:]],
+                input=value,
+                text=True,
+                capture_output=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0:
+            console.print(f"[green]{label} copied to the clipboard.[/green]")
+            return True
+    console.print(f"[yellow]No supported clipboard tool was found. {label}:[/yellow]\n{value}")
+    return False
+
+
 def _header(title: str, subtitle: str = "") -> None:
     """Set identity for the next responsive screen and animate only once per launch."""
     global _LAUNCH_ANIMATED, _SCREEN_CARDS, _SCREEN_SUBTITLE, _SCREEN_TITLE
@@ -541,38 +580,134 @@ def _preflight_destination(destination: Path, *, allow_existing: bool) -> None:
         )
 
 
+def _required_select(
+    message: str,
+    options: list[tuple[T, str]],
+    explanation: str | None = None,
+) -> T:
+    """Require movement away from an explicit unselected placeholder."""
+    help_token = object()
+    while True:
+        selected = _select(
+            message,
+            [
+                (None, "Choose an option · no value is preselected"),
+                *options,
+                *([(help_token, "Why are we asking?")] if explanation else []),
+            ],
+            None,
+        )
+        if selected is help_token:
+            console.print(str(explanation))
+            _pause()
+            continue
+        if selected is not None:
+            return cast(T, selected)
+        console.print("[yellow]Choose one option before continuing.[/yellow]")
+        _pause()
+
+
+def _wizard_payload(values: WizardValues) -> dict[str, object]:
+    """Convert retained wizard state into portable owner-local draft values."""
+    return {
+        key: value.value if hasattr(value, "value") else value
+        for key, value in values.items()
+    }
+
+
+def _wizard_from_payload(payload: dict[str, Any], defaults: WizardValues) -> WizardValues:
+    """Restore one versioned draft against current enum and field contracts."""
+    values = dict(defaults)
+    values.update(payload)
+    values["classification"] = (
+        DataClassification(str(values["classification"])) if values["classification"] else None
+    )
+    values["license"] = (
+        ProjectLicense(str(values["license"])) if values["license"] else None
+    )
+    values["environment"] = (
+        EnvironmentMode(str(values["environment"])) if values["environment"] else None
+    )
+    values["harness"] = (
+        HarnessName(str(values["harness"])) if values["harness"] else None
+    )
+    values["safety_mode"] = (
+        SafetyMode(str(values["safety_mode"])) if values["safety_mode"] else None
+    )
+    return cast(WizardValues, values)
+
+
+def _wizard_header(step: int, title: str) -> None:
+    """Show truthful finite progress without implying scientific completion."""
+    labels = ("Basics", "Research Context", "Project Choices", "Review")
+    markers = ["●" if index < step else "◆" if index == step else "○" for index in range(4)]
+    progress = "  ".join(f"{marker} {label}" for marker, label in zip(markers, labels, strict=True))
+    _header("SMAIRT · New Project", f"{step + 1} of 4 · {(step + 1) * 25}% · {title}")
+    console.print(f"[dim]{progress}[/dim]")
+
+
 def run_new_project(
-    destination: Path | None = None, *, allow_existing: bool = False
+    destination: Path | None = None,
+    *,
+    allow_existing: bool = False,
+    initial: dict[str, object] | None = None,
 ) -> Path | None:
-    """Run a retained-state creation workflow directly in the shell transcript."""
-    values: WizardValues = {
+    """Run a profile-aware, resumable, explicit project-creation workflow."""
+    profile = load_user_setup().starter_profile
+    defaults: WizardValues = {
         "destination": "",
         "creation_mode": "initialize" if allow_existing else "new",
-        "parent": str(destination or Path.cwd()),
+        "parent": str(destination or profile.project_parent or ""),
         "folder": "",
         "name": "",
-        "author": "",
-        "email": "",
+        "author": profile.contributor_name or "",
+        "email": profile.contributor_email or "",
         "question": "",
         "description": "",
-        "fields": "",
-        "classification": DataClassification.UNPUBLISHED,
-        "license": ProjectLicense.MIT,
-        "environment": EnvironmentMode.NONE,
+        "fields": ", ".join(profile.fields_of_study),
+        "classification": None,
+        "license": None,
+        "environment": None,
         "environment_name": "",
-        "harness": HarnessName.CODEX,
-        "safety_mode": SafetyMode.STANDARD,
-        "git": True,
+        "harness": profile.assistant,
+        "safety_mode": None,
+        "git": None,
         "confirm_contributor": True,
-        "collaborators": [],
+        "folder_overridden": False,
     }
+    values = _wizard_from_payload(cast(dict[str, Any], initial), defaults) if initial else defaults
+    if destination is None:
+        try:
+            draft = load_project_draft()
+        except (OSError, ValueError) as exc:
+            console.print(f"[yellow]Saved project draft could not be restored:[/] {exc}")
+            if _yes_no("Discard the unreadable draft?", True):
+                discard_project_draft()
+            draft = None
+        if draft is not None:
+            project_name = str(draft.values.get("name") or "Unnamed project")
+            choice = _select(
+                f"A saved draft for {project_name} is available",
+                [
+                    ("resume", "Resume draft"),
+                    ("new", "Start another project"),
+                    ("discard", "Discard draft"),
+                ],
+                "resume",
+            )
+            if choice == "resume":
+                values = _wizard_from_payload(draft.values, defaults)
+            elif choice == "discard":
+                discard_project_draft()
+            else:
+                values = defaults
     step = 0
     while True:
         try:
             if step == 0:
-                _header("SMAIRT · New Project", "Choose where the project will live")
+                _wizard_header(step, "Basics")
                 values["creation_mode"] = _select(
-                    "Creation mode",
+                    "How are you starting?",
                     [
                         ("new", "Create a new folder inside a parent directory"),
                         ("initialize", "Initialize an existing folder in place"),
@@ -581,18 +716,42 @@ def run_new_project(
                     values["creation_mode"],
                 )
                 if values["creation_mode"] == "cancel":
+                    if not _yes_no("Keep this draft for later?", True):
+                        discard_project_draft()
                     return None
-                step = 1
-            elif step == 1:
-                _header("SMAIRT · New Project", "Step 1 of 5 · Location")
+                previous_name = values["name"]
                 values["name"] = _text("Project name", str(values["name"]))
                 if not values["name"]:
                     raise ValueError("project name is required")
                 if values["creation_mode"] == "new":
-                    values["parent"] = _text("Parent directory", str(values["parent"]))
-                    values["folder"] = _text(
-                        "Project folder", str(values["folder"] or slugify(values["name"]))
-                    )
+                    if not values["parent"]:
+                        locations: list[tuple[Path | str, str]] = []
+                        documents = Path.home() / "Documents"
+                        if documents.is_dir():
+                            locations.append((documents, f"Documents · {documents}"))
+                        locations.append((Path.cwd(), f"Current folder · {Path.cwd()}"))
+                        locations.append(("other", "Choose another path"))
+                        selected_parent = _required_select("Project location", locations)
+                        values["parent"] = (
+                            _text("Parent directory")
+                            if selected_parent == "other"
+                            else str(selected_parent)
+                        )
+                    else:
+                        values["parent"] = _text("Parent directory", values["parent"])
+                    derived = slugify(values["name"])
+                    if values["folder_overridden"] and _yes_no(
+                        f"Reset project folder to '{derived}' from the project name?", False
+                    ):
+                        values["folder"] = derived
+                        values["folder_overridden"] = False
+                    if not values["folder_overridden"] and (
+                        not values["folder"] or values["folder"] == slugify(previous_name)
+                    ):
+                        values["folder"] = derived
+                    entered_folder = _text("Project folder", values["folder"])
+                    values["folder_overridden"] = entered_folder != derived
+                    values["folder"] = entered_folder
                     if not values["folder"] or Path(values["folder"]).name != values["folder"]:
                         raise ValueError("project folder must be one folder name")
                     target = Path(values["parent"]).expanduser() / values["folder"]
@@ -610,89 +769,105 @@ def run_new_project(
                     target = Path(_text("Existing folder", existing_default)).expanduser()
                     _preflight_destination(target, allow_existing=True)
                 values["destination"] = str(target.resolve())
-                step = 2
-            elif step == 2:
-                _header("SMAIRT · New Project", "Step 2 of 5 · Research identity")
+                values["author"] = _text("Active contributor", values["author"])
+                if not values["author"]:
+                    raise ValueError("active contributor is required")
+                values["email"] = _text("Contributor email (optional)", values["email"])
+                values["confirm_contributor"] = _yes_no(
+                    "Confirm this person as the active contributor?",
+                    values["confirm_contributor"],
+                )
+                save_project_draft(_wizard_payload(values))
+                step = 1
+            elif step == 1:
+                _wizard_header(step, "Research Context")
                 values["question"] = _text(
                     "Initial research question (optional)", values["question"]
                 )
                 values["description"] = _text(
                     "Project description (optional)", values["description"]
                 )
-                console.print(f"[dim]Suggestions: {FIELD_SUGGESTIONS}[/dim]")
-                values["fields"] = _text(
-                    "Fields of study, comma separated (optional)", str(values["fields"])
-                )
-                step = 3
-            elif step == 3:
-                _header("SMAIRT · New Project", "Step 3 of 5 · People")
-                values["author"] = _text("Primary researcher", str(values["author"]))
-                if not values["author"]:
-                    raise ValueError("primary researcher is required")
-                values["email"] = _text("Email (optional)", str(values["email"]))
-                values["confirm_contributor"] = _yes_no(
-                    "Register this researcher as the active contributor?",
-                    bool(values["confirm_contributor"]),
-                )
-                collaborators = list(values["collaborators"])
-                while _yes_no("Add another collaborator?", False):
-                    collaborator_name = _text("Collaborator name")
-                    collaborator_email = _text("Collaborator email (optional)")
-                    if not collaborator_name:
-                        raise ValueError("collaborator name is required")
-                    identifiers = {slugify(str(item[0])) for item in collaborators}
-                    identifiers.add(slugify(str(values["author"])))
-                    if slugify(collaborator_name) in identifiers:
-                        raise ValueError("collaborator names must be unique")
-                    collaborators.append((collaborator_name, collaborator_email or None))
-                values["collaborators"] = collaborators
-                step = 4
-            elif step == 4:
-                _header("SMAIRT · New Project", "Step 4 of 5 · Policy and tools")
-                values["classification"] = _select(
+                current_fields = [
+                    item.strip() for item in values["fields"].split(",") if item.strip()
+                ]
+                selected_fields = _select_profile_fields(current_fields)
+                values["fields"] = ", ".join(selected_fields)
+                save_project_draft(_wizard_payload(values))
+                step = 2
+            elif step == 2:
+                _wizard_header(step, "Project Choices")
+                values["classification"] = _required_select(
                     "Data classification",
                     [(item, item.value.title()) for item in DataClassification],
-                    values["classification"],
+                    "Classification controls sharing safeguards. Choose based on the most "
+                    "sensitive data this project may contain.",
                 )
-                values["license"] = _select(
+                values["license"] = _required_select(
                     "Project license",
                     [(item, item.value) for item in ProjectLicense],
-                    values["license"],
+                    "A license states reuse terms. Choose Unspecified when those terms have "
+                    "not been decided; SMAIRT does not provide legal advice.",
                 )
-                values["environment"] = _select(
+                values["environment"] = _required_select(
                     "Project environment",
                     [
                         (EnvironmentMode.NONE, "No managed environment"),
                         (EnvironmentMode.NEW_CONDA, "Create a new Conda environment"),
                     ],
-                    values["environment"],
+                    "A managed environment isolates software dependencies. It is optional and "
+                    "requires a working Conda installation.",
                 )
                 if values["environment"] is EnvironmentMode.NEW_CONDA:
                     default_name = values["environment_name"] or slugify(values["name"])
                     values["environment_name"] = _text("Conda environment name", default_name)
                 _render_harness_chooser(values["harness"])
-                values["harness"] = _select(
-                    "Coding harness",
-                    [(item, HARNESS_PRESENTATIONS[item].display_name) for item in HarnessName],
-                    values["harness"],
+                harness_options = [
+                    (item, HARNESS_PRESENTATIONS[item].display_name) for item in HarnessName
+                ]
+                values["harness"] = (
+                    _select("AI assistant", harness_options, values["harness"])
+                    if values["harness"] is not None
+                    else _required_select(
+                        "AI assistant",
+                        harness_options,
+                        "The assistant choice installs matching project guidance and adapters; "
+                        "scientific records remain portable.",
+                    )
                 )
-                values["safety_mode"] = _select(
+                values["safety_mode"] = _required_select(
                     "Safety mode",
                     [(item, item.value.title()) for item in SafetyMode],
-                    values["safety_mode"],
+                    "Standard warns on uncertain policy state; Strict fails closed at protected "
+                    "sharing and release boundaries.",
                 )
-                values["git"] = _yes_no("Initialize Git?", bool(values["git"]))
-                step = 5
+                values["git"] = _required_select(
+                    "Initialize Git?",
+                    [(True, "Yes · create local version history"), (False, "No")],
+                    "Git provides local history and collaboration support. It is separate from "
+                    "GitHub and does not publish anything by itself.",
+                )
+                save_project_draft(_wizard_payload(values))
+                step = 3
             else:
-                _header("SMAIRT · New Project", "Step 5 of 5 · Review")
+                _wizard_header(step, "Review")
+                classification_label = (
+                    values["classification"].value if values["classification"] else "missing"
+                )
+                environment_label = (
+                    values["environment"].value if values["environment"] else "missing"
+                )
                 console.print(
                     f"[bold]{values['name']}[/] at "
                     f"{Path(values['destination']).expanduser()}\n"
-                    f"Researcher: {values['author']} · Fields: {values['fields'] or 'not set'}\n"
-                    f"Data: {values['classification'].value} · License: {values['license'].value}\n"
-                    f"Environment: {values['environment'].value} · "
-                    f"Harness: {values['harness'].value}\n"
-                    f"Safety: {values['safety_mode'].value} · Git: {values['git']}"
+                    f"Contributor: {values['author']} · Fields: {values['fields'] or 'not set'}\n"
+                    f"Data: {classification_label}"
+                    f" · License: {values['license'].value if values['license'] else 'missing'}\n"
+                    f"Environment: {environment_label}"
+                    f" · Assistant: {values['harness'].value if values['harness'] else 'missing'}\n"
+                    f"Safety: {values['safety_mode'].value if values['safety_mode'] else 'missing'}"
+                    f" · Git: {values['git']}\n"
+                    "[dim]Name/folder may be derived; profile values remain editable; "
+                    "project choices were explicitly selected.[/dim]"
                 )
                 action = _select(
                     "Review",
@@ -704,12 +879,25 @@ def run_new_project(
                     "create",
                 )
                 if action == "cancel":
+                    if not _yes_no("Keep this draft for later?", True):
+                        discard_project_draft()
                     return None
                 if action == "back":
                     step = 4
                     continue
                 target = Path(values["destination"]).expanduser().resolve()
-                fields = [item.strip() for item in str(values["fields"]).split(",") if item.strip()]
+                fields = normalize_fields_of_study(
+                    [item.strip() for item in values["fields"].split(",") if item.strip()]
+                )
+                classification = values["classification"]
+                license_name = values["license"]
+                environment = values["environment"]
+                harness = values["harness"]
+                safety_mode = values["safety_mode"]
+                if None in {classification, license_name, environment, harness, safety_mode}:
+                    raise ValueError("every project choice must be selected before creation")
+                if values["git"] is None:
+                    raise ValueError("Git choice must be selected before creation")
                 with console.status("[bold]Creating project…[/bold]", spinner="dots"):
                     create_project(
                         target,
@@ -719,34 +907,98 @@ def run_new_project(
                         question=values["question"] or None,
                         description=values["description"] or None,
                         fields_of_study=fields,
-                        license_name=values["license"],
-                        classification=values["classification"],
-                        initialize_git=bool(values["git"]),
-                        environment_mode=values["environment"],
+                        license_name=cast(ProjectLicense, license_name),
+                        classification=cast(DataClassification, classification),
+                        initialize_git=values["git"],
+                        environment_mode=cast(EnvironmentMode, environment),
                         environment_name=values["environment_name"] or None,
-                        create_environment=values["environment"] is EnvironmentMode.NEW_CONDA,
-                        harness=values["harness"],
-                        safety_mode=values["safety_mode"].value,
+                        create_environment=environment is EnvironmentMode.NEW_CONDA,
+                        harness=cast(HarnessName, harness),
+                        safety_mode=cast(SafetyMode, safety_mode).value,
                         confirm_contributor=bool(values["confirm_contributor"]),
                         allow_existing=values["creation_mode"] == "initialize",
                     )
-                for saved_name, saved_email in values["collaborators"]:
-                    add_contributor(target, saved_name, saved_email)
+                discard_project_draft()
+                remember_project(target)
                 _header("Project created", str(target))
-                console.print(f"Resume later with: [bold]cd {target} && smairt menu[/bold]")
-                if _select(
+                console.print(
+                    "[green]Created without changing any profile values.[/green]\n"
+                    "Resume from anywhere with [bold]smairt[/bold]."
+                )
+                next_action = _select(
                     "Next",
-                    [(True, "Open project dashboard"), (False, "Return to shell")],
-                    True,
-                ):
+                    [
+                        ("dashboard", "Open project dashboard"),
+                        ("contributors", "Add contributors"),
+                        ("shell", "Return to shell"),
+                    ],
+                    "dashboard",
+                )
+                if next_action == "contributors":
+                    _people_menu(target)
+                    run_project_menu(target)
+                elif next_action == "dashboard":
                     run_project_menu(target)
                 return target
         except BackNavigation:
+            save_project_draft(_wizard_payload(values))
             if step == 0:
                 return None
             step -= 1
+        except KeyboardInterrupt:
+            save_project_draft(_wizard_payload(values))
+            raise
         except (FileExistsError, OSError, ValueError) as exc:
             console.print(f"[red]Cannot continue:[/] {exc}")
+
+
+def _workflow_stage(stage: str) -> tuple[str, str]:
+    """Map durable workflow states to one beginner-facing iterative stage."""
+    if stage in {
+        "contributor_confirmation",
+        "repository_attestation",
+        "project_setup",
+        "references_indexed",
+        "background_draft",
+    }:
+        return "Ground", "Background"
+    if stage in {
+        "background_complete",
+        "proposal_draft",
+        "proposal_complete",
+        "hypothesis_selected",
+    }:
+        return "Explore", "Hypothesis"
+    if stage in {"experiment_ready", "run_recovery"}:
+        return "Test", "Experiment and run"
+    if stage in {"run_complete", "decision_recorded", "evidence_review", "paper_recovery"}:
+        return "Interpret", "Decision and evidence"
+    return "Share", "Claims and paper"
+
+
+def _render_stage_map(stage: str) -> None:
+    """Render an iterative lifecycle map without claiming overall completion."""
+    current, formal = _workflow_stage(stage)
+    labels = ["Ground", "Explore", "Test", "Interpret", "Share"]
+    rendered = " → ".join(
+        f"[bold {ORANGE}]{label}[/]" if label == current else f"[dim]{label}[/dim]"
+        for label in labels
+    )
+    console.print(rendered + "\n[dim]Interpret may loop back to Explore or Test.[/dim]")
+    console.print(f"[bold]Current:[/] {current} · {formal}")
+
+
+def _project_command(root: Path, command: str) -> str:
+    """Include explicit project context only when current discovery differs."""
+    if not command.startswith("smairt "):
+        return command
+    try:
+        current = find_project()
+    except FileNotFoundError:
+        current = None
+    if current == root.resolve():
+        return command
+    return command.replace("smairt ", f"smairt --project {shlex.quote(str(root))} ", 1)
 
 
 def _show_guidance(root: Path, section: str) -> None:
@@ -754,23 +1006,38 @@ def _show_guidance(root: Path, section: str) -> None:
     guidance = next_guidance(root)
     recommended = guidance.get("recommended")
     _header(f"{section}", "Status and command handoff")
+    _render_stage_map(str(guidance["stage"]))
+    console.print(f"\n[bold]Ready now:[/] {guidance['completed']}")
     if isinstance(recommended, dict):
         console.print(f"[bold]Recommended:[/] {recommended.get('label')}")
+        effect = "human decision" if recommended.get("requires_human") else recommended.get("kind")
+        console.print(f"[dim]Effect: {str(effect).replace('_', ' ')}[/dim]")
         if recommended.get("read"):
             console.print("[bold]Read first:[/] " + " · ".join(recommended["read"]))
+        command = recommended.get("command")
         if recommended.get("command"):
-            console.print(f"[cyan]{recommended['command']}[/cyan]")
+            command = _project_command(root, str(command))
+            console.print(f"[cyan]{command}[/cyan]")
+        prompt = render_suggested_prompt(root, guidance)
         console.print(
             Panel(
-                render_suggested_prompt(root, guidance),
+                prompt,
                 title="Suggested Prompt",
                 border_style=ORANGE,
             )
         )
-        console.print("[dim]Copy again with: smairt next --prompt[/dim]")
+        actions = [("copy_prompt", "Copy bounded assistant prompt")]
+        if command:
+            actions.append(("copy_command", "Copy project-aware command"))
+        actions.append(("back", "Return to dashboard"))
+        chosen = _select("Handoff", actions, "copy_prompt")
+        if chosen == "copy_prompt":
+            _copy_text(prompt, "Assistant prompt")
+        elif chosen == "copy_command":
+            _copy_text(str(command), "Command")
     else:
         console.print("[cyan]smairt next --json[/cyan]")
-    _pause()
+        _pause()
 
 
 def _settings_menu(root: Path) -> None:
@@ -803,25 +1070,20 @@ def _settings_menu(root: Path) -> None:
             author = _text("Author or researcher", config.project.author)
             question = _text("Initial question (optional)", config.project.question or "")
             description = _text("Description (optional)", config.project.description or "")
-            console.print(f"[dim]Suggestions: {FIELD_SUGGESTIONS}[/dim]")
-            fields_text = _text(
-                "Fields of study, comma separated",
-                ", ".join(config.project.fields_of_study),
-            )
+            selected_fields = _select_profile_fields(config.project.fields_of_study)
             license_name = _select(
                 "Project license",
                 [(item, item.value) for item in ProjectLicense],
                 config.project.license,
             )
             if _yes_no("Save these project settings?", True):
-                fields = [item.strip() for item in fields_text.split(",") if item.strip()]
                 update_project_settings(
                     root,
                     name=name,
                     author=author,
                     question=question or None,
                     description=description or None,
-                    fields_of_study=fields,
+                    fields_of_study=selected_fields,
                     license_name=license_name,
                 )
                 console.print("[green]Project settings saved.[/green]")
@@ -1841,6 +2103,129 @@ def _tools_menu(root: Path) -> None:
             _pause()
 
 
+def _project_label(root: Path) -> str:
+    """Return a readable project label without exposing a full path in the main list."""
+    try:
+        name = SmairtConfig.load(root / "smairt.yaml").project.name
+    except (OSError, ValueError):
+        name = root.name
+    return f"{name} · {root.parent}"
+
+
+def _known_projects() -> list[Path]:
+    """Merge recent and explicitly bounded parent-directory discovery."""
+    projects: list[Path] = []
+    for root in [*recent_projects(), *discovered_projects()]:
+        if root not in projects:
+            projects.append(root)
+    return projects
+
+
+def _open_known_project() -> Path | None:
+    """Choose a remembered or directly discovered local project."""
+    while True:
+        projects = _known_projects()
+        if not projects:
+            console.print("No recent or discovered projects are available yet.")
+            _pause()
+            return None
+        selected = _select(
+            "Open project",
+            [*((root, _project_label(root)) for root in projects), ("manage", "Manage history")],
+        )
+        if selected != "manage":
+            return cast(Path, selected)
+        operation = _select(
+            "Project history",
+            [("forget", "Forget one recent project"), ("clear", "Clear recent projects")],
+        )
+        if operation == "clear":
+            if _yes_no("Clear the recent-project list?", False):
+                forget_project()
+        else:
+            recents = recent_projects()
+            if recents:
+                forget_project(
+                    _select("Forget project", [(root, _project_label(root)) for root in recents])
+                )
+
+
+def run_home_menu() -> None:
+    """Open a context-aware project and setup home from any directory."""
+    while True:
+        setup = load_user_setup()
+        known = _known_projects()
+        profile = setup.starter_profile
+        profile_ready = bool(
+            profile.contributor_name
+            or profile.project_parent
+            or profile.fields_of_study
+            or profile.assistant
+        )
+        _header("SMAIRT Home", "Start, resume, or configure without changing directories")
+        _cards(
+            ("Setup", "Ready" if profile_ready else "Recommended"),
+            ("Projects", len(known)),
+            ("Profile", profile.contributor_name or "Not set"),
+        )
+        try:
+            action = _select(
+                "What would you like to do?",
+                [
+                    (
+                        "setup" if not profile_ready else "new",
+                        "Set up SMAIRT · readiness, profile, and AI assistant"
+                        if not profile_ready
+                        else "Create a new project",
+                    ),
+                    (
+                        "new" if not profile_ready else "open",
+                        "Create a project now · setup remains optional"
+                        if not profile_ready
+                        else "Open a recent or discovered project",
+                    ),
+                    *(
+                        [("open", "Open a recent or discovered project")]
+                        if not profile_ready
+                        else []
+                    ),
+                    ("path", "Open another project path"),
+                    *([("setup", "Setup and local preferences")] if profile_ready else []),
+                    ("help", "How SMAIRT works"),
+                    ("exit", "Return to shell"),
+                ],
+            )
+        except BackNavigation:
+            return
+        if action == "exit":
+            return
+        if action == "setup":
+            run_setup_menu()
+        elif action == "new":
+            created = run_new_project()
+            if created:
+                remember_project(created)
+        elif action == "open":
+            root = _open_known_project()
+            if root:
+                run_project_menu(root)
+        elif action == "path":
+            try:
+                root = find_project(Path(_text("Project folder")).expanduser())
+                run_project_menu(root)
+            except FileNotFoundError as exc:
+                console.print(f"[yellow]{exc}[/yellow]")
+                _pause()
+        else:
+            _header("How SMAIRT works", "One home, one current project, one recommended next step")
+            console.print(
+                "Create or open a project, then choose [bold]Continue[/bold]. SMAIRT shows "
+                "what is ready, why the next action matters, and what it will change.\n\n"
+                "[dim]Arrow keys move · Enter selects · Esc goes back · Ctrl-C exits[/dim]"
+            )
+            _pause()
+
+
 def _sharing_menu(root: Path) -> None:
     """Keep scientific safety policy separate from ordinary project health."""
     while True:
@@ -1874,6 +2259,7 @@ def _sharing_menu(root: Path) -> None:
 def run_project_menu(root: Path) -> None:
     """Run the nested project workflow hub directly beneath the shell prompt."""
     root = root.resolve()
+    remember_project(root)
     while True:
         config = SmairtConfig.load(root / "smairt.yaml")
         current = status(root)
@@ -1905,12 +2291,9 @@ def run_project_menu(root: Path) -> None:
                 "What would you like to do?",
                 [
                     ("next", "Continue research · recommended action and prompt"),
-                    ("palette", "Find an action · type to filter commands and options"),
                     ("references", "Literature & references"),
-                    ("setup", "Project & people"),
-                    ("tools", "Tools & compute"),
-                    ("health", "Health & updates"),
-                    ("sharing", "Safety & sharing"),
+                    ("setup", "Project & contributors"),
+                    ("more", "More · tools, health, safety, and action search"),
                     ("exit", "Return to shell"),
                 ],
             )
@@ -1918,6 +2301,16 @@ def run_project_menu(root: Path) -> None:
             return
         if action == "exit":
             return
+        if action == "more":
+            action = _select(
+                "More",
+                [
+                    ("palette", "Find an action · type to filter commands and options"),
+                    ("tools", "Tools & compute"),
+                    ("health", "Health & updates"),
+                    ("sharing", "Safety & sharing"),
+                ],
+            )
         if action == "palette":
             try:
                 action = _command_palette()
@@ -1943,16 +2336,112 @@ def run_project_menu(root: Path) -> None:
             _sharing_menu(root)
 
 
+def _select_profile_fields(current: list[str]) -> list[str]:
+    """Select canonical or custom study fields without silently adding values."""
+    selected = list(current)
+    while True:
+        _header("Fields of study", "Select broad disciplines or add a custom specialty")
+        action = _select(
+            "Fields of study",
+            [
+                ("browse", "Browse the curated field list"),
+                ("search", "Search or add a field"),
+                ("clear", "Clear selected fields"),
+                ("done", f"Done · {len(selected)} selected"),
+            ],
+        )
+        if action == "done":
+            return selected
+        if action == "clear":
+            selected = []
+            continue
+        query = _text("Search text") if action == "search" else ""
+        matches = [
+            item
+            for item in FIELD_OF_STUDY_OPTIONS
+            if not query or query.casefold() in item.casefold()
+        ]
+        options: list[tuple[str, str]] = [
+            (item, f"{'✓ ' if item in selected else ''}{item}") for item in matches
+        ]
+        if query and query.casefold() not in {item.casefold() for item in matches}:
+            custom = normalize_field_of_study(query)
+            options.insert(0, (custom, f"Add custom field · {custom}"))
+        if not options:
+            console.print("No matching field. Enter a custom value instead.")
+            _pause()
+            continue
+        chosen = _select("Toggle field", options)
+        if chosen in selected:
+            selected.remove(chosen)
+        else:
+            selected.append(chosen)
+
+
+def _starter_profile_menu() -> None:
+    """Edit one explicit, independently nullable project-starter profile."""
+    setup = load_user_setup()
+    profile = setup.starter_profile.model_copy(deep=True)
+    while True:
+        _header("Starter profile", "Only values saved here may prefill future projects")
+        _cards(
+            ("Contributor", profile.contributor_name or "Not set"),
+            ("Project parent", profile.project_parent or "Not set"),
+            ("Fields", len(profile.fields_of_study)),
+            ("AI assistant", profile.assistant.value if profile.assistant else "Not set"),
+        )
+        action = _select(
+            "Profile",
+            [
+                ("identity", "Contributor name and email"),
+                ("parent", "Usual project parent folder"),
+                ("fields", "Fields of study"),
+                ("assistant", "Preferred AI assistant"),
+                ("save", "Save profile"),
+                ("cancel", "Cancel changes"),
+            ],
+        )
+        if action == "cancel":
+            return
+        if action == "save":
+            setup.starter_profile = profile
+            save_user_setup(setup)
+            console.print("[green]Starter profile saved locally.[/green]")
+            return
+        if action == "identity":
+            profile.contributor_name = _text(
+                "Contributor name (leave empty to clear)", profile.contributor_name or ""
+            ) or None
+            profile.contributor_email = _text(
+                "Contributor email (leave empty to clear)", profile.contributor_email or ""
+            ) or None
+        elif action == "parent":
+            profile.project_parent = _text(
+                "Project parent (leave empty to clear)", profile.project_parent or ""
+            ) or None
+        elif action == "fields":
+            profile.fields_of_study = _select_profile_fields(profile.fields_of_study)
+        else:
+            profile.assistant = _select(
+                "AI assistant",
+                [
+                    *((item, HARNESS_PRESENTATIONS[item].display_name) for item in HarnessName),
+                    (None, "Not set · choose separately for each project"),
+                ],
+                profile.assistant,
+            )
+
+
 def run_setup_menu() -> None:
     """Configure SMAIRT through four researcher-facing setup categories."""
     while True:
         health = setup_doctor(check_github=False)
         setup = load_user_setup()
         profile_count = sum(len(profiles) for profiles in setup.profiles.values())
-        backend = keyring_health()
         _header("SMAIRT Setup", "User-wide settings · secrets never enter project files")
         _cards(
             ("Installation", "Ready" if health["ok"] else "Needs attention"),
+            ("Profile", setup.starter_profile.contributor_name or "Not set"),
             ("Literature", f"{profile_count} connection(s)"),
             ("Compute", f"{len(setup.compute_profiles)} profile(s)"),
             ("Appearance", f"{setup.appearance.theme} · {setup.appearance.mark}"),
@@ -1961,6 +2450,7 @@ def run_setup_menu() -> None:
             action = _select(
                 "Setup",
                 [
+                    ("profile", "Starter profile · explicit values for future project forms"),
                     ("installation", "Installation & version · checks and exact solutions"),
                     ("literature", "Literature connections · provider, key, test, remove"),
                     ("compute", "Compute connections · optional Slurm profiles"),
@@ -1970,9 +2460,10 @@ def run_setup_menu() -> None:
             )
             if action == "exit":
                 return
-            if action == "installation":
-                _render_setup_health(health)
-                console.print(f"Credential backend: {backend.get('status', 'unknown')}")
+            if action == "profile":
+                _starter_profile_menu()
+            elif action == "installation":
+                _setup_installation_menu()
             elif action == "literature":
                 _literature_setup_menu()
             elif action == "compute":
@@ -2146,19 +2637,74 @@ def _appearance_menu() -> None:
 def _render_setup_health(payload: dict[str, object]) -> None:
     """Render setup doctor as a compact checklist instead of a raw dictionary."""
     console.print(
-        "[green]All required tools are ready.[/green]"
-        if payload["ok"]
-        else "[yellow]Setup needs attention.[/yellow]"
+        "[green]SMAIRT is ready to start.[/green]"
+        if payload["ready_to_start"]
+        else "[yellow]The required runtime needs attention.[/yellow]"
     )
-    for label in ("python", "git", "uv", "conda", "github_cli", "credential_backend"):
+    console.print("[bold]Required[/bold]")
+    for label in ("python", "smairt"):
         value = payload.get(label)
         if isinstance(value, dict):
             ready = value.get("supported", value.get("available", True))
             marker = "[green]✓[/]" if ready else "[yellow]![/]"
             console.print(f"{marker} {label.replace('_', ' ').title()}")
+    console.print("[bold]Conditional and optional[/bold]")
+    for label in ("git", "uv", "credential_backend", "conda", "github_cli"):
+        value = payload.get(label)
+        if isinstance(value, dict):
+            ready = value.get("supported", value.get("available", value.get("ok", False)))
+            marker = "[green]✓[/]" if ready else "[dim]○[/dim]"
+            qualifier = "available" if ready else "not configured · SMAIRT can still start"
+            console.print(f"{marker} {label.replace('_', ' ').title()} · {qualifier}")
             recovery = value.get("recovery") or value.get("warning")
             if recovery:
-                console.print(f"  [dim]{recovery}[/dim]")
+                console.print(f"  [yellow]Recommended:[/] {recovery}")
+
+
+def _setup_installation_menu() -> None:
+    """Explain readiness, offer one bounded repair, and support immediate retesting."""
+    while True:
+        health = setup_doctor(check_github=False)
+        _header("Installation readiness", "Checks are offline; optional tools do not block setup")
+        _render_setup_health(health)
+        uv = cast(dict[str, object], health["uv"])
+        discovered_uv = uv.get("installation_found_outside_path")
+        actions: list[tuple[str, str]] = [("retest", "Retest this machine")]
+        if discovered_uv:
+            actions.append(("fix_uv", "Fix uv PATH setup · preview and confirm"))
+        actions.extend(
+            [
+                ("copy", "Copy beginner recovery summary"),
+                ("back", "Back to setup"),
+            ]
+        )
+        action = _select("Readiness", actions)
+        if action == "back":
+            return
+        if action == "retest":
+            continue
+        if action == "copy":
+            _copy_text(
+                "Install or repair Git and uv using docs/getting-started/installation.md, "
+                "then run `smairt setup` and choose Retest. Optional Conda, GitHub, "
+                "credentials, and AI tools can be configured later.",
+                "Recovery summary",
+            )
+            continue
+        command = [str(discovered_uv), "tool", "update-shell"]
+        console.print("This will run:\n[cyan]" + " ".join(command) + "[/cyan]")
+        console.print("It may update your user shell PATH. No package will be installed.")
+        if not _yes_no("Apply this bounded PATH fix?", False):
+            continue
+        result = subprocess.run(  # noqa: S603 - confirmed discovered uv executable
+            command, capture_output=True, text=True, check=False
+        )
+        if result.returncode == 0:
+            console.print("[green]PATH setup updated. Reopen the terminal, then retest.[/green]")
+        else:
+            console.print(
+                "[yellow]The PATH fix did not complete. Nothing else was changed.[/yellow]"
+            )
 
 
 def _connection_receipt(payload: dict[str, object]) -> Panel:

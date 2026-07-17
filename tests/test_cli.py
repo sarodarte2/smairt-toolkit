@@ -44,6 +44,7 @@ def test_version_and_noninteractive_creation(tmp_path: Path) -> None:
             "unpublished",
             "--no-git",
             "--confirm-contributor",
+            "--accept-recommended",
         ],
     )
     assert result.exit_code == 0, result.stdout
@@ -67,6 +68,7 @@ def test_status_json_from_project(tmp_path: Path, monkeypatch) -> None:
             "Researcher",
             "--no-git",
             "--confirm-contributor",
+            "--accept-recommended",
         ],
     )
     assert created.exit_code == 0
@@ -129,6 +131,7 @@ def test_default_destination_uses_a_safe_slug(tmp_path: Path, monkeypatch) -> No
             "Researcher",
             "--confirm-contributor",
             "--no-git",
+            "--accept-recommended",
         ],
     )
     assert result.exit_code == 0, result.stdout

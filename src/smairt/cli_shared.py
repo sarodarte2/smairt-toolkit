@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextvars import ContextVar
 from pathlib import Path
 
 import click
@@ -12,11 +13,17 @@ from rich.console import Console
 from smairt.project import find_project
 
 console = Console()
+_PROJECT_OVERRIDE: ContextVar[Path | None] = ContextVar("smairt_project_override", default=None)
+
+
+def set_project_override(path: Path | None) -> None:
+    """Set one explicit project-discovery start for the current CLI invocation."""
+    _PROJECT_OVERRIDE.set(path.expanduser().resolve() if path is not None else None)
 
 
 def project_root() -> Path:
     """Resolve the current SMAIRT project or fail with a user-facing message."""
-    root = find_project(Path.cwd())
+    root = find_project(_PROJECT_OVERRIDE.get() or Path.cwd())
     if root is None:
         raise FileNotFoundError("No SMAIRT project found from the current directory.")
     return root

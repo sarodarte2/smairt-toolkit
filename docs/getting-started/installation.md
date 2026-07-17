@@ -5,7 +5,10 @@ Native Windows is not supported in this research preview.
 
 There is no tagged or PyPI release. The supported installation path uses the current source tree.
 
-## Install prerequisites
+## Open a terminal and install prerequisites
+
+SMAIRT is terminal-native, but you do not need to know Python. Open Terminal on macOS, your usual
+terminal on Linux, or a Linux terminal inside WSL. Commands below can be copied and pasted.
 
 Install [Git](https://git-scm.com/downloads) and
 [uv](https://docs.astral.sh/uv/getting-started/installation/). Close and reopen the terminal after
@@ -17,35 +20,27 @@ GitHub is optional for local research. If you plan to collaborate through GitHub
 ## Install the source preview
 
 ```bash
-git clone https://github.com/sarodarte2/smairt-toolkit.git
-cd smairt-toolkit
-uv tool install --python 3.11 .
-smairt --version
+uv tool install --python 3.11 git+https://github.com/sarodarte2/smairt-toolkit.git
+smairt
 ```
 
-This creates an isolated user-wide `smairt` command. If the command is not found, run
+uv manages the compatible Python runtime and creates an isolated user-wide `smairt` command. If the command is not found, run
 `uv tool update-shell`, reopen the terminal, and try again. To replace an existing source install:
 
 ```bash
-uv tool install --force --python 3.11 .
+uv tool install --force --python 3.11 git+https://github.com/sarodarte2/smairt-toolkit.git
 ```
 
 ## Check this machine
 
-```bash
-smairt setup doctor --json
-```
+Choose **Set up SMAIRT** from Home. The guided check separates required readiness from conditional
+and optional capabilities, explains problems in plain language, and supports retesting. It remains
+offline unless you explicitly request a network check.
 
-The setup doctor checks Python, SMAIRT, Git, uv, optional Conda, Git identity, and GitHub CLI
-visibility. It remains offline unless you explicitly add `--check-github`.
+The optional starter profile stores only values you enter: contributor identity, usual project
+parent, fields of study, and preferred AI assistant. Blank values never prefill a project.
 
-Open the user-wide setup workspace for guided configuration:
-
-```bash
-smairt setup
-```
-
-Setup can configure optional profiles for Zotero, OpenAlex, Semantic Scholar, Unpaywall, and Slurm.
+Later setup can configure optional profiles for Zotero, OpenAlex, Semantic Scholar, Unpaywall, and Slurm.
 Connection identities stay in the operating system's user configuration area; secrets stay in
 environment variables or the OS keyring. A project later chooses which local profile it uses.
 

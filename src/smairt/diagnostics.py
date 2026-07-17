@@ -202,8 +202,23 @@ def setup_doctor(*, check_github: bool = False) -> dict[str, object]:
         ),
         None,
     )
+    ready_to_start = bool(supported_python)
     return {
-        "ok": bool(supported_python and git_path and uv_path),
+        "ok": ready_to_start,
+        "ready_to_start": ready_to_start,
+        "required": {
+            "python": bool(supported_python),
+            "smairt": True,
+        },
+        "conditional": {
+            "git": bool(git_path),
+            "uv": bool(uv_path),
+            "credential_backend": keyring_health().get("ok", False),
+        },
+        "optional": {
+            "conda": bool(conda_path),
+            "github_cli": bool(gh_path),
+        },
         "python": {"version": sys.version.split()[0], "supported": supported_python},
         "smairt": {"version": __version__},
         "git": {

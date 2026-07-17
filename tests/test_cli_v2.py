@@ -43,6 +43,7 @@ def test_v2_diagnostic_and_harness_commands(tmp_path: Path, monkeypatch) -> None
             "--harness",
             "zoo",
             "--no-git",
+            "--accept-recommended",
         ]
     )
     monkeypatch.chdir(root)
@@ -114,6 +115,7 @@ def test_cli_renders_model_policy_error_without_traceback(tmp_path: Path, monkey
             "Researcher",
             "--confirm-contributor",
             "--no-git",
+            "--accept-recommended",
         ]
     )
     monkeypatch.chdir(root)

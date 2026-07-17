@@ -61,33 +61,27 @@ The software can help prepare every stage, but the two decision points remain hu
 
 ## Install and Orient Yourself
 
-SMAIRT does not yet publish a verified package release. Install the current research preview from
-this repository with [uv](https://docs.astral.sh/uv/):
+SMAIRT does not yet publish a verified package release. After installing Git and
+[uv](https://docs.astral.sh/uv/), install the source preview without cloning or managing Python:
 
 ```bash
-git clone https://github.com/sarodarte2/smairt-toolkit.git
-cd smairt-toolkit
-uv tool install --python 3.11 .
-smairt --version
-smairt setup
+uv tool install --python 3.11 git+https://github.com/sarodarte2/smairt-toolkit.git
+smairt
 ```
 
-`smairt setup` configures this machine, not a research project. It checks the installation and can
-store optional literature or compute connection profiles outside the repository. Conda is not
-required to run SMAIRT.
+Bare `smairt` is the context-aware Home. It can run optional first-time setup, create a project, or
+reopen a recent project without requiring directory commands. Setup belongs to this machine, not a
+research project, and Conda is not required.
 
-Create a project when the setup is ready:
+Create or resume a project from Home:
 
 ```bash
-smairt new my-study
-cd my-study
-smairt status --json
-smairt next --prompt
+smairt
 ```
 
-The interactive wizard explains project location, contributor identity, data classification,
-environment, coding harness, and safety mode. The final two commands show what exists and produce a
-bounded, copyable handoff for an AI assistant without crossing a scientific decision gate.
+The wizard derives the folder from the project name, prefills only values explicitly saved in the
+local starter profile, and requires project-specific policy choices. The dashboard shows the
+current research stage and one bounded handoff without crossing a scientific decision gate.
 
 See [Installation](docs/getting-started/installation.md) for prerequisites and optional
 connections, then follow the [Quickstart](docs/getting-started/quickstart.md) for a careful tour of

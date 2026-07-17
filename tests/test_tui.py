@@ -9,7 +9,14 @@ from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.output.base import Size
 
 from smairt.local_setup import AppearanceConfig
-from smairt.models import ProjectLicense, SmairtConfig
+from smairt.models import (
+    DataClassification,
+    EnvironmentMode,
+    HarnessName,
+    ProjectLicense,
+    SafetyMode,
+    SmairtConfig,
+)
 from smairt.tui import (
     SMAIRT_LOGO,
     THEMES,
@@ -137,25 +144,36 @@ def test_new_project_workflow_creates_current_project(monkeypatch, tmp_path: Pat
             "Parent directory": str(tmp_path),
             "Project folder": target.name,
             "Project name": "Terminal Study",
-            "Primary researcher": "Researcher",
-            "Email (optional)": "researcher@example.org",
-            "Fields of study, comma separated (optional)": "Biology, biology, Genomics",
+            "Active contributor": "Researcher",
+            "Contributor email (optional)": "researcher@example.org",
         }
         return answers.get(message, default)
 
     def answer_select(message: str, options, default=None):
         answers = {
-            "Register this researcher as the active contributor?": True,
-            "Add another collaborator?": False,
-            "Project license": ProjectLicense.MIT,
-            "Initialize Git?": False,
+            "Confirm this person as the active contributor?": True,
             "Review": "create",
-            "Next": False,
+            "Next": "shell",
         }
         return answers.get(message, default if default is not None else options[0][0])
 
+    def answer_required(message: str, options, *_args):
+        answers = {
+            "Data classification": DataClassification.UNPUBLISHED,
+            "Project license": ProjectLicense.MIT,
+            "Project environment": EnvironmentMode.NONE,
+            "AI assistant": HarnessName.CODEX,
+            "Safety mode": SafetyMode.STANDARD,
+            "Initialize Git?": False,
+        }
+        return answers[message]
+
     monkeypatch.setattr("smairt.tui._text", answer_text)
     monkeypatch.setattr("smairt.tui._select", answer_select)
+    monkeypatch.setattr("smairt.tui._required_select", answer_required)
+    monkeypatch.setattr(
+        "smairt.tui._select_profile_fields", lambda _current: ["Biology", "genomics"]
+    )
 
     assert run_new_project(tmp_path) == target
     config = SmairtConfig.load(target / "smairt.yaml")
@@ -180,7 +198,7 @@ def test_new_project_escape_preserves_previous_values(monkeypatch, tmp_path: Pat
         if message == "Project name":
             observed_name_defaults.append(default)
             return default or "Retained Study"
-        if message == "Primary researcher":
+        if message == "Active contributor":
             return "Researcher"
         if message == "Initial research question (optional)" and not escaped:
             escaped = True
@@ -189,15 +207,26 @@ def test_new_project_escape_preserves_previous_values(monkeypatch, tmp_path: Pat
 
     def answer_select(message: str, options, default=None):
         answers = {
-            "Register this researcher as the active contributor?": True,
-            "Add another collaborator?": False,
-            "Initialize Git?": False,
+            "Confirm this person as the active contributor?": True,
             "Review": "cancel",
+            "Keep this draft for later?": False,
         }
         return answers.get(message, default if default is not None else options[0][0])
 
     monkeypatch.setattr("smairt.tui._text", answer_text)
     monkeypatch.setattr("smairt.tui._select", answer_select)
+    monkeypatch.setattr("smairt.tui._select_profile_fields", lambda current: current)
+    choices = iter(
+        [
+            DataClassification.UNPUBLISHED,
+            ProjectLicense.UNSPECIFIED,
+            EnvironmentMode.NONE,
+            HarnessName.CODEX,
+            SafetyMode.STANDARD,
+            False,
+        ]
+    )
+    monkeypatch.setattr("smairt.tui._required_select", lambda *_args: next(choices))
 
     assert run_new_project(target) is None
     assert observed_name_defaults == ["", "Retained Study"]

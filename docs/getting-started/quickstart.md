@@ -3,54 +3,42 @@
 This tour installs no scientific opinion and records no evidence decision. It creates a project,
 shows where state lives, and explains how to resume work safely.
 
-## 1. Complete user-wide setup
+## 1. Open Home
 
-Run the setup doctor and open the guided setup workspace:
+Run one command from any folder:
 
 ```bash
-smairt setup doctor --json
-smairt setup
+smairt
 ```
 
-Literature and HPC profiles are optional. Skip them unless they are relevant to your work. Setup
-belongs to this machine; project policy and research records belong to the project directory.
+First-time setup is recommended but skippable. It checks readiness and saves only profile values
+you explicitly enter. Literature and HPC remain optional.
 
 ## 2. Create a project
 
-```bash
-smairt new my-study
-```
-
-The wizard asks whether to create a named child directory or initialize a directory you selected.
-It then asks for project identity, researcher identity, field, license, data classification,
-environment, coding harness, and safety mode. A project may begin with an open question; it does
-not need a hypothesis during setup.
+Choose **Create a project**. The four stages are Basics, Research Context, Project Choices, and
+Review. The folder follows the project name until edited. Profile values prefill only when present;
+classification, license, environment, AI assistant, safety, and Git remain explicit choices.
+Additional contributors are added afterward under Project → Contributors.
 
 For a scriptable preview without Git initialization:
 
 ```bash
-smairt new my-study --name "My Study" --author "Researcher Name" \
-  --question "What specific question will this project investigate?" \
-  --confirm-contributor --classification unpublished --no-git
+smairt new my-study --name "My Study" --author "Contributor Name" \
+  --accept-recommended --confirm-contributor
 ```
 
 ## 3. Inspect the project
 
-```bash
-cd my-study
-smairt doctor --json
-smairt status --json
-smairt next --json
-```
+Open the project from Home. SMAIRT remembers up to five recent projects and discovers direct
+project folders beneath an explicitly saved project parent. It never recursively scans or silently
+chooses among projects.
 
-`doctor` reports health without changing files or using the network. `status` describes the active
-project records. `next` recommends an action from the current state and identifies the files that
-matter for that action.
-
-For a copyable handoff to an AI assistant:
+The dashboard highlights Ground, Explore, Test, Interpret, or Share. Choose **Continue** for a
+project-aware command or bounded assistant prompt. Advanced users can request it from any folder:
 
 ```bash
-smairt next --prompt
+smairt --project /path/to/my-study next --prompt
 ```
 
 The prompt is bounded context, not authorization. It cannot select a hypothesis, approve an
